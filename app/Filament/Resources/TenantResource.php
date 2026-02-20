@@ -12,12 +12,22 @@ use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
+use Illuminate\Support\Facades\Auth;
 
 class TenantResource extends Resource
 {
     protected static ?string $model = Tenant::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
+
+    /**
+     * ¿Quién puede ver este menú en la barra lateral?
+     * Solo el "Dueño del SaaS" (Aquel que NO pertenece a ningún negocio: tenant_id = null)
+     */
+    public static function canViewAny(): bool
+    {
+        return Auth::check() && Auth::user()->tenant_id === null;
+    }
 
     public static function form(Form $form): Form
     {
