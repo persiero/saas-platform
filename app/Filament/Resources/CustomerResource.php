@@ -76,14 +76,28 @@ class CustomerResource extends Resource
                     
                 Tables\Columns\TextColumn::make('document_type')
                     ->label('Tipo Doc.')
-                    ->searchable(),
+                    ->formatStateUsing(fn (string $state): string => match ($state) {
+                        '1' => 'DNI',
+                        '6' => 'RUC',
+                        '4' => 'Carnet de Extranjería',
+                        '-' => 'Sin Documento',
+                        default => $state,
+                    })
+                    ->badge() // Le da un diseño de "etiqueta" muy visual
+                    ->color('info'),
                     
                 Tables\Columns\TextColumn::make('document_number')
                     ->label('N° Documento')
                     ->searchable(),
-                    
+                
+                Tables\Columns\TextColumn::make('address')
+                    ->label('Dirección (Obligatorio para Facturas)')
+                    ->limit(50) // <-- Así se recorta el texto visualmente en una tabla
+                    ->searchable(),
+
                 Tables\Columns\TextColumn::make('phone')
-                    ->label('Teléfono')
+                    ->label('Número de Documento')
+                    ->limit(15)
                     ->searchable(),
                     
                 Tables\Columns\TextColumn::make('email')

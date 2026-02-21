@@ -35,17 +35,52 @@ class SaleResource extends Resource
             ->schema([
                 Forms\Components\Group::make()->schema([
                     Forms\Components\Section::make('Información de Venta')->schema([
+                        Forms\Components\Select::make('document_type')
+                            ->label('Tipo de Comprobante')
+                            ->options([
+                                '03' => 'Boleta Electrónica',
+                                '01' => 'Factura Electrónica',
+                            ])
+                            ->required()
+                            ->default('03')
+                            ->live() // Escucha el cambio
+                            ->afterStateUpdated(function (Set $set, $state) {
+                                // Magia: Si cambia de Boleta a Factura, borramos la serie seleccionada
+                                $set('series', null);
+                            }),
+
+                        Forms\Components\Select::make('series')
+                            ->label('Serie')
+                            ->required()
+                            // Magia: Busca las series activas en la BD según el tipo de comprobante elegido
+                            ->options(function (Get $get) {
+                                $docType = $get('document_type');
+                                if (!$docType) return [];
+                                
+                                // Gracias a tu Súper Candado, esto SOLO trae las series de ESTE negocio
+                                return \Percy\Core\Models\Serie::where('document_type', $docType)
+                                    ->where('active', true)
+                                    ->pluck('serie', 'serie'); 
+                            }),
+
+                        Forms\Components\Hidden::make('correlative'),
+                            //->label('Correlativo')
+                            //->numeric()
+                            //->required()
+                            //->default(1), // Por ahora lo ingresamos manual, luego lo automatizaremos
+
                         Forms\Components\Select::make('customer_id')
                             ->relationship('customer', 'name')
-                            ->label('Cliente (Opcional)')
+                            ->label('Cliente')
                             ->searchable()
-                            ->preload(),
+                            ->preload()
+                            ->columnSpan(2), // Que ocupe más espacio visual
 
                         Forms\Components\DateTimePicker::make('sold_at')
-                            ->label('Fecha y Hora')
+                            ->label('Fecha de Emisión')
                             ->default(now())
                             ->required(),
-
+                            
                         Forms\Components\Select::make('status')
                             ->label('Estado')
                             ->options([
@@ -54,8 +89,8 @@ class SaleResource extends Resource
                                 'canceled' => 'Anulado',
                             ])
                             ->default('completed')
-                            ->required(),
-                    ])->columns(3),
+                            ->hidden(), // Lo ocultamos de la vista del cajero para no confundir
+                    ])->columns(4), // Dividimos esta sección en 4 columnas
 
                     Forms\Components\Section::make('Detalle de Productos')->schema([
                         Forms\Components\Repeater::make('items')
@@ -212,6 +247,13 @@ class SaleResource extends Resource
             ])
             ->filters([])
             ->actions([
+                // Botón verde para imprimir que se abre en una nueva pestaña
+                Tables\Actions\Action::make('print')
+                    ->label('Imprimir')
+                    ->icon('heroicon-o-printer')
+                    ->color('success')
+                    ->url(fn (Sale $record): string => route('sales.ticket', $record))
+                    ->openUrlInNewTab(),
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\ViewAction::make(),
             ])

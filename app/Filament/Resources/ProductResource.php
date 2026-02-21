@@ -35,6 +35,17 @@ class ProductResource extends Resource
                             ->label('Nombre del Producto / Servicio')
                             ->required()
                             ->maxLength(150),
+                        
+                        Forms\Components\Select::make('unit_code')
+                            ->label('Unidad de Medida (SUNAT)')
+                            ->options([
+                                'NIU' => 'Unidad (Bienes)',
+                                'ZZ'  => 'Servicio (Atención, Delivery, etc.)',
+                                'KGM' => 'Kilogramos',
+                                'LTR' => 'Litros',
+                            ])
+                            ->default('NIU')
+                            ->required(),
                             
                         Forms\Components\Select::make('type')
                             ->label('Tipo de Ítem')
