@@ -32,8 +32,17 @@ return [
 
         'local' => [
             'driver' => 'local',
-            'root' => storage_path('app/private'),
+            'root' => storage_path('app'),
             'serve' => true,
+            'throw' => false,
+            'report' => false,
+        ],
+
+        // NUESTRO DISCO EXCLUSIVO Y BLINDADO
+        'sunat' => [
+            'driver' => 'local',
+            'root' => storage_path('app/private'), // Apunta directamente a la zona segura
+            'visibility' => 'private',
             'throw' => false,
             'report' => false,
         ],

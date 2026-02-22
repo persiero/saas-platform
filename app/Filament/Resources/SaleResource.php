@@ -4,6 +4,7 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\SaleResource\Pages;
 use App\Filament\Resources\SaleResource\RelationManagers;
+use App\Services\SunatService;
 use Percy\Core\Models\Sale;
 use Percy\Core\Models\Product;
 use Percy\Core\Models\AfectacionIgv;
@@ -14,8 +15,10 @@ use Filament\Forms\Set;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Filament\Notifications\Notification;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
+use Tables\Actions\Action;
 
 class SaleResource extends Resource
 {
@@ -214,54 +217,142 @@ class SaleResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
-            ->columns([
-                Tables\Columns\TextColumn::make('id')
-                    ->label('N° Venta')
-                    ->sortable()
-                    ->searchable(),
-                    
-                Tables\Columns\TextColumn::make('customer.name')
-                    ->label('Cliente')
-                    ->placeholder('Público en General')
-                    ->sortable()
-                    ->searchable(),
-                    
-                Tables\Columns\TextColumn::make('total')
-                    ->label('Total')
-                    ->money('PEN')
-                    ->sortable(),
-                    
-                Tables\Columns\TextColumn::make('status')
-                    ->label('Estado')
-                    ->badge()
-                    ->color(fn (string $state): string => match ($state) {
-                        'completed' => 'success',
-                        'pending' => 'warning',
-                        'canceled' => 'danger',
-                    }),
-                    
-                Tables\Columns\TextColumn::make('sold_at')
-                    ->label('Fecha')
-                    ->dateTime('d/m/Y H:i')
-                    ->sortable(),
+        ->columns([
+            // 1. Identificadores
+            Tables\Columns\TextColumn::make('id')
+                ->label('ID')
+                ->sortable()
+                ->toggleable(isToggledHiddenByDefault: true),
+
+            Tables\Columns\TextColumn::make('document_number')
+                ->label('Comprobante')
+                ->state(fn (Sale $record): string => "{$record->series}-{$record->correlative}")
+                ->searchable(['series', 'correlative'])
+                ->sortable()
+                ->weight('bold'),
+
+            // 2. Información del Cliente y Venta
+            Tables\Columns\TextColumn::make('customer.name')
+                ->label('Cliente')
+                ->placeholder('Público en General')
+                ->sortable()
+                ->searchable(),
+
+            Tables\Columns\TextColumn::make('total')
+                ->label('Total')
+                ->money('PEN')
+                ->sortable()
+                ->alignment('right'),
+
+            // 3. Estados (Interno y SUNAT)
+            Tables\Columns\TextColumn::make('status')
+                ->label('Venta')
+                ->badge()
+                ->color(fn (string $state): string => match ($state) {
+                    'completed' => 'success',
+                    'pending' => 'warning',
+                    'canceled' => 'danger',
+                    default => 'gray',
+                }),
+
+            Tables\Columns\TextColumn::make('sunat_status')
+                ->label('Estado SUNAT')
+                ->badge()
+                ->color(fn (string $state): string => match ($state) {
+                    'accepted' => 'success',
+                    'pending' => 'warning',
+                    'rejected' => 'danger',
+                    default => 'gray',
+                })
+                ->formatStateUsing(fn (string $state): string => match ($state) {
+                    'accepted' => 'ACEPTADO',
+                    'pending' => 'PENDIENTE',
+                    'rejected' => 'RECHAZADO',
+                    default => strtoupper($state),
+                })
+                ->description(fn (Sale $record): ?string => $record->sunat_description),
+
+            Tables\Columns\TextColumn::make('sold_at')
+                ->label('Fecha')
+                ->dateTime('d/m/Y H:i')
+                ->sortable(),
+        ])
+        ->filters([
+            // Filtros de fecha o tipo pueden ir aquí después
+        ])
+        ->actions([
+            // GRUPO 1: Acciones Principales (Envío y Ticket)
+            Tables\Actions\Action::make('sendToSunat')
+                ->label('Enviar')
+                ->icon('heroicon-o-paper-airplane')
+                ->color('success')
+                ->requiresConfirmation()
+                ->visible(fn (Sale $record) => 
+                    in_array($record->document_type, ['01', '03']) && 
+                    $record->status !== 'canceled' && 
+                    $record->sunat_status !== 'accepted'
+                )
+                ->action(function (Sale $record) {
+                    try {
+                        $service = new \Percy\Core\Services\SunatService();
+                        $result = $service->processAndSend($record);
+
+                        if ($result->isSuccess()) {
+                            \Filament\Notifications\Notification::make()
+                                ->title('¡Aceptado por SUNAT!')
+                                ->success()
+                                ->send();
+                        } else {
+                            \Filament\Notifications\Notification::make()
+                                ->title('Error SUNAT ' . $result->getError()->getCode())
+                                ->body($result->getError()->getMessage())
+                                ->danger()
+                                ->persistent()
+                                ->send();
+                        }
+                    } catch (\Exception $e) {
+                        \Filament\Notifications\Notification::make()
+                            ->title('Error Crítico')
+                            ->body($e->getMessage())
+                            ->danger()
+                            ->send();
+                    }
+                }),
+
+            Tables\Actions\Action::make('print')
+                ->label('Ticket')
+                ->icon('heroicon-o-printer')
+                ->color('info')
+                ->url(fn (Sale $record): string => route('sales.ticket', $record))
+                ->openUrlInNewTab(),
+            
+            // GRUPO 2: Archivos Digitales
+            Tables\Actions\ActionGroup::make([
+                Tables\Actions\Action::make('downloadXml')
+                    ->label('Descargar XML')
+                    ->icon('heroicon-o-code-bracket')
+                    ->url(fn (Sale $record) => route('sales.download-xml', $record))
+                    ->visible(fn (Sale $record) => !empty($record->sunat_xml_path)),
+
+                Tables\Actions\Action::make('downloadCdr')
+                    ->label('Descargar CDR')
+                    ->icon('heroicon-o-archive-box')
+                    ->url(fn (Sale $record) => route('sales.download-cdr', $record))
+                    ->visible(fn (Sale $record) => !empty($record->sunat_cdr_path)),
             ])
-            ->filters([])
-            ->actions([
-                // Botón verde para imprimir que se abre en una nueva pestaña
-                Tables\Actions\Action::make('print')
-                    ->label('Imprimir')
-                    ->icon('heroicon-o-printer')
-                    ->color('success')
-                    ->url(fn (Sale $record): string => route('sales.ticket', $record))
-                    ->openUrlInNewTab(),
-                Tables\Actions\EditAction::make(),
-                Tables\Actions\ViewAction::make(),
-            ])
-            ->bulkActions([
-                Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
-                ]),
-            ]);
+            ->label('SUNAT')
+            ->icon('heroicon-m-ellipsis-vertical')
+            ->color('gray'),
+
+            // GRUPO 3: Acciones Estándar
+            Tables\Actions\ViewAction::make(),
+            Tables\Actions\EditAction::make(),
+        ])
+        ->bulkActions([
+            Tables\Actions\BulkActionGroup::make([
+                Tables\Actions\DeleteBulkAction::make(),
+            ]),
+        ]);
     }
 
     // =========================================================================

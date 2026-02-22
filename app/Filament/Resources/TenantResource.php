@@ -101,8 +101,11 @@ class TenantResource extends Resource
                                 
                                 Forms\Components\FileUpload::make('sunat_certificate')
                                     ->label('Certificado Digital (.pem / .pfx)')
-                                    ->directory('certificates') 
-                                    ->acceptedFileTypes(['application/x-x509-ca-cert', 'application/x-pkcs12', 'text/plain']),
+                                    ->disk('sunat') // <-- OBLIGATORIO: Indica que use storage/app
+                                    ->directory('certificates') // Se guardará en storage/app/private/certificates
+                                    ->visibility('private') 
+                                    ->acceptedFileTypes(['application/x-x509-ca-cert', 'application/x-pkcs12', 'text/plain'])
+                                    ->required(),
                                     
                                 Forms\Components\TextInput::make('sunat_certificate_password')
                                     ->label('Contraseña del Certificado')
