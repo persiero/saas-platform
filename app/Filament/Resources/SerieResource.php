@@ -40,11 +40,11 @@ class SerieResource extends Resource
                         ->required(),
 
                     Forms\Components\TextInput::make('serie')
-                        ->label('Serie (Ej: F001, B001, FC01)')
+                        ->label('Serie (Ej: F001, B001, FC01, BC01, FD01, BD01)')
                         ->required()
                         ->maxLength(4)
                         // Pequeño truco visual para que el usuario escriba en mayúsculas
-                        ->extraInputAttributes(['style' => 'text-transform: uppercase']), 
+                        ->extraInputAttributes(['style' => 'text-transform: uppercase']),
 
                     Forms\Components\TextInput::make('correlative')
                         ->label('Último Correlativo Emitido')
@@ -76,15 +76,14 @@ class SerieResource extends Resource
                     })
                     ->badge()
                     ->color('info'),
-                    
+
                 Tables\Columns\TextColumn::make('serie')
-                    ->label('Serie')
-                    ->searchable(),
-                    
+                    ->label('Serie'),
+
                 Tables\Columns\TextColumn::make('correlative')
                     ->label('Correlativo Actual')
                     ->sortable(),
-                    
+
                 Tables\Columns\IconColumn::make('active')
                     ->label('Activa')
                     ->boolean(),

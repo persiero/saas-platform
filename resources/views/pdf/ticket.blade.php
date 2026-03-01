@@ -15,6 +15,7 @@
         th, td { padding: 2px 0; font-size: 11px; }
         .totals-table td { font-size: 12px; }
         .qr-container { margin-top: 10px; margin-bottom: 5px; }
+        .reference-box { font-size: 10px; margin: 5px 0; text-align: left; }
     </style>
 </head>
 <body>
@@ -24,19 +25,40 @@
             <p style="margin: 0;">RUC: {{ $sale->tenant->ruc }}</p>
             <p style="margin: 0;">{{ $sale->tenant->address }}</p>
             <div class="divider"></div>
-            
+
+            {{-- 1. TÍTULO DINÁMICO DEL COMPROBANTE --}}
             <h3 style="margin: 5px 0; font-size: 12px;">
                 @if($sale->document_type == '01') FACTURA ELECTRÓNICA
                 @elseif($sale->document_type == '03') BOLETA ELECTRÓNICA
-                @else NOTA DE VENTA @endif
+                @elseif($sale->document_type == '07') NOTA DE CRÉDITO ELECTRÓNICA
+                @elseif($sale->document_type == '08') NOTA DE DÉBITO ELECTRÓNICA
+                @else NOTA DE VENTA
+                @endif
             </h3>
             <p class="bold" style="margin: 0;">{{ $sale->series }} - {{ str_pad($sale->correlative, 8, '0', STR_PAD_LEFT) }}</p>
             <div class="divider"></div>
         </div>
 
+        {{-- 2. BLOQUE EXCLUSIVO PARA NOTAS DE CRÉDITO/DÉBITO --}}
+        @if(in_array($sale->document_type, ['07', '08']))
+            <div class="reference-box">
+                <p style="margin: 2px 0;"><strong>Doc. Modificado:</strong> {{ $sale->affected_document_series }}-{{ $sale->affected_document_correlative }}</p>
+                <p style="margin: 2px 0;"><strong>Motivo:</strong> {{ $sale->cancel_reason_description }}</p>
+            </div>
+            <div class="divider"></div>
+        @endif
+
         <p style="margin: 2px 0;"><strong>Fecha:</strong> {{ $sale->sold_at->format('d/m/Y H:i') }}</p>
         <p style="margin: 2px 0;"><strong>Cliente:</strong> {{ $sale->customer ? $sale->customer->name : 'PÚBLICO EN GENERAL' }}</p>
-        <p style="margin: 2px 0;"><strong>{{ $sale->customer?->document_type == '6' ? 'RUC' : 'DNI' }}:</strong> {{ $sale->customer?->document_number ?? '00000000' }}</p>
+        {{-- 1. ETIQUETA INTELIGENTE PARA RUC/DNI --}}
+        <p style="margin: 2px 0;">
+            <strong>{{ in_array(strtoupper(trim($sale->customer?->document_type ?? '')), ['6', 'RUC']) ? 'RUC' : 'DNI' }}:</strong>
+            {{ $sale->customer?->document_number ?? '00000000' }}
+        </p>
+        {{-- 2. DIRECCIÓN (SOLO SI ES FACTURA Y EL CLIENTE TIENE DIRECCIÓN) --}}
+        @if($sale->document_type == '01' && $sale->customer?->address)
+            <p style="margin: 2px 0;"><strong>Dirección:</strong> {{ $sale->customer->address }}</p>
+        @endif
         <div class="divider"></div>
 
         <table>
@@ -79,14 +101,25 @@
         </div>
 
         <div class="divider"></div>
-        
+
         <div class="text-center">
             <div class="qr-container">
                 <img src="{{ $qr_base64 }}" style="width: 100px;">
             </div>
             <p style="margin: 0; font-size: 9px;">Hash: {{ $sale->sunat_hash }}</p>
-            <p style="margin: 5px 0 0 0; font-size: 9px;">Representación impresa de la {{ $sale->document_type == '01' ? 'Factura' : 'Boleta' }} Electrónica.</p>
-            <p style="margin: 0; font-size: 9px;">¡Gracias por su compra en {{ $sale->tenant->name }}!</p>
+
+            {{-- 3. PIE DE PÁGINA DINÁMICO --}}
+            <p style="margin: 5px 0 0 0; font-size: 9px;">
+                Representación impresa de la
+                @if($sale->document_type == '01') Factura
+                @elseif($sale->document_type == '03') Boleta
+                @elseif($sale->document_type == '07') Nota de Crédito
+                @elseif($sale->document_type == '08') Nota de Débito
+                @else Comprobante
+                @endif
+                Electrónica.
+            </p>
+            <p style="margin: 0; font-size: 9px;">¡Gracias por su preferencia!</p>
         </div>
     </div>
 </body>
