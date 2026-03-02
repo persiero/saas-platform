@@ -55,6 +55,15 @@
             <strong>{{ in_array(strtoupper(trim($sale->customer?->document_type ?? '')), ['6', 'RUC']) ? 'RUC' : 'DNI' }}:</strong>
             {{ $sale->customer?->document_number ?? '00000000' }}
         </p>
+
+        <p style="margin: 2px 0;"><strong>{{ in_array(strtoupper(trim($sale->customer?->document_type ?? '')), ['6', 'RUC']) ? 'RUC' : 'DNI' }}:</strong> {{ $sale->customer?->document_number ?? '00000000' }}</p>
+
+        {{-- NUEVO: BLOQUE DE MÉTODO DE PAGO --}}
+        <p style="margin: 2px 0;"><strong>Forma de Pago:</strong> {{ $sale->payment_method ?? 'Efectivo' }}</p>
+        @if($sale->payment_reference)
+            <p style="margin: 2px 0;"><strong>N° Operación:</strong> {{ $sale->payment_reference }}</p>
+        @endif
+
         {{-- 2. DIRECCIÓN (SOLO SI ES FACTURA Y EL CLIENTE TIENE DIRECCIÓN) --}}
         @if($sale->document_type == '01' && $sale->customer?->address)
             <p style="margin: 2px 0;"><strong>Dirección:</strong> {{ $sale->customer->address }}</p>

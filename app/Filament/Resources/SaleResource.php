@@ -89,6 +89,28 @@ class SaleResource extends Resource
                             ->required()
                             ->columnSpan(2),
 
+                        Forms\Components\Select::make('payment_method')
+                            ->label('Método de Pago')
+                            ->options([
+                                'Efectivo' => 'Efectivo',
+                                'Yape' => 'Yape',
+                                'Plin' => 'Plin',
+                                'Transferencia' => 'Transferencia Bancaria',
+                                'Tarjeta' => 'Tarjeta (POS)',
+                            ])
+                            ->default('Efectivo')
+                            ->live() // Escucha los cambios en tiempo real
+                            ->required()
+                            ->afterStateUpdated(fn (Forms\Set $set) => $set('payment_reference', null)), // Limpia la referencia al cambiar
+
+                        Forms\Components\TextInput::make('payment_reference')
+                            ->label('N° de Operación / Referencia')
+                            ->placeholder('Ej: 123456')
+                            // Se muestra SOLO si el método de pago NO es Efectivo
+                            ->visible(fn (\Filament\Forms\Get $get) => $get('payment_method') !== 'Efectivo' && $get('payment_method') !== null)
+                            // Es obligatorio SOLO si no es Efectivo
+                            ->required(fn (\Filament\Forms\Get $get) => $get('payment_method') !== 'Efectivo'),
+
                         Forms\Components\DateTimePicker::make('sold_at')
                             ->label('Fecha de Emisión')
                             ->default(now())
