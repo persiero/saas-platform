@@ -42,18 +42,23 @@ class TenantResource extends Resource
                                 Forms\Components\TextInput::make('name')
                                     ->label('Nombre del Negocio')
                                     ->required(),
-                                    
+
+                                // NUEVO: Selector de Giro de Negocio vinculado a la tabla business_sectors
+                                Forms\Components\Select::make('business_sector_id')
+                                    ->label('Giro del Negocio / Sector')
+                                    ->relationship('businessSector', 'name')
+                                    ->searchable()
+                                    ->preload()
+                                    ->required(),
+
                                 Forms\Components\TextInput::make('domain')
                                     ->label('Dominio (Subdominio)')
                                     ->unique(ignoreRecord: true),
-                                    
-                                Forms\Components\TextInput::make('database_name')
-                                    ->label('Base de Datos Asignada')
-                                    ->required(),
-                                    
+
                                 Forms\Components\Toggle::make('is_active')
                                     ->label('¿Está Activo?')
-                                    ->default(true),
+                                    ->default(true)
+                                    ->columnSpanFull(), // Para que ocupe todo el ancho y no descuadre
                             ])->columns(2),
 
                         // PESTAÑA 2: Datos Fiscales (Para la factura)
@@ -91,22 +96,22 @@ class TenantResource extends Resource
                                     ->default('beta')
                                     ->required()
                                     ->columnSpanFull(),
-                                
+
                                 Forms\Components\TextInput::make('sunat_sol_user')
                                     ->label('Usuario SOL'),
                                 Forms\Components\TextInput::make('sunat_sol_pass')
                                     ->label('Clave SOL')
                                     ->password()
                                     ->revealable(),
-                                
+
                                 Forms\Components\FileUpload::make('sunat_certificate')
                                     ->label('Certificado Digital (.pem / .pfx)')
                                     ->disk('sunat') // <-- OBLIGATORIO: Indica que use storage/app
                                     ->directory('certificates') // Se guardará en storage/app/private/certificates
-                                    ->visibility('private') 
+                                    ->visibility('private')
                                     ->acceptedFileTypes(['application/x-x509-ca-cert', 'application/x-pkcs12', 'text/plain'])
                                     ->required(),
-                                    
+
                                 Forms\Components\TextInput::make('sunat_certificate_password')
                                     ->label('Contraseña del Certificado')
                                     ->password()
@@ -121,11 +126,11 @@ class TenantResource extends Resource
                                     ->label('Porcentaje de IGV (%)')
                                     ->numeric()
                                     ->default(18),
-                                    
+
                                 Forms\Components\Toggle::make('prices_include_igv')
                                     ->label('Los precios del catálogo ya incluyen IGV')
                                     ->default(true),
-                                    
+
                                 Forms\Components\Toggle::make('auto_send_sunat')
                                     ->label('Enviar a SUNAT automáticamente')
                                     ->default(true),
@@ -139,7 +144,23 @@ class TenantResource extends Resource
     {
         return $table
             ->columns([
-                //
+                Tables\Columns\TextColumn::make('name')
+                    ->label('Negocio')
+                    ->searchable(),
+
+                // Muestra el nombre del sector (Ej: Restaurante, Farmacia)
+                Tables\Columns\TextColumn::make('businessSector.name')
+                    ->label('Giro')
+                    ->badge() // Lo muestra como una etiqueta de color
+                    ->color('info'),
+
+                Tables\Columns\TextColumn::make('ruc')
+                    ->label('RUC')
+                    ->searchable(),
+
+                Tables\Columns\IconColumn::make('is_active')
+                    ->label('Estado')
+                    ->boolean(),
             ])
             ->filters([
                 //

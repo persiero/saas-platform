@@ -13,17 +13,23 @@ class DatabaseSeeder extends Seeder
 
     public function run(): void
     {
-        // Crear el usuario administrador por defecto
-        User::create([
-            'name' => 'Administrador',
-            'email' => 'admin@admin.com',
-            'password' => Hash::make('password123'), // Siempre encripta la contraseña
-            // 'tenant_id' => 1, // Descomenta esto si tu sistema exige que el usuario pertenezca a una empresa desde el inicio
+        // En lugar de User::create, usamos updateOrCreate
+        // Busca por email; si existe, lo actualiza. Si no, lo crea.
+        \App\Models\User::updateOrCreate(
+            ['email' => 'admin@admin.com'], // Condición de búsqueda
+            [
+                'name' => 'Administrador',
+                'password' => \Illuminate\Support\Facades\Hash::make('password123'),
+                'tenant_id' => 1, // Descomenta esto si ya tienes un tenant creado
+            ]
+        );
+
+
+        $this->call([
+            \Percy\Core\Database\Seeders\BusinessSectorSeeder::class,
+            \Percy\Core\Database\Seeders\SunatSeeder::class,
         ]);
 
-        // Si tienes otros seeders (como los de roles, permisos o tenants), llámalos aquí:
-        // $this->call([
-        //     TenantSeeder::class,
-        // ]);
+
     }
 }

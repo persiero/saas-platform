@@ -4713,7 +4713,7 @@
             "dist": {
                 "type": "path",
                 "url": "../core-business",
-                "reference": "981ae1472d906c3a9a36b11cbf0706c34b202d48"
+                "reference": "c49d164f879541ca97212ed4ae908da9b80ab4cb"
             },
             "require": {
                 "barryvdh/laravel-dompdf": "^3.1",
@@ -4737,7 +4737,8 @@
             },
             "autoload": {
                 "psr-4": {
-                    "Percy\\Core\\": "src/"
+                    "Percy\\Core\\": "src/",
+                    "Percy\\Core\\Database\\Seeders\\": "database/seeders/"
                 }
             },
             "license": [
