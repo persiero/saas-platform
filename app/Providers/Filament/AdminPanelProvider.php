@@ -27,8 +27,27 @@ class AdminPanelProvider extends PanelProvider
             ->id('admin')
             ->path('admin')
             ->login()
+            // 🚀 CONFIGURACIÓN DE BRANDING CON LOGOS PARA MODO CLARO Y OSCURO
+            ->brandLogo(asset('images/logo.png')) // Logo para modo claro
+            ->darkModeBrandLogo(asset('images/logo-dark.png')) // Logo para modo oscuro
+            ->brandLogoHeight('4rem')
+
+            // brandName aparece si el logo no carga, o en el login por defecto
+            ->brandName('Virtual TI SaaS')
+
+            // El Favicon (icono pequeño de la pestaña del navegador)
+            ->favicon(asset('favicon.png')) // Asegúrate de tener un favicon.ico en public
+
+            // 🌈 COLOR FIJO (El color del "SaaS" antes de entrar)
             ->colors([
-                'primary' => Color::Amber,
+                'primary' => Color::Indigo, // Usamos un azul profesional por defecto
+            ])
+            ->font('Inter')
+            ->sidebarWidth('15rem')
+            ->sidebarCollapsibleOnDesktop()
+            // AQUÍ REGISTRAMOS EL MIDDLEWARE
+            ->authMiddleware([
+                \App\Http\Middleware\SetPanelTheme::class,
             ])
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')
@@ -38,7 +57,6 @@ class AdminPanelProvider extends PanelProvider
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
             ->widgets([
                 Widgets\AccountWidget::class,
-                Widgets\FilamentInfoWidget::class,
             ])
             ->middleware([
                 EncryptCookies::class,

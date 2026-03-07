@@ -17,7 +17,10 @@ class CustomerResource extends Resource
 {
     protected static ?string $model = Customer::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
+    protected static ?string $navigationIcon = 'heroicon-o-users';
+    protected static ?string $navigationLabel = 'Clientes';
+    protected static ?string $navigationGroup = 'Catálogos';
+    protected static ?int $navigationSort = 20;
 
     public static function getEloquentQuery(): Builder
     {
@@ -33,7 +36,7 @@ class CustomerResource extends Resource
                     ->required()
                     ->maxLength(150)
                     ->columnSpan(2), // Ocupa el doble de espacio
-                    
+
                 Forms\Components\Select::make('document_type')
                     ->label('Tipo de Documento')
                     ->options([
@@ -43,21 +46,21 @@ class CustomerResource extends Resource
                         'PASAPORTE' => 'Pasaporte',
                         'OTROS' => 'Otros',
                     ]),
-                    
+
                 Forms\Components\TextInput::make('document_number')
                     ->label('Número de Documento')
                     ->maxLength(20),
-                    
+
                 Forms\Components\TextInput::make('phone')
                     ->label('Teléfono')
                     ->tel() // Teclado numérico en móviles
                     ->maxLength(30),
-                    
+
                 Forms\Components\TextInput::make('email')
                     ->label('Correo Electrónico')
                     ->email() // Valida que tenga un @
                     ->maxLength(150),
-                    
+
                 Forms\Components\TextInput::make('address')
                     ->label('Dirección')
                     ->maxLength(255)
@@ -73,7 +76,7 @@ class CustomerResource extends Resource
                     ->label('Nombre / Razón Social')
                     ->searchable()
                     ->sortable(),
-                    
+
                 Tables\Columns\TextColumn::make('document_type')
                     ->label('Tipo Doc.')
                     ->formatStateUsing(fn (string $state): string => match ($state) {
@@ -85,11 +88,11 @@ class CustomerResource extends Resource
                     })
                     ->badge() // Le da un diseño de "etiqueta" muy visual
                     ->color('info'),
-                    
+
                 Tables\Columns\TextColumn::make('document_number')
                     ->label('N° Documento')
                     ->searchable(),
-                
+
                 Tables\Columns\TextColumn::make('address')
                     ->label('Dirección (Obligatorio para Facturas)')
                     ->limit(50) // <-- Así se recorta el texto visualmente en una tabla
@@ -99,12 +102,12 @@ class CustomerResource extends Resource
                     ->label('Número de Documento')
                     ->limit(15)
                     ->searchable(),
-                    
+
                 Tables\Columns\TextColumn::make('email')
                     ->label('Correo')
                     ->searchable()
                     ->toggleable(isToggledHiddenByDefault: true), // Se puede ocultar/mostrar con un botón
-                    
+
                 Tables\Columns\TextColumn::make('created_at')
                     ->label('Registrado el')
                     ->dateTime('d/m/Y')

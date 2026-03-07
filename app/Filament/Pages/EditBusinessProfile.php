@@ -23,9 +23,10 @@ class EditBusinessProfile extends Page implements HasForms
     protected static ?string $navigationGroup = 'Configuración';
     protected static ?string $navigationLabel = 'Mi Empresa';
     protected static ?string $title = 'Configuración de SUNAT';
-    
+    protected static ?int $navigationSort = 61;
+
     // Aquí le decimos a Filament qué vista HTML va a pintar
-    protected static string $view = 'filament.pages.edit-business-profile';
+    protected static string $view = 'percy-core::filament.pages.edit-business-profile';
 
     public ?array $data = [];
 
@@ -77,7 +78,7 @@ class EditBusinessProfile extends Page implements HasForms
                                     ->default('beta')
                                     ->required()
                                     ->columnSpanFull(),
-                                
+
                                 TextInput::make('sunat_sol_user')
                                     ->label('Usuario SOL')
                                     // Le damos instrucciones claras al cliente
@@ -86,7 +87,7 @@ class EditBusinessProfile extends Page implements HasForms
                                     ->label('Clave SOL')
                                     ->password()
                                     ->revealable(),
-                                
+
                                 FileUpload::make('sunat_certificate')
                                     ->label('Certificado Digital (.pem)')
                                     ->directory('certificates')
@@ -103,11 +104,11 @@ class EditBusinessProfile extends Page implements HasForms
                                     ->label('Porcentaje de IGV (%)')
                                     ->numeric()
                                     ->default(18),
-                                    
+
                                 Toggle::make('prices_include_igv')
                                     ->label('Los precios del catálogo ya incluyen IGV')
                                     ->default(true),
-                                    
+
                                 Toggle::make('auto_send_sunat')
                                     ->label('Enviar a SUNAT automáticamente')
                                     ->default(true),
@@ -124,7 +125,7 @@ class EditBusinessProfile extends Page implements HasForms
         if ($tenant) {
             // Actualizamos la base de datos con los cambios del formulario
             $tenant->update($this->form->getState());
-            
+
             // Mostramos una alerta verde bonita
             Notification::make()
                 ->success()

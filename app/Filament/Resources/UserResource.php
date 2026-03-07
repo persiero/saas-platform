@@ -19,8 +19,9 @@ class UserResource extends Resource
     protected static ?string $model = User::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-users';
-
     protected static ?string $navigationLabel = 'Usuarios';
+    protected static ?string $navigationGroup = 'Configuración';
+    protected static ?int $navigationSort = 63;
 
     public static function form(Form $form): Form
     {
@@ -34,21 +35,21 @@ class UserResource extends Resource
                     ->label('Nombre Completo')
                     ->required()
                     ->maxLength(255),
-                    
+
                 Forms\Components\TextInput::make('email')
                     ->label('Correo Electrónico')
                     ->email()
                     ->required()
                     ->unique(ignoreRecord: true)
                     ->maxLength(255),
-                    
+
                 Forms\Components\TextInput::make('password')
                     ->label('Contraseña')
                     ->password()
                     ->required(fn (string $operation): bool => $operation === 'create')
                     ->dehydrated(fn (?string $state) => filled($state))
                     ->revealable(),
-                    
+
                 Forms\Components\Select::make('roles')
                     ->relationship('roles', 'name')
                     ->label('Roles Asignados')
@@ -66,16 +67,16 @@ class UserResource extends Resource
                 Tables\Columns\TextColumn::make('name')
                     ->label('Nombre')
                     ->searchable(),
-                    
+
                 Tables\Columns\TextColumn::make('email')
                     ->label('Correo')
                     ->searchable(),
-                    
+
                 Tables\Columns\TextColumn::make('roles.name')
                     ->label('Roles')
                     ->badge() // Muestra los roles como etiquetas bonitas
                     ->color('info'),
-                    
+
                 Tables\Columns\TextColumn::make('created_at')
                     ->label('Creado el')
                     ->dateTime('d/m/Y')

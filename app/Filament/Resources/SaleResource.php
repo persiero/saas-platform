@@ -26,6 +26,9 @@ class SaleResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-shopping-cart';
     protected static ?string $navigationLabel = 'Ventas';
+    protected static ?string $modelLabel = 'Venta';
+    protected static ?string $pluralModelLabel = 'Ventas';
+    protected static ?int $navigationSort = 10;
 
     public static function getEloquentQuery(): Builder
     {
@@ -91,29 +94,24 @@ class SaleResource extends Resource
 
                         Forms\Components\Select::make('payment_method')
                             ->label('Método de Pago')
-                            ->options([
-                                'Efectivo' => 'Efectivo',
-                                'Yape' => 'Yape',
-                                'Plin' => 'Plin',
-                                'Transferencia' => 'Transferencia Bancaria',
-                                'Tarjeta' => 'Tarjeta (POS)',
-                            ])
+                            ->options(Sale::PAYMENT_METHODS)
                             ->default('Efectivo')
-                            ->live() // Escucha los cambios en tiempo real
+                            ->live()
                             ->required()
-                            ->afterStateUpdated(fn (Forms\Set $set) => $set('payment_reference', null)), // Limpia la referencia al cambiar
+                            ->afterStateUpdated(fn (Forms\Set $set) => $set('payment_reference', null)),
 
                         Forms\Components\TextInput::make('payment_reference')
                             ->label('N° de Operación / Referencia')
                             ->placeholder('Ej: 123456')
-                            // Se muestra SOLO si el método de pago NO es Efectivo
-                            ->visible(fn (\Filament\Forms\Get $get) => $get('payment_method') !== 'Efectivo' && $get('payment_method') !== null)
-                            // Es obligatorio SOLO si no es Efectivo
-                            ->required(fn (\Filament\Forms\Get $get) => $get('payment_method') !== 'Efectivo'),
+                            ->visible(fn (\Filament\Forms\Get $get) => Sale::requiresReference($get('payment_method') ?? ''))
+                            ->required(fn (\Filament\Forms\Get $get) => Sale::requiresReference($get('payment_method') ?? '')),
 
                         Forms\Components\DateTimePicker::make('sold_at')
                             ->label('Fecha de Emisión')
                             ->default(now())
+                            ->minDate(now()->subDays(7))
+                            ->maxDate(now())
+                            ->helperText('SUNAT solo acepta documentos de los últimos 7 días')
                             ->required(),
 
                         Forms\Components\Select::make('status')
@@ -145,20 +143,38 @@ class SaleResource extends Resource
                                     ->searchable()
                                     ->preload()
                                     ->required()
-                                    ->columnSpan(4) // Más ancho
+                                    ->columnSpan(4)
                                     ->live(onBlur: true)
                                     ->afterStateUpdated(function ($state, Set $set, Get $get) {
                                         if ($state) {
                                             $product = Product::find($state);
-                                            // Llenamos campos visuales
                                             $set('unit_price', $product->price);
                                             $set('afectacion_igv_id', $product->afectacion_igv_id);
-                                            // Llenamos campos ocultos
                                             $set('item_name', $product->name);
+                                            $set('_stock_disponible', $product->current_stock);
                                         }
                                         self::updateRow($get, $set);
                                         self::updateTotals($get, $set);
                                     }),
+
+                                Forms\Components\Placeholder::make('stock_info')
+                                    ->label('')
+                                    ->content(function (Get $get) {
+                                        $stock = $get('_stock_disponible');
+                                        $cantidad = (float) ($get('quantity') ?? 0);
+
+                                        if ($stock !== null) {
+                                            if ($cantidad > $stock) {
+                                                return "⚠️ Stock: {$stock} unidades (INSUFICIENTE)";
+                                            }
+                                            return "✓ Stock disponible: {$stock} unidades";
+                                        }
+                                        return '';
+                                    })
+                                    ->columnSpan(2)
+                                    ->visible(fn (Get $get) => $get('product_id') !== null),
+
+                                Forms\Components\Hidden::make('_stock_disponible'),
 
                                 Forms\Components\Select::make('afectacion_igv_id')
                                     ->relationship('afectacionIgv', 'descripcion')
@@ -172,9 +188,10 @@ class SaleResource extends Resource
                                     ->label('Cant.')
                                     ->numeric()
                                     ->default(1)
+                                    ->minValue(0.01)
                                     ->required()
-                                    ->columnSpan(2) // Ahora tiene un tamaño excelente
-                                    ->live(onBlur: true) // Se actualiza al hacer clic fuera de la caja
+                                    ->columnSpan(2)
+                                    ->live(onBlur: true)
                                     ->afterStateUpdated(fn(Get $get, Set $set) => [self::updateRow($get, $set), self::updateTotals($get, $set)]),
 
                                 Forms\Components\TextInput::make('unit_price')
@@ -250,57 +267,82 @@ class SaleResource extends Resource
     {
         return $table
         ->columns([
-            // 1. Identificadores
-            Tables\Columns\TextColumn::make('id')
-                ->label('ID')
-                ->sortable()
-                ->toggleable(isToggledHiddenByDefault: true),
-
             Tables\Columns\TextColumn::make('document_number')
                 ->label('Comprobante')
                 ->state(fn (Sale $record): string => "{$record->series}-{$record->correlative}")
                 ->searchable(['series', 'correlative'])
-                ->sortable()
+                ->sortable(false)
                 ->weight('bold')
-                // NUEVO: Esto mostrará un texto pequeño debajo del número de la Nota
+                ->icon(fn (Sale $record): string => match ($record->document_type) {
+                    '01' => 'heroicon-o-document-text',
+                    '03' => 'heroicon-o-receipt-percent',
+                    '07' => 'heroicon-o-arrow-uturn-left',
+                    '08' => 'heroicon-o-arrow-trending-up',
+                    default => 'heroicon-o-document',
+                })
                 ->description(fn (Sale $record): ?string =>
                     in_array($record->document_type, ['07', '08'])
                         ? "Ref: {$record->affected_document_series}-{$record->affected_document_correlative}"
-                        : null
+                        : match ($record->document_type) {
+                            '01' => 'Factura',
+                            '03' => 'Boleta',
+                            default => null,
+                        }
                 )
                 ->color(fn (Sale $record): string => match ($record->document_type) {
-                    '07' => 'danger',  // Crédito (Rojo)
-                    '08' => 'warning', // Débito (Amarillo)
-                    default => 'primary', // Facturas/Boletas normales
+                    '07' => 'danger',
+                    '08' => 'warning',
+                    '01' => 'info',
+                    '03' => 'success',
+                    default => 'gray',
                 }),
 
-            // 2. Información del Cliente y Venta
             Tables\Columns\TextColumn::make('customer.name')
                 ->label('Cliente')
                 ->placeholder('Público en General')
                 ->sortable()
-                ->searchable(),
+                ->searchable()
+                ->icon('heroicon-o-user')
+                ->limit(30)
+                ->tooltip(fn (Sale $record): ?string => $record->customer?->name),
 
             Tables\Columns\TextColumn::make('total')
                 ->label('Total')
                 ->money('PEN')
                 ->sortable()
-                ->alignment('right'),
+                ->weight('bold')
+                ->alignment('right')
+                ->size('lg'),
 
-            // 3. Estados (Interno y SUNAT)
-            Tables\Columns\TextColumn::make('status')
-                ->label('Venta')
+            Tables\Columns\TextColumn::make('payment_method')
+                ->label('Pago')
                 ->badge()
+                ->icon(fn (string $state): string => match ($state) {
+                    'Efectivo' => 'heroicon-o-banknotes',
+                    'Yape', 'Plin' => 'heroicon-o-device-phone-mobile',
+                    'Tarjeta' => 'heroicon-o-credit-card',
+                    'Transferencia' => 'heroicon-o-arrow-path',
+                    default => 'heroicon-o-currency-dollar',
+                })
                 ->color(fn (string $state): string => match ($state) {
-                    'completed' => 'success',
-                    'pending' => 'warning',
-                    'canceled' => 'danger',
+                    'Efectivo' => 'success',
+                    'Yape' => 'purple',
+                    'Plin' => 'info',
+                    'Tarjeta' => 'warning',
+                    'Transferencia' => 'gray',
                     default => 'gray',
-                }),
+                })
+                ->toggleable(),
 
             Tables\Columns\TextColumn::make('sunat_status')
-                ->label('Estado SUNAT')
+                ->label('SUNAT')
                 ->badge()
+                ->icon(fn (string $state): string => match ($state) {
+                    'accepted' => 'heroicon-o-check-circle',
+                    'pending' => 'heroicon-o-clock',
+                    'rejected' => 'heroicon-o-x-circle',
+                    default => 'heroicon-o-question-mark-circle',
+                })
                 ->color(fn (string $state): string => match ($state) {
                     'accepted' => 'success',
                     'pending' => 'warning',
@@ -308,21 +350,82 @@ class SaleResource extends Resource
                     default => 'gray',
                 })
                 ->formatStateUsing(fn (string $state): string => match ($state) {
-                    'accepted' => 'ACEPTADO',
-                    'pending' => 'PENDIENTE',
-                    'rejected' => 'RECHAZADO',
-                    default => strtoupper($state),
+                    'accepted' => 'Aceptado',
+                    'pending' => 'Pendiente',
+                    'rejected' => 'Rechazado',
+                    default => ucfirst($state),
                 })
-                ->description(fn (Sale $record): ?string => $record->sunat_description),
+                ->tooltip(fn (Sale $record): ?string =>
+                    $record->sent_at
+                        ? "Enviado: {$record->sent_at->format('d/m/Y H:i')}"
+                        : $record->sunat_description
+                ),
 
             Tables\Columns\TextColumn::make('sold_at')
                 ->label('Fecha')
                 ->dateTime('d/m/Y H:i')
-                ->sortable(),
+                ->sortable()
+                ->icon('heroicon-o-calendar')
+                ->since()
+                ->tooltip(fn (Sale $record): string => $record->sold_at->format('d/m/Y H:i:s')),
         ])
+        ->defaultSort('sold_at', 'desc')
         ->filters([
-            // Filtros de fecha o tipo pueden ir aquí después
+            Tables\Filters\SelectFilter::make('document_type')
+                ->label('Tipo')
+                ->options([
+                    '01' => 'Facturas',
+                    '03' => 'Boletas',
+                    '07' => 'Notas de Crédito',
+                    '08' => 'Notas de Débito',
+                ])
+                ->multiple(),
+
+            Tables\Filters\SelectFilter::make('sunat_status')
+                ->label('Estado SUNAT')
+                ->options([
+                    'accepted' => 'Aceptado',
+                    'pending' => 'Pendiente',
+                    'rejected' => 'Rechazado',
+                ])
+                ->multiple(),
+
+            Tables\Filters\SelectFilter::make('payment_method')
+                ->label('Método de Pago')
+                ->options(Sale::PAYMENT_METHODS)
+                ->multiple(),
+
+            Tables\Filters\Filter::make('sold_at')
+                ->form([
+                    Forms\Components\DatePicker::make('desde')
+                        ->label('Desde'),
+                    Forms\Components\DatePicker::make('hasta')
+                        ->label('Hasta'),
+                ])
+                ->query(function (Builder $query, array $data): Builder {
+                    return $query
+                        ->when(
+                            $data['desde'],
+                            fn (Builder $query, $date): Builder => $query->whereDate('sold_at', '>=', $date),
+                        )
+                        ->when(
+                            $data['hasta'],
+                            fn (Builder $query, $date): Builder => $query->whereDate('sold_at', '<=', $date),
+                        );
+                })
+                ->indicateUsing(function (array $data): array {
+                    $indicators = [];
+                    if ($data['desde'] ?? null) {
+                        $indicators[] = 'Desde: ' . \Carbon\Carbon::parse($data['desde'])->format('d/m/Y');
+                    }
+                    if ($data['hasta'] ?? null) {
+                        $indicators[] = 'Hasta: ' . \Carbon\Carbon::parse($data['hasta'])->format('d/m/Y');
+                    }
+                    return $indicators;
+                }),
         ])
+        ->filtersFormWidth('md')
+        ->filtersFormColumns(2)
         ->actions([
             // GRUPO 1: Acciones Principales (Envío y Ticket)
             Tables\Actions\Action::make('sendToSunat')
@@ -359,6 +462,20 @@ class SaleResource extends Resource
                                 ->persistent()
                                 ->send();
                         }
+                    } catch (\GuzzleHttp\Exception\ConnectException $e) {
+                        \Filament\Notifications\Notification::make()
+                            ->title('Error de Conexión')
+                            ->body('No se pudo conectar con SUNAT. Verifique su conexión a internet.')
+                            ->danger()
+                            ->persistent()
+                            ->send();
+                    } catch (\GuzzleHttp\Exception\RequestException $e) {
+                        \Filament\Notifications\Notification::make()
+                            ->title('Timeout')
+                            ->body('La solicitud a SUNAT tardó demasiado. Inténtelo nuevamente.')
+                            ->warning()
+                            ->persistent()
+                            ->send();
                     } catch (\Exception $e) {
                         \Filament\Notifications\Notification::make()
                             ->title('Error Crítico')
@@ -369,10 +486,11 @@ class SaleResource extends Resource
                 }),
 
             Tables\Actions\Action::make('print')
-                ->label('Ticket')
+                ->label('Ticket') // Cambié el nombre para mayor claridad
                 ->icon('heroicon-o-printer')
                 ->color('info')
-                ->url(fn (Sale $record): string => route('sales.ticket', $record))
+                // Cambiamos 'sales.ticket' por la ruta del core: 'percy.print.ticket'
+                ->url(fn (Sale $record): string => route('percy.print.ticket', $record))
                 ->openUrlInNewTab(),
 
             // GRUPO 2: Archivos Digitales
@@ -394,7 +512,7 @@ class SaleResource extends Resource
             ->color('gray'),
 
             Tables\Actions\Action::make('anularVenta')
-                ->label('Generar Nota de Crédito')
+                ->label('Generar NC')
                 ->icon('heroicon-o-document-minus')
                 ->color('danger')
                 // Solo se muestra si el documento original es Boleta o Factura y ya fue aceptado
@@ -434,16 +552,7 @@ class SaleResource extends Resource
                 ->action(function (array $data, Sale $record) {
                     try {
                         // 1. Clonamos la venta original pero vaciamos los datos de respuesta SUNAT anteriores
-                        $nota = $record->replicate([
-                            'sunat_status', 'sunat_code', 'sunat_description', 'sunat_hash',
-                            'sunat_xml_path', 'sunat_cdr_path', 'sunat_pdf_path', 'legend_text'
-                        ]);
-
-                        // 2. Le asignamos su nueva identidad como Nota de Crédito
-                        //$nota->document_type = '07';
-                        //$nota->series = $data['serie_nota'];
-
-                        // --- NUEVA LÓGICA DE CORRELATIVO AUTOMÁTICO ---
+                        // --- LÓGICA DE CORRELATIVO AUTOMÁTICO ---
                         $serieConfig = \Percy\Core\Models\Serie::where('document_type', '07')
                             ->where('serie', $data['serie_nota'])
                             ->first();
@@ -454,7 +563,11 @@ class SaleResource extends Resource
 
                         $serieConfig->increment('correlative'); // +1 al contador de tu tabla series
 
-                        $nota = $record->replicate([/* ... campos a omitir ... */]);
+                        // Clonamos la venta original pero vaciamos los datos de respuesta SUNAT anteriores
+                        $nota = $record->replicate([
+                            'sunat_status', 'sunat_code', 'sunat_description', 'sunat_hash',
+                            'sunat_xml_path', 'sunat_cdr_path', 'sunat_pdf_path', 'legend_text'
+                        ]);
                         $nota->document_type = '07';
                         $nota->series = $data['serie_nota'];
                         $nota->correlative = $serieConfig->correlative; // Asignamos el número automático ✅
@@ -493,12 +606,9 @@ class SaleResource extends Resource
                         $result = $service->processAndSend($nota);
 
                         if ($result->isSuccess()) {
-                            // Opcional: Cambiar el estado interno del documento original a "Anulado"
-                            $record->update(['status' => 'canceled']);
-
                             \Filament\Notifications\Notification::make()
                                 ->title('Nota de Crédito Aceptada')
-                                ->body('Se anuló el comprobante correctamente.')
+                                ->body('Se anuló el comprobante y se devolvió el stock correctamente.')
                                 ->success()
                                 ->send();
                         } else {
@@ -520,7 +630,7 @@ class SaleResource extends Resource
                 }),
 
             Tables\Actions\Action::make('aumentarValor')
-                ->label('Generar Nota de Débito')
+                ->label('Generar ND')
                 ->icon('heroicon-o-document-plus') // Un ícono de "más"
                 ->color('warning') // Color amarillo para diferenciarlo del rojo de anulación
                 ->visible(fn (Sale $record) => $record->sunat_status === 'accepted' && in_array($record->document_type, ['01', '03']))
@@ -556,8 +666,7 @@ class SaleResource extends Resource
                     // NUEVO: Pedimos el producto (para que cuadre en tu BD) y el monto a cobrar
                     Forms\Components\Select::make('product_id')
                         ->label('Concepto a cobrar')
-                        ->relationship('items.product', 'name') // O usa una consulta directa a Product::class si falla
-                        ->options(\Percy\Core\Models\Product::pluck('name', 'id'))
+                        ->options(\Percy\Core\Models\Product::where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id)->pluck('name', 'id'))
                         ->required()
                         ->searchable(),
 
@@ -569,17 +678,7 @@ class SaleResource extends Resource
                 ])
                 ->action(function (array $data, Sale $record) {
                     try {
-                        // 1. Clonamos la venta original limpia de estados
-                        $nota = $record->replicate([
-                            'sunat_status', 'sunat_code', 'sunat_description', 'sunat_hash',
-                            'sunat_xml_path', 'sunat_cdr_path', 'sunat_pdf_path', 'legend_text'
-                        ]);
-
-                        // 2. Le asignamos su identidad como Nota de Débito
-                        //$nota->document_type = '08'; // Código SUNAT para Débito
-                        //$nota->series = $data['serie_nota'];
-
-                        // --- NUEVA LÓGICA DE CORRELATIVO AUTOMÁTICO ---
+                        // --- LÓGICA DE CORRELATIVO AUTOMÁTICO ---
                         $serieConfig = \Percy\Core\Models\Serie::where('document_type', '08')
                             ->where('serie', $data['serie_nota'])
                             ->first();
@@ -590,7 +689,17 @@ class SaleResource extends Resource
 
                         $serieConfig->increment('correlative');
 
-                        $nota = $record->replicate([/* ... */]);
+                        // Clonamos la venta original limpia de estados
+                        $nota = $record->replicate([
+                            'sunat_status',
+                            'sunat_code',
+                            'sunat_description',
+                            'sunat_hash',
+                            'sunat_xml_path',
+                            'sunat_cdr_path',
+                            'sunat_pdf_path',
+                            'legend_text'
+                        ]);
                         $nota->document_type = '08';
                         $nota->series = $data['serie_nota'];
                         $nota->correlative = $serieConfig->correlative; // Número automático ✅

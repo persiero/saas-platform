@@ -18,11 +18,9 @@ class SerieResource extends Resource
     protected static ?string $model = Serie::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-document-duplicate';
-
-    protected static ?string $navigationLabel = 'Series y Comprobantes';
-
-    // Lo ponemos en un grupo de configuración para mantener ordenado el menú
+    protected static ?string $navigationLabel = 'Series Comprobantes';
     protected static ?string $navigationGroup = 'Configuración';
+    protected static ?int $navigationSort = 62;
 
     public static function form(Form $form): Form
     {

@@ -17,7 +17,10 @@ class CategoryResource extends Resource
 {
     protected static ?string $model = Category::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
+    protected static ?string $navigationIcon = 'heroicon-o-tag';
+    protected static ?string $navigationLabel = 'Categorías';
+    protected static ?string $navigationGroup = 'Catálogos';
+    protected static ?int $navigationSort = 21;
 
     public static function getEloquentQuery(): Builder
     {
@@ -51,16 +54,16 @@ class CategoryResource extends Resource
                     ->label('Nombre')
                     ->searchable() // Agrega una barra de búsqueda para este campo
                     ->sortable(),  // Permite ordenar alfabéticamente
-                    
+
                 Tables\Columns\TextColumn::make('description')
                     ->label('Descripción')
                     ->limit(50) // Si la descripción es muy larga, la recorta
                     ->searchable(),
-                    
+
                 Tables\Columns\IconColumn::make('active')
                     ->label('Activa')
                     ->boolean(), // Muestra un check verde o una X roja
-                    
+
                 Tables\Columns\TextColumn::make('created_at')
                     ->label('Fecha de Creación')
                     ->dateTime('d/m/Y')
