@@ -10,6 +10,9 @@ use Filament\Forms\Form;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Filament\Forms\Components\Grid;
+use Filament\Forms\Components\Section;
+use Filament\Forms\Components\Placeholder;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Illuminate\Support\Facades\Auth;
@@ -27,66 +30,92 @@ class UserResource extends Resource
     {
         return $form
             ->schema([
-                // ESTE CAMPO OCULTO ASIGNA EL NEGOCIO AUTOMÁTICAMENTE
+                // Campo oculto para multi-tenant
                 Forms\Components\Hidden::make('tenant_id')
                     ->default(fn () => Auth::user()->tenant_id),
 
                 Forms\Components\TextInput::make('name')
-                    ->label('Nombre Completo')
+                    ->label('Nombre completo')
                     ->required()
-                    ->maxLength(255),
+                    ->maxLength(255)
+                    ->placeholder('Ej: Juan Pérez')
+                    ->columnSpan(1),
 
                 Forms\Components\TextInput::make('email')
-                    ->label('Correo Electrónico')
+                    ->label('Correo electrónico')
                     ->email()
                     ->required()
                     ->unique(ignoreRecord: true)
-                    ->maxLength(255),
+                    ->maxLength(255)
+                    ->placeholder('usuario@empresa.com')
+                    ->columnSpan(1),
+
+                Forms\Components\Select::make('roles')
+                    ->relationship('roles', 'name')
+                    ->label('Roles asignados')
+                    ->multiple()
+                    ->preload()
+                    ->searchable()
+                    ->helperText('Los roles determinan qué módulos puede usar el usuario.')
+                    ->columnSpanFull(),
 
                 Forms\Components\TextInput::make('password')
                     ->label('Contraseña')
                     ->password()
+                    ->revealable()
                     ->required(fn (string $operation): bool => $operation === 'create')
                     ->dehydrated(fn (?string $state) => filled($state))
-                    ->revealable(),
-
-                Forms\Components\Select::make('roles')
-                    ->relationship('roles', 'name')
-                    ->label('Roles Asignados')
-                    ->multiple()
-                    ->preload()
-                    ->searchable()
+                    ->dehydrateStateUsing(fn (string $state) => \Illuminate\Support\Facades\Hash::make($state)) // ENCRIPTACIÓN MÁGICA
+                    ->helperText('Déjalo vacío si no deseas cambiar la contraseña.')
                     ->columnSpanFull(),
-            ]);
+            ])->columns(2);
     }
 
     public static function table(Table $table): Table
     {
         return $table
             ->columns([
+
                 Tables\Columns\TextColumn::make('name')
-                    ->label('Nombre')
-                    ->searchable(),
+                    ->label('Usuario')
+                    ->searchable()
+                    ->sortable()
+                    ->weight('medium'),
 
                 Tables\Columns\TextColumn::make('email')
-                    ->label('Correo')
-                    ->searchable(),
+                    ->label('Correo electrónico')
+                    ->searchable()
+                    ->copyable(),
 
                 Tables\Columns\TextColumn::make('roles.name')
                     ->label('Roles')
-                    ->badge() // Muestra los roles como etiquetas bonitas
-                    ->color('info'),
+                    ->badge()
+                    ->color('info')
+                    ->separator(','),
 
                 Tables\Columns\TextColumn::make('created_at')
-                    ->label('Creado el')
-                    ->dateTime('d/m/Y')
+                    ->label('Fecha de creación')
+                    ->date('d/m/Y')
                     ->sortable(),
+
             ])
             ->filters([
                 //
             ])
             ->actions([
-                Tables\Actions\EditAction::make(),
+                Tables\Actions\ActionGroup::make([
+                    Tables\Actions\EditAction::make()
+                        ->label('Editar')
+                        ->icon('heroicon-o-pencil'),
+                    Tables\Actions\DeleteAction::make()
+                        ->label('Eliminar')
+                        ->icon('heroicon-o-trash')
+                        ->requiresConfirmation(),
+                ])
+                ->label('Acciones')
+                ->icon('heroicon-o-ellipsis-vertical')
+                ->button()
+                ->color('gray'),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
@@ -119,8 +148,8 @@ class UserResource extends Resource
     {
         return [
             'index' => Pages\ListUsers::route('/'),
-            'create' => Pages\CreateUser::route('/create'),
-            'edit' => Pages\EditUser::route('/{record}/edit'),
+            //'create' => Pages\CreateUser::route('/create'),
+            //'edit' => Pages\EditUser::route('/{record}/edit'),
         ];
     }
 }

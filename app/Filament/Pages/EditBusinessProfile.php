@@ -12,6 +12,9 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
+use Filament\Forms\Components\Section;
+use Filament\Forms\Components\Grid;
+use Filament\Forms\Components\Placeholder;
 use Illuminate\Support\Facades\Auth;
 use Percy\Core\Models\Tenant; // Tu modelo de inquilinos
 
@@ -57,51 +60,97 @@ class EditBusinessProfile extends Page implements HasForms
                         Tabs\Tab::make('Datos Fiscales')
                             ->icon('heroicon-o-building-storefront')
                             ->schema([
-                                TextInput::make('ruc')->label('RUC')->numeric()->maxLength(11),
-                                TextInput::make('business_name')->label('Razón Social'),
-                                TextInput::make('address')->label('Dirección Fiscal'),
-                                TextInput::make('ubigeo')->label('Ubigeo (Ej: 130105)')->maxLength(6),
-                                TextInput::make('phone')->label('Teléfono'),
-                                TextInput::make('email')->label('Correo Electrónico')->email(),
-                            ])->columns(2),
+
+                                Section::make('Información fiscal')
+                                    ->description('Datos registrados en SUNAT')
+                                    ->schema([
+
+                                        Grid::make(2)->schema([
+
+                                            TextInput::make('ruc')
+                                                ->label('RUC')
+                                                ->numeric()
+                                                ->maxLength(11)
+                                                ->required(),
+
+                                            TextInput::make('business_name')
+                                                ->label('Razón Social')
+                                                ->required(),
+
+                                            TextInput::make('address')
+                                                ->label('Dirección fiscal'),
+
+                                            TextInput::make('ubigeo')
+                                                ->label('Ubigeo'),
+
+                                            TextInput::make('phone')
+                                                ->label('Teléfono'),
+
+                                            TextInput::make('email')
+                                                ->email()
+                                                ->label('Correo electrónico'),
+
+                                        ])
+
+                                    ])
+
+                            ]),
 
                         // PESTAÑA 2: Motor SUNAT
                         Tabs\Tab::make('Facturación Electrónica')
                             ->icon('heroicon-o-document-check')
                             ->schema([
-                                Select::make('sunat_environment')
-                                    ->label('Entorno SUNAT')
-                                    ->options([
-                                        'beta' => 'Entorno de Pruebas (BETA)',
-                                        'production' => 'Producción (OFICIAL)',
-                                    ])
-                                    ->default('beta')
-                                    ->required()
-                                    ->columnSpanFull(),
+                                Section::make('Configuración SUNAT')
+                                ->description('Credenciales necesarias para emitir comprobantes electrónicos.')
+                                ->schema([
+                                    Select::make('sunat_environment')
+                                        ->label('Entorno')
+                                        ->options([
+                                            'beta' => 'Pruebas (BETA)',
+                                            'production' => 'Producción',
+                                        ])
+                                        ->default('beta')
+                                        ->required(),
 
-                                TextInput::make('sunat_sol_user')
-                                    ->label('Usuario SOL')
-                                    // Le damos instrucciones claras al cliente
-                                    ->helperText('Ingresa solo tu usuario (Ej: MODDATOS). El sistema agregará tu RUC automáticamente.'),
-                                TextInput::make('sunat_sol_pass')
-                                    ->label('Clave SOL')
-                                    ->password()
-                                    ->revealable(),
+                                    // Campo vacío para alinear el grid
+                                    Placeholder::make(''),
 
-                                FileUpload::make('sunat_certificate')
-                                    ->label('Certificado Digital (.pem)')
-                                    ->directory('certificates')
-                                    // Quitamos la restricción estricta de MIME Types que hace fallar a Windows
-                                    // Y le avisamos al usuario que puede seleccionar "Todos los archivos"
-                                    ->helperText('Sube tu archivo .pem. Si no lo ves en la ventana, cambia a "Todos los archivos".'),
-                            ])->columns(2),
+                                    TextInput::make('sunat_sol_user')
+                                        ->label('Usuario SOL')
+                                        // Le damos instrucciones claras al cliente
+                                        ->helperText('Ingresa solo tu usuario (Ej: MODDATOS).'),
+
+                                    TextInput::make('sunat_sol_pass')
+                                        ->label('Clave SOL')
+                                        ->password()
+                                        ->revealable(),
+
+                                    FileUpload::make('sunat_certificate')
+                                        ->label('Certificado Digital (.pem / .pfx)')
+                                        ->directory('certificates')
+                                        // Es vital mantener el disco correcto para la seguridad
+                                        ->disk('sunat')
+                                        ->visibility('private')
+                                        ->helperText('Sube el archivo proporcionado por tu entidad certificadora.'),
+
+                                    // ¡AQUÍ FALTABA ESTE CAMPO!
+                                    TextInput::make('sunat_certificate_password')
+                                        ->label('Contraseña del Certificado')
+                                        ->password()
+                                        ->revealable()
+                                        ->helperText('Necesaria para firmar los XML.'),
+
+                            ])->columns(2)
+
+                        ]),
+
 
                         // PESTAÑA 3: Preferencias
-                        Tabs\Tab::make('Preferencias')
+                        Tabs\Tab::make('Impuestos')
                             ->icon('heroicon-o-cog-8-tooth')
                             ->schema([
                                 TextInput::make('igv_percentage')
-                                    ->label('Porcentaje de IGV (%)')
+                                    ->label('IGV (%)')
                                     ->numeric()
                                     ->default(18),
 
@@ -133,4 +182,5 @@ class EditBusinessProfile extends Page implements HasForms
                 ->send();
         }
     }
+
 }

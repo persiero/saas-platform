@@ -12,6 +12,8 @@ class CreateCashRegister extends CreateRecord
 {
     protected static string $resource = CashRegisterResource::class;
 
+    protected static ?string $title = 'Abrir Caja';
+
     public function mount(): void
     {
         parent::mount();
@@ -41,5 +43,26 @@ class CreateCashRegister extends CreateRecord
         $data['status'] = 'open';
         
         return $data;
+    }
+
+    protected function getFormActions(): array
+    {
+        return [
+            $this->getCreateFormAction()
+                ->label('Abrir Caja')
+                ->icon('heroicon-o-lock-open'),
+            $this->getCancelFormAction()
+                ->label('Cancelar'),
+        ];
+    }
+
+    protected function getRedirectUrl(): string
+    {
+        return $this->getResource()::getUrl('index');
+    }
+
+    protected function getCreatedNotificationTitle(): ?string
+    {
+        return 'Caja abierta correctamente';
     }
 }

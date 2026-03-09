@@ -16,6 +16,8 @@ class SupplierResource extends Resource
     protected static ?string $model = Supplier::class;
     protected static ?string $navigationIcon = 'heroicon-o-building-office-2';
     protected static ?string $navigationLabel = 'Proveedores';
+    protected static ?string $modelLabel = 'Proveedor';
+    protected static ?string $pluralModelLabel = 'Proveedores';
     protected static ?string $navigationGroup = 'Inventario';
     protected static ?int $navigationSort = 50;
 
@@ -28,37 +30,69 @@ class SupplierResource extends Resource
     {
         return $form
             ->schema([
-                Forms\Components\Section::make('Información del Proveedor')->schema([
-                    Forms\Components\TextInput::make('name')
-                        ->label('Nombre / Razón Social')
-                        ->required()
-                        ->maxLength(255),
+                // COLUMNA IZQUIERDA (Principal)
+                Forms\Components\Group::make()->schema([
+                    Forms\Components\Section::make('Identidad Comercial')
+                        ->description('Datos principales de la empresa')
+                        ->icon('heroicon-o-building-storefront')
+                        ->schema([
+                            Forms\Components\TextInput::make('name')
+                                ->label('Nombre / Razón Social')
+                                ->required()
+                                ->maxLength(255)
+                                ->placeholder('Ej: Distribuidora ABC S.A.C.')
+                                ->columnSpan(2),
 
-                    Forms\Components\TextInput::make('ruc')
-                        ->label('RUC')
-                        ->maxLength(11)
-                        ->tel(),
+                            Forms\Components\TextInput::make('ruc')
+                                ->label('RUC')
+                                ->maxLength(11)
+                                ->length(11)
+                                ->numeric()
+                                ->placeholder('20123456789')
+                                ->prefixIcon('heroicon-o-identification')
+                                ->columnSpan(2),
+                        ])->columns(2),
 
-                    Forms\Components\TextInput::make('phone')
-                        ->label('Teléfono')
-                        ->tel()
-                        ->maxLength(20),
+                    Forms\Components\Section::make('Información de Contacto')
+                        ->description('Medios para comunicarte con el proveedor')
+                        ->icon('heroicon-o-identification')
+                        ->schema([
+                            Forms\Components\TextInput::make('phone')
+                                ->label('Teléfono')
+                                ->tel()
+                                ->maxLength(20)
+                                ->placeholder('987 654 321')
+                                ->prefixIcon('heroicon-o-phone')
+                                ->columnSpan(1),
 
-                    Forms\Components\TextInput::make('email')
-                        ->label('Email')
-                        ->email()
-                        ->maxLength(255),
+                            Forms\Components\TextInput::make('email')
+                                ->label('Correo Electrónico')
+                                ->email()
+                                ->maxLength(255)
+                                ->placeholder('contacto@proveedor.com')
+                                ->prefixIcon('heroicon-o-envelope')
+                                ->columnSpan(1),
 
-                    Forms\Components\Textarea::make('address')
-                        ->label('Dirección')
-                        ->rows(2)
-                        ->columnSpanFull(),
+                            Forms\Components\Textarea::make('address')
+                                ->label('Dirección')
+                                ->rows(3)
+                                ->placeholder('Av. Principal 123, Distrito, Provincia, Departamento')
+                                ->columnSpanFull(),
+                        ])->columns(2),
+                    ])->columnSpan(['lg' => 2]),
 
-                    Forms\Components\Toggle::make('active')
-                        ->label('Activo')
-                        ->default(true),
-                ])->columns(2),
-            ]);
+                    // COLUMNA DERECHA (Barra Lateral)
+                    Forms\Components\Group::make()->schema([
+                        Forms\Components\Section::make('Estado')
+                            ->schema([
+                                Forms\Components\Toggle::make('active')
+                                    ->label('Proveedor Activo')
+                                    ->default(true)
+                                    ->helperText('Desactiva si ya no trabajas con este proveedor')
+                            ]),
+                    ])->columnSpan(['lg' => 1]),
+                ])
+                ->columns(3);
     }
 
     public static function table(Table $table): Table
@@ -66,39 +100,99 @@ class SupplierResource extends Resource
         return $table
             ->columns([
                 Tables\Columns\TextColumn::make('name')
-                    ->label('Nombre')
+                    ->label('Proveedor')
                     ->searchable()
-                    ->sortable(),
-
-                Tables\Columns\TextColumn::make('ruc')
-                    ->label('RUC')
-                    ->searchable(),
+                    ->sortable()
+                    ->weight('bold')
+                    ->icon('heroicon-o-building-office-2')
+                    ->description(fn (Supplier $record): ?string => $record->ruc ? "RUC: {$record->ruc}" : null),
 
                 Tables\Columns\TextColumn::make('phone')
-                    ->label('Teléfono'),
+                    ->label('Teléfono')
+                    ->icon('heroicon-o-phone')
+                    ->searchable()
+                    ->placeholder('Sin teléfono')
+                    ->copyable()
+                    ->copyMessage('Teléfono copiado')
+                    ->copyMessageDuration(1500),
 
                 Tables\Columns\TextColumn::make('email')
-                    ->label('Email'),
+                    ->label('Correo Electrónico')
+                    ->icon('heroicon-o-envelope')
+                    ->searchable()
+                    ->placeholder('Sin email')
+                    ->copyable()
+                    ->copyMessage('Email copiado')
+                    ->copyMessageDuration(1500)
+                    ->limit(30),
 
-                Tables\Columns\IconColumn::make('active')
+                Tables\Columns\TextColumn::make('address')
+                    ->label('Dirección')
+                    ->icon('heroicon-o-map-pin')
+                    ->limit(40)
+                    ->searchable()
+                    ->placeholder('Sin dirección')
+                    ->tooltip(fn (Supplier $record): ?string => $record->address)
+                    ->toggleable(isToggledHiddenByDefault: true),
+
+                Tables\Columns\ToggleColumn::make('active')
                     ->label('Activo')
-                    ->boolean(),
+                    ->sortable(),
+
+                Tables\Columns\TextColumn::make('created_at')
+                    ->label('Registrado')
+                    ->dateTime('d/m/Y H:i')
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
             ])
+            ->defaultSort('name', 'asc')
             ->filters([
                 Tables\Filters\TernaryFilter::make('active')
                     ->label('Estado')
-                    ->placeholder('Todos')
-                    ->trueLabel('Activos')
-                    ->falseLabel('Inactivos'),
+                    ->placeholder('Todos los proveedores')
+                    ->trueLabel('Solo activos')
+                    ->falseLabel('Solo inactivos')
+                    ->native(false)
+                    ->indicator('Estado'),
             ])
             ->actions([
-                Tables\Actions\EditAction::make(),
+                Tables\Actions\ActionGroup::make([
+                    Tables\Actions\ViewAction::make()
+                        ->label('Ver')
+                        ->icon('heroicon-o-eye')
+                        ->modalHeading('Detalles del Proveedor')
+                        ->modalSubmitAction(false)
+                        ->modalCancelActionLabel('Cerrar'),
+                    Tables\Actions\EditAction::make()
+                        ->label('Editar')
+                        ->icon('heroicon-o-pencil'),
+                    Tables\Actions\DeleteAction::make()
+                        ->label('Eliminar')
+                        ->icon('heroicon-o-trash')
+                        ->requiresConfirmation()
+                        ->modalHeading('Eliminar Proveedor')
+                        ->modalDescription('¿Estás seguro de que deseas eliminar este proveedor? Esta acción no se puede deshacer.')
+                        ->modalSubmitActionLabel('Sí, eliminar')
+                        ->modalCancelActionLabel('Cancelar'),
+                ])->label('Acciones')
+                  ->icon('heroicon-o-ellipsis-vertical')
+                  ->button()
+                  ->color('gray'),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
+                    Tables\Actions\DeleteBulkAction::make()
+                        ->label('Eliminar seleccionados')
+                        ->requiresConfirmation()
+                        ->modalHeading('Eliminar Proveedores')
+                        ->modalDescription('¿Estás seguro de que deseas eliminar los proveedores seleccionados?')
+                        ->modalSubmitActionLabel('Sí, eliminar')
+                        ->modalCancelActionLabel('Cancelar'),
                 ]),
-            ]);
+            ])
+            ->emptyStateHeading('No hay proveedores registrados')
+            ->emptyStateDescription('Comienza registrando tu primer proveedor usando el botón de arriba.')
+            ->emptyStateIcon('heroicon-o-building-office-2');
     }
 
     public static function getRelations(): array

@@ -41,22 +41,28 @@ class TenantResource extends Resource
                             ->schema([
                                 Forms\Components\TextInput::make('name')
                                     ->label('Nombre del Negocio')
-                                    ->required(),
+                                    ->required()
+                                    ->columnSpan(2),
 
                                 // NUEVO: Selector de Giro de Negocio vinculado a la tabla business_sectors
                                 Forms\Components\Select::make('business_sector_id')
-                                    ->label('Giro del Negocio / Sector')
+                                    ->label('Giro del Negocio')
                                     ->relationship('businessSector', 'name')
                                     ->searchable()
                                     ->preload()
-                                    ->required(),
+                                    ->required()
+                                    ->columnSpan(1),
 
                                 Forms\Components\TextInput::make('domain')
-                                    ->label('Dominio (Subdominio)')
-                                    ->unique(ignoreRecord: true),
+                                    ->label('Subdominio')
+                                    ->unique(ignoreRecord: true)
+                                    ->prefix('https://') // UX: Le muestra cómo se verá
+                                    ->suffix('.tusaas.com') // 👈 CAMBIA ESTO por tu dominio real
+                                    ->columnSpan(1),
 
                                 Forms\Components\Toggle::make('is_active')
                                     ->label('¿Está Activo?')
+                                    ->helperText('Apágalo si el cliente no pagó su mensualidad.')
                                     ->default(true)
                                     ->columnSpanFull(), // Para que ocupe todo el ancho y no descuadre
                             ])->columns(2),
@@ -68,20 +74,35 @@ class TenantResource extends Resource
                                 Forms\Components\TextInput::make('ruc')
                                     ->label('RUC')
                                     ->numeric()
-                                    ->maxLength(11),
+                                    ->length(11) // Obliga a que sean 11 dígitos
+                                    ->required() // El RUC debería ser obligatorio para SUNAT
+                                    ->columnSpan(1),
+
                                 Forms\Components\TextInput::make('business_name')
-                                    ->label('Razón Social'),
+                                    ->label('Razón Social')
+                                    ->required()
+                                    ->columnSpan(2),
+
                                 Forms\Components\TextInput::make('address')
-                                    ->label('Dirección Fiscal'),
+                                    ->label('Dirección Fiscal')
+                                    ->columnSpanFull(),
+
                                 Forms\Components\TextInput::make('ubigeo')
-                                    ->label('Ubigeo (Ej: 130105)')
-                                    ->maxLength(6),
+                                    ->label('Ubigeo')
+                                    ->length(6)
+                                    ->placeholder('Ej: 130101 (Trujillo)')
+                                    ->columnSpan(1),
+
                                 Forms\Components\TextInput::make('phone')
-                                    ->label('Teléfono'),
+                                    ->label('Teléfono')
+                                    ->tel()
+                                    ->columnSpan(1),
+
                                 Forms\Components\TextInput::make('email')
                                     ->label('Correo Electrónico')
-                                    ->email(),
-                            ])->columns(2),
+                                    ->email()
+                                    ->columnSpan(1),
+                            ])->columns(3),
 
                         // PESTAÑA 3: Motor SUNAT (Credenciales)
                         Forms\Components\Tabs\Tab::make('Facturación Electrónica')
@@ -136,7 +157,9 @@ class TenantResource extends Resource
                                     ->default(true),
                             ])->columns(2),
                     ])
-                    ->columnSpanFull(),
+                    ->columnSpanFull()
+                    // Evitamos que las pestañas se vean comprimidas en pantallas grandes
+                    ->contained(false),
             ]);
     }
 
@@ -146,7 +169,10 @@ class TenantResource extends Resource
             ->columns([
                 Tables\Columns\TextColumn::make('name')
                     ->label('Negocio')
-                    ->searchable(),
+                    ->searchable()
+                    ->weight('bold')
+                    ->icon('heroicon-o-building-storefront')
+                    ->description(fn (Tenant $record): ?string => $record->business_name), // Razón social debajo
 
                 // Muestra el nombre del sector (Ej: Restaurante, Farmacia)
                 Tables\Columns\TextColumn::make('businessSector.name')
@@ -156,18 +182,36 @@ class TenantResource extends Resource
 
                 Tables\Columns\TextColumn::make('ruc')
                     ->label('RUC')
-                    ->searchable(),
+                    ->searchable()
+                    ->copyable(), // UX: Copia rápida para consultar en SUNAT
 
-                Tables\Columns\IconColumn::make('is_active')
-                    ->label('Estado')
-                    ->boolean(),
+                // Indicador visual de si ya subieron certificado
+                Tables\Columns\IconColumn::make('sunat_certificate')
+                    ->label('Cert. SUNAT')
+                    ->boolean()
+                    ->state(fn (Tenant $record): bool => !empty($record->sunat_certificate))
+                    ->trueIcon('heroicon-o-check-badge')
+                    ->falseIcon('heroicon-o-x-circle'),
+
+                Tables\Columns\ToggleColumn::make('is_active')
+                    ->label('Acceso')
+                    ->sortable(),
             ])
             ->filters([
-                //
+                Tables\Filters\TernaryFilter::make('is_active')
+                    ->label('Estado de Acceso')
+                    ->trueLabel('Activos')
+                    ->falseLabel('Suspendidos'),
             ])
             ->actions([
-                Tables\Actions\EditAction::make(),
+                Tables\Actions\EditAction::make()
+                    ->label('Configurar')
+                    ->icon('heroicon-o-cog-6-tooth'),
             ])
+            ->emptyStateHeading('Aún no tienes clientes')
+            ->emptyStateDescription('Registra tu primer cliente SaaS para empezar.')
+            ->emptyStateIcon('heroicon-o-server-stack')
+
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),

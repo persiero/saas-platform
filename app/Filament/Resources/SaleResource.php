@@ -157,30 +157,11 @@ class SaleResource extends Resource
                                         self::updateTotals($get, $set);
                                     }),
 
-                                Forms\Components\Placeholder::make('stock_info')
-                                    ->label('')
-                                    ->content(function (Get $get) {
-                                        $stock = $get('_stock_disponible');
-                                        $cantidad = (float) ($get('quantity') ?? 0);
-
-                                        if ($stock !== null) {
-                                            if ($cantidad > $stock) {
-                                                return "⚠️ Stock: {$stock} unidades (INSUFICIENTE)";
-                                            }
-                                            return "✓ Stock disponible: {$stock} unidades";
-                                        }
-                                        return '';
-                                    })
-                                    ->columnSpan(2)
-                                    ->visible(fn (Get $get) => $get('product_id') !== null),
-
-                                Forms\Components\Hidden::make('_stock_disponible'),
-
                                 Forms\Components\Select::make('afectacion_igv_id')
                                     ->relationship('afectacionIgv', 'descripcion')
                                     ->label('Tipo IGV')
                                     ->required()
-                                    ->columnSpan(2)
+                                    ->columnSpan(3)
                                     ->live()
                                     ->afterStateUpdated(fn(Get $get, Set $set) => [self::updateRow($get, $set), self::updateTotals($get, $set)]),
 
@@ -190,9 +171,11 @@ class SaleResource extends Resource
                                     ->default(1)
                                     ->minValue(0.01)
                                     ->required()
-                                    ->columnSpan(2)
+                                    ->columnSpan(1)
                                     ->live(onBlur: true)
-                                    ->afterStateUpdated(fn(Get $get, Set $set) => [self::updateRow($get, $set), self::updateTotals($get, $set)]),
+                                    ->afterStateUpdated(fn(Get $get, Set $set) => [self::updateRow($get, $set), self::updateTotals($get, $set)])
+                                    // Magia UX: Mostrar el stock como texto de ayuda para no gastar columnas
+                                    ->helperText(fn (Get $get) => $get('product_id') ? "Stock: " . ($get('_stock_disponible') ?? 0) : null),
 
                                 Forms\Components\TextInput::make('unit_price')
                                     ->label('Precio Unit.')
@@ -210,6 +193,7 @@ class SaleResource extends Resource
                                     ->columnSpan(2),
 
                                 // CAMPOS OCULTOS: Se calculan solos y van a la BD para SUNAT, pero no ensucian la pantalla
+                                Forms\Components\Hidden::make('_stock_disponible'),
                                 Forms\Components\Hidden::make('item_name'),
                                 Forms\Components\Hidden::make('unit_value'),
                                 Forms\Components\Hidden::make('igv_amount'),
@@ -221,42 +205,38 @@ class SaleResource extends Resource
                 ])->columnSpan(['lg' => 3]),
 
                 Forms\Components\Group::make()->schema([
-                    Forms\Components\Section::make('Resumen de Venta')->schema([
-                        Forms\Components\TextInput::make('op_gravadas')
+                    Forms\Components\Section::make('Resumen Financiero')->schema([
+                        Forms\Components\Placeholder::make('op_gravadas_lbl')
                             ->label('Op. Gravadas')
-                            ->numeric()
-                            ->default(0)
-                            ->readonly()
-                            ->prefix('S/'),
+                            ->content(fn (Get $get): string => 'S/ ' . number_format((float)($get('op_gravadas') ?? 0), 2))
+                            ->extraAttributes(['class' => 'flex justify-between border-b pb-1']),
 
-                        Forms\Components\TextInput::make('op_exoneradas')
+                        Forms\Components\Placeholder::make('op_exoneradas_lbl')
                             ->label('Op. Exoneradas')
-                            ->numeric()
-                            ->default(0)
-                            ->readonly()
-                            ->prefix('S/'),
+                            ->content(fn (Get $get): string => 'S/ ' . number_format((float)($get('op_exoneradas') ?? 0), 2))
+                            ->extraAttributes(['class' => 'flex justify-between border-b pb-1 text-gray-500']),
 
-                        Forms\Components\TextInput::make('op_inafectas')
+                        Forms\Components\Placeholder::make('op_inafectas_lbl')
                             ->label('Op. Inafectas')
-                            ->numeric()
-                            ->default(0)
-                            ->readonly()
-                            ->prefix('S/'),
+                            ->content(fn (Get $get): string => 'S/ ' . number_format((float)($get('op_inafectas') ?? 0), 2))
+                            ->extraAttributes(['class' => 'flex justify-between border-b pb-1 text-gray-500']),
 
-                        Forms\Components\TextInput::make('igv')
+                        Forms\Components\Placeholder::make('igv_lbl')
                             ->label('IGV (18%)')
-                            ->numeric()
-                            ->default(0)
-                            ->readonly()
-                            ->prefix('S/'),
+                            ->content(fn (Get $get): string => 'S/ ' . number_format((float)($get('igv') ?? 0), 2))
+                            ->extraAttributes(['class' => 'flex justify-between border-b pb-1']),
 
-                        Forms\Components\TextInput::make('total')
+                        Forms\Components\Placeholder::make('total_lbl')
                             ->label('IMPORTE TOTAL')
-                            ->numeric()
-                            ->default(0)
-                            ->readonly()
-                            ->prefix('S/')
-                            ->required(),
+                            ->content(fn (Get $get): string => 'S/ ' . number_format((float)($get('total') ?? 0), 2))
+                            ->extraAttributes(['class' => 'flex justify-between text-2xl font-black text-primary-600 pt-2']),
+
+                        // Mantenemos los Hidden para que la BD reciba los datos correctamente
+                        Forms\Components\Hidden::make('op_gravadas'),
+                        Forms\Components\Hidden::make('op_exoneradas'),
+                        Forms\Components\Hidden::make('op_inafectas'),
+                        Forms\Components\Hidden::make('igv'),
+                        Forms\Components\Hidden::make('total'),
                     ]),
                 ])->columnSpan(['lg' => 1]),
             ])
@@ -429,7 +409,7 @@ class SaleResource extends Resource
         ->actions([
             // GRUPO 1: Acciones Principales (Envío y Ticket)
             Tables\Actions\Action::make('sendToSunat')
-                ->label('Enviar a SUNAT')
+                ->label('Enviar SUNAT')
                 ->icon('heroicon-o-paper-airplane')
                 ->color('success')
 
@@ -495,6 +475,9 @@ class SaleResource extends Resource
 
             // GRUPO 2: Archivos Digitales
             Tables\Actions\ActionGroup::make([
+                Tables\Actions\ViewAction::make()->label('Ver Detalle'),
+                Tables\Actions\EditAction::make()->label('Editar'),
+
                 Tables\Actions\Action::make('downloadXml')
                     ->label('Descargar XML')
                     ->icon('heroicon-o-code-bracket')
@@ -506,278 +489,277 @@ class SaleResource extends Resource
                     ->icon('heroicon-o-archive-box')
                     ->url(fn (Sale $record) => route('sales.download-cdr', $record))
                     ->visible(fn (Sale $record) => !empty($record->sunat_cdr_path)),
+
+                Tables\Actions\Action::make('anularVenta')
+                    ->label('Nota de Credito')
+                    ->icon('heroicon-o-document-minus')
+                    ->color('danger')
+                    // Solo se muestra si el documento original es Boleta o Factura y ya fue aceptado
+                    ->visible(fn (Sale $record) => $record->sunat_status === 'accepted' && in_array($record->document_type, ['01', '03']))
+                    ->form([
+                        Forms\Components\Select::make('serie_nota')
+                            ->label('Serie de Nota de Crédito')
+                            ->options(function (Sale $record) {
+                                // Determinamos el prefijo: Factura -> FC, Boleta -> BC
+                                $prefix = ($record->document_type === '01') ? 'FC' : 'BC';
+
+                                return \Percy\Core\Models\Serie::where('document_type', '07')
+                                    ->where('serie', 'like', $prefix . '%')
+                                    ->where('active', true)
+                                    ->pluck('serie', 'serie');
+                            })
+                            ->required(),
+
+                        //Forms\Components\TextInput::make('correlativo_nota')
+                            //->label('Correlativo de la Nota (Ej: 1)')
+                            //->numeric()
+                            //->required(),
+
+                        Forms\Components\Select::make('credit_note_type')
+                            ->label('Motivo de Anulación')
+                            ->options([
+                                '01' => 'Anulación de la operación',
+                                '02' => 'Anulación por error en el RUC',
+                                '03' => 'Corrección por error en la descripción',
+                                '06' => 'Devolución total',
+                                '07' => 'Devolución por ítem',
+                                '10' => 'Otros Conceptos',
+                                ])
+                            ->default('01')
+                            ->required(),
+                    ])
+                    ->action(function (array $data, Sale $record) {
+                        try {
+                            // 1. Clonamos la venta original pero vaciamos los datos de respuesta SUNAT anteriores
+                            // --- LÓGICA DE CORRELATIVO AUTOMÁTICO ---
+                            $serieConfig = \Percy\Core\Models\Serie::where('document_type', '07')
+                                ->where('serie', $data['serie_nota'])
+                                ->first();
+
+                            if (!$serieConfig) {
+                                throw new \Exception("Debe registrar la serie {$data['serie_nota']} en Configuración primero.");
+                            }
+
+                            $serieConfig->increment('correlative'); // +1 al contador de tu tabla series
+
+                            // Clonamos la venta original pero vaciamos los datos de respuesta SUNAT anteriores
+                            $nota = $record->replicate([
+                                'sunat_status', 'sunat_code', 'sunat_description', 'sunat_hash',
+                                'sunat_xml_path', 'sunat_cdr_path', 'sunat_pdf_path', 'legend_text'
+                            ]);
+                            $nota->document_type = '07';
+                            $nota->series = $data['serie_nota'];
+                            $nota->correlative = $serieConfig->correlative; // Asignamos el número automático ✅
+
+                            $nota->status = 'completed';
+
+                            // 3. Vinculamos el documento original (La Boleta/Factura que estamos anulando)
+                            $nota->affected_document_type = $record->document_type;
+                            $nota->affected_document_series = $record->series;
+                            $nota->affected_document_correlative = $record->correlative;
+                            $nota->credit_note_type = $data['credit_note_type'];
+
+                            // Definimos la descripción según el código elegido
+                            $descripciones = [
+                                '01' => 'Anulación de la operación',
+                                '02' => 'Anulación por error en el RUC',
+                                '03' => 'Corrección por error en la descripción',
+                                '06' => 'Devolución total',
+                                '07' => 'Devolución por ítem',
+                                '10' => 'Otros Conceptos',
+                            ];
+                            $nota->cancel_reason_description = $descripciones[$data['credit_note_type']];
+
+                            // Guardamos el nuevo registro padre
+                            $nota->save();
+
+                            // 4. Clonamos los ítems originales idénticos para que la contabilidad cuadre exacto
+                            foreach ($record->items as $item) {
+                                $nuevoItem = $item->replicate(['sale_id']);
+                                $nuevoItem->sale_id = $nota->id;
+                                $nuevoItem->save();
+                            }
+
+                            // 5. Enviamos la nueva Nota de Crédito a la SUNAT usando tu Service
+                            $service = new \Percy\Core\Services\SunatService();
+                            $result = $service->processAndSend($nota);
+
+                            if ($result->isSuccess()) {
+                                \Filament\Notifications\Notification::make()
+                                    ->title('Nota de Crédito Aceptada')
+                                    ->body('Se anuló el comprobante y se devolvió el stock correctamente.')
+                                    ->success()
+                                    ->send();
+                            } else {
+                                \Filament\Notifications\Notification::make()
+                                    ->title('Error SUNAT ' . $result->getError()->getCode())
+                                    ->body($result->getError()->getMessage())
+                                    ->danger()
+                                    ->persistent()
+                                    ->send();
+                            }
+
+                        } catch (\Exception $e) {
+                            \Filament\Notifications\Notification::make()
+                                ->title('Error Crítico')
+                                ->body($e->getMessage())
+                                ->danger()
+                                ->send();
+                        }
+                    }),
+
+                Tables\Actions\Action::make('aumentarValor')
+                    ->label('Nota de Débito')
+                    ->icon('heroicon-o-document-plus') // Un ícono de "más"
+                    ->color('warning') // Color amarillo para diferenciarlo del rojo de anulación
+                    ->visible(fn (Sale $record) => $record->sunat_status === 'accepted' && in_array($record->document_type, ['01', '03']))
+                    ->form([
+                        Forms\Components\Select::make('serie_nota')
+                            ->label('Serie de Nota de Débito (Ej: BD01 o FD01)')
+                            ->options(function (Sale $record) {
+                                // Factura -> FD, Boleta -> BD
+                                $prefix = ($record->document_type === '01') ? 'FD' : 'BD';
+
+                                return \Percy\Core\Models\Serie::where('document_type', '08')
+                                    ->where('serie', 'like', $prefix . '%')
+                                    ->where('active', true)
+                                    ->pluck('serie', 'serie');
+                            })
+                            ->required(),
+
+                        //Forms\Components\TextInput::make('correlativo_nota')
+                            //->label('Correlativo de la Nota (Ej: 1)')
+                            //->numeric()
+                            //->required(),
+
+                        Forms\Components\Select::make('debit_note_type')
+                            ->label('Motivo de Débito (SUNAT)')
+                            ->options([
+                                '01' => 'Intereses por mora',
+                                '02' => 'Aumento en el valor',
+                                '03' => 'Penalidades/otros conceptos',
+                            ])
+                            ->default('02')
+                            ->required(),
+
+                        // NUEVO: Pedimos el producto (para que cuadre en tu BD) y el monto a cobrar
+                        Forms\Components\Select::make('product_id')
+                            ->label('Concepto a cobrar')
+                            ->options(\Percy\Core\Models\Product::where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id)->pluck('name', 'id'))
+                            ->required()
+                            ->searchable(),
+
+                        Forms\Components\TextInput::make('importe_adicional')
+                            ->label('Importe a Sumar (Inc. IGV)')
+                            ->numeric()
+                            ->required()
+                            ->prefix('S/'),
+                    ])
+                    ->action(function (array $data, Sale $record) {
+                        try {
+                            // --- LÓGICA DE CORRELATIVO AUTOMÁTICO ---
+                            $serieConfig = \Percy\Core\Models\Serie::where('document_type', '08')
+                                ->where('serie', $data['serie_nota'])
+                                ->first();
+
+                            if (!$serieConfig) {
+                                throw new \Exception("Debe registrar la serie {$data['serie_nota']} en Configuración primero.");
+                            }
+
+                            $serieConfig->increment('correlative');
+
+                            // Clonamos la venta original limpia de estados
+                            $nota = $record->replicate([
+                                'sunat_status',
+                                'sunat_code',
+                                'sunat_description',
+                                'sunat_hash',
+                                'sunat_xml_path',
+                                'sunat_cdr_path',
+                                'sunat_pdf_path',
+                                'legend_text'
+                            ]);
+                            $nota->document_type = '08';
+                            $nota->series = $data['serie_nota'];
+                            $nota->correlative = $serieConfig->correlative; // Número automático ✅
+
+                            $nota->status = 'completed';
+
+                            // 3. Vinculamos el documento original
+                            $nota->affected_document_type = $record->document_type;
+                            $nota->affected_document_series = $record->series;
+                            $nota->affected_document_correlative = $record->correlative;
+                            $nota->credit_note_type = $data['debit_note_type']; // Usamos la misma columna de BD
+
+                            // Definimos la descripción según el Catálogo 10
+                            $descripciones = [
+                                '01' => 'Intereses por mora',
+                                '02' => 'Aumento en el valor',
+                                '03' => 'Penalidades/otros conceptos'
+                            ];
+                            $nota->cancel_reason_description = $descripciones[$data['debit_note_type']];
+
+                            // NUEVA MATEMÁTICA: Calculamos todo en base al nuevo importe
+                            $total = (float) $data['importe_adicional'];
+                            $base = $total / 1.18; // Asumiendo que es gravado
+                            $igv = $total - $base;
+
+                            $nota->op_gravadas = round($base, 2);
+                            $nota->igv = round($igv, 2);
+                            $nota->total = round($total, 2);
+                            $nota->op_exoneradas = 0;
+                            $nota->op_inafectas = 0;
+
+                            $nota->save();
+
+                            // En lugar de clonar todos los ítems, creamos UNO SOLO con el cargo extra
+                            $producto = \Percy\Core\Models\Product::find($data['product_id']);
+
+                            $nota->items()->create([
+                                'product_id' => $producto->id,
+                                'item_name' => $producto->name . ' - ' . $nota->cancel_reason_description,
+                                'quantity' => 1,
+                                'unit_price' => round($total, 2),
+                                'unit_value' => round($base, 2),
+                                'igv_amount' => round($igv, 2),
+                                'total' => round($total, 2),
+                                'afectacion_igv_id' => $producto->afectacion_igv_id ?? 1,
+                            ]);
+
+                            // 5. Enviamos la Nota de Débito
+                            $service = new \Percy\Core\Services\SunatService();
+                            $result = $service->processAndSend($nota);
+
+                            if ($result->isSuccess()) {
+                                \Filament\Notifications\Notification::make()
+                                    ->title('Nota de Débito Aceptada')
+                                    ->body('Se generó el comprobante correctamente.')
+                                    ->success()
+                                    ->send();
+                            } else {
+                                \Filament\Notifications\Notification::make()
+                                    ->title('Error SUNAT ' . $result->getError()->getCode())
+                                    ->body($result->getError()->getMessage())
+                                    ->danger()
+                                    ->persistent()
+                                    ->send();
+                            }
+
+                        } catch (\Exception $e) {
+                            \Filament\Notifications\Notification::make()
+                                ->title('Error Crítico')
+                                ->body($e->getMessage())
+                                ->danger()
+                                ->send();
+                        }
+                    }),
+
             ])
-            ->label('SUNAT')
+            ->label('Más Opciones')
             ->icon('heroicon-m-ellipsis-vertical')
+            ->button()
             ->color('gray'),
 
-            Tables\Actions\Action::make('anularVenta')
-                ->label('Generar NC')
-                ->icon('heroicon-o-document-minus')
-                ->color('danger')
-                // Solo se muestra si el documento original es Boleta o Factura y ya fue aceptado
-                ->visible(fn (Sale $record) => $record->sunat_status === 'accepted' && in_array($record->document_type, ['01', '03']))
-                ->form([
-                    Forms\Components\Select::make('serie_nota')
-                        ->label('Serie de Nota de Crédito')
-                        ->options(function (Sale $record) {
-                            // Determinamos el prefijo: Factura -> FC, Boleta -> BC
-                            $prefix = ($record->document_type === '01') ? 'FC' : 'BC';
-
-                            return \Percy\Core\Models\Serie::where('document_type', '07')
-                                ->where('serie', 'like', $prefix . '%')
-                                ->where('active', true)
-                                ->pluck('serie', 'serie');
-                        })
-                        ->required(),
-
-                    //Forms\Components\TextInput::make('correlativo_nota')
-                        //->label('Correlativo de la Nota (Ej: 1)')
-                        //->numeric()
-                        //->required(),
-
-                    Forms\Components\Select::make('credit_note_type')
-                        ->label('Motivo de Anulación')
-                        ->options([
-                            '01' => 'Anulación de la operación',
-                            '02' => 'Anulación por error en el RUC',
-                            '03' => 'Corrección por error en la descripción',
-                            '06' => 'Devolución total',
-                            '07' => 'Devolución por ítem',
-                            '10' => 'Otros Conceptos',
-                            ])
-                        ->default('01')
-                        ->required(),
-                ])
-                ->action(function (array $data, Sale $record) {
-                    try {
-                        // 1. Clonamos la venta original pero vaciamos los datos de respuesta SUNAT anteriores
-                        // --- LÓGICA DE CORRELATIVO AUTOMÁTICO ---
-                        $serieConfig = \Percy\Core\Models\Serie::where('document_type', '07')
-                            ->where('serie', $data['serie_nota'])
-                            ->first();
-
-                        if (!$serieConfig) {
-                            throw new \Exception("Debe registrar la serie {$data['serie_nota']} en Configuración primero.");
-                        }
-
-                        $serieConfig->increment('correlative'); // +1 al contador de tu tabla series
-
-                        // Clonamos la venta original pero vaciamos los datos de respuesta SUNAT anteriores
-                        $nota = $record->replicate([
-                            'sunat_status', 'sunat_code', 'sunat_description', 'sunat_hash',
-                            'sunat_xml_path', 'sunat_cdr_path', 'sunat_pdf_path', 'legend_text'
-                        ]);
-                        $nota->document_type = '07';
-                        $nota->series = $data['serie_nota'];
-                        $nota->correlative = $serieConfig->correlative; // Asignamos el número automático ✅
-
-                        $nota->status = 'completed';
-
-                        // 3. Vinculamos el documento original (La Boleta/Factura que estamos anulando)
-                        $nota->affected_document_type = $record->document_type;
-                        $nota->affected_document_series = $record->series;
-                        $nota->affected_document_correlative = $record->correlative;
-                        $nota->credit_note_type = $data['credit_note_type'];
-
-                        // Definimos la descripción según el código elegido
-                        $descripciones = [
-                            '01' => 'Anulación de la operación',
-                            '02' => 'Anulación por error en el RUC',
-                            '03' => 'Corrección por error en la descripción',
-                            '06' => 'Devolución total',
-                            '07' => 'Devolución por ítem',
-                            '10' => 'Otros Conceptos',
-                        ];
-                        $nota->cancel_reason_description = $descripciones[$data['credit_note_type']];
-
-                        // Guardamos el nuevo registro padre
-                        $nota->save();
-
-                        // 4. Clonamos los ítems originales idénticos para que la contabilidad cuadre exacto
-                        foreach ($record->items as $item) {
-                            $nuevoItem = $item->replicate(['sale_id']);
-                            $nuevoItem->sale_id = $nota->id;
-                            $nuevoItem->save();
-                        }
-
-                        // 5. Enviamos la nueva Nota de Crédito a la SUNAT usando tu Service
-                        $service = new \Percy\Core\Services\SunatService();
-                        $result = $service->processAndSend($nota);
-
-                        if ($result->isSuccess()) {
-                            \Filament\Notifications\Notification::make()
-                                ->title('Nota de Crédito Aceptada')
-                                ->body('Se anuló el comprobante y se devolvió el stock correctamente.')
-                                ->success()
-                                ->send();
-                        } else {
-                            \Filament\Notifications\Notification::make()
-                                ->title('Error SUNAT ' . $result->getError()->getCode())
-                                ->body($result->getError()->getMessage())
-                                ->danger()
-                                ->persistent()
-                                ->send();
-                        }
-
-                    } catch (\Exception $e) {
-                        \Filament\Notifications\Notification::make()
-                            ->title('Error Crítico')
-                            ->body($e->getMessage())
-                            ->danger()
-                            ->send();
-                    }
-                }),
-
-            Tables\Actions\Action::make('aumentarValor')
-                ->label('Generar ND')
-                ->icon('heroicon-o-document-plus') // Un ícono de "más"
-                ->color('warning') // Color amarillo para diferenciarlo del rojo de anulación
-                ->visible(fn (Sale $record) => $record->sunat_status === 'accepted' && in_array($record->document_type, ['01', '03']))
-                ->form([
-                    Forms\Components\Select::make('serie_nota')
-                        ->label('Serie de Nota de Débito (Ej: BD01 o FD01)')
-                        ->options(function (Sale $record) {
-                            // Factura -> FD, Boleta -> BD
-                            $prefix = ($record->document_type === '01') ? 'FD' : 'BD';
-
-                            return \Percy\Core\Models\Serie::where('document_type', '08')
-                                ->where('serie', 'like', $prefix . '%')
-                                ->where('active', true)
-                                ->pluck('serie', 'serie');
-                        })
-                        ->required(),
-
-                    //Forms\Components\TextInput::make('correlativo_nota')
-                        //->label('Correlativo de la Nota (Ej: 1)')
-                        //->numeric()
-                        //->required(),
-
-                    Forms\Components\Select::make('debit_note_type')
-                        ->label('Motivo de Débito (SUNAT)')
-                        ->options([
-                            '01' => 'Intereses por mora',
-                            '02' => 'Aumento en el valor',
-                            '03' => 'Penalidades/otros conceptos',
-                        ])
-                        ->default('02')
-                        ->required(),
-
-                    // NUEVO: Pedimos el producto (para que cuadre en tu BD) y el monto a cobrar
-                    Forms\Components\Select::make('product_id')
-                        ->label('Concepto a cobrar')
-                        ->options(\Percy\Core\Models\Product::where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id)->pluck('name', 'id'))
-                        ->required()
-                        ->searchable(),
-
-                    Forms\Components\TextInput::make('importe_adicional')
-                        ->label('Importe a Sumar (Inc. IGV)')
-                        ->numeric()
-                        ->required()
-                        ->prefix('S/'),
-                ])
-                ->action(function (array $data, Sale $record) {
-                    try {
-                        // --- LÓGICA DE CORRELATIVO AUTOMÁTICO ---
-                        $serieConfig = \Percy\Core\Models\Serie::where('document_type', '08')
-                            ->where('serie', $data['serie_nota'])
-                            ->first();
-
-                        if (!$serieConfig) {
-                            throw new \Exception("Debe registrar la serie {$data['serie_nota']} en Configuración primero.");
-                        }
-
-                        $serieConfig->increment('correlative');
-
-                        // Clonamos la venta original limpia de estados
-                        $nota = $record->replicate([
-                            'sunat_status',
-                            'sunat_code',
-                            'sunat_description',
-                            'sunat_hash',
-                            'sunat_xml_path',
-                            'sunat_cdr_path',
-                            'sunat_pdf_path',
-                            'legend_text'
-                        ]);
-                        $nota->document_type = '08';
-                        $nota->series = $data['serie_nota'];
-                        $nota->correlative = $serieConfig->correlative; // Número automático ✅
-
-                        $nota->status = 'completed';
-
-                        // 3. Vinculamos el documento original
-                        $nota->affected_document_type = $record->document_type;
-                        $nota->affected_document_series = $record->series;
-                        $nota->affected_document_correlative = $record->correlative;
-                        $nota->credit_note_type = $data['debit_note_type']; // Usamos la misma columna de BD
-
-                        // Definimos la descripción según el Catálogo 10
-                        $descripciones = [
-                            '01' => 'Intereses por mora',
-                            '02' => 'Aumento en el valor',
-                            '03' => 'Penalidades/otros conceptos'
-                        ];
-                        $nota->cancel_reason_description = $descripciones[$data['debit_note_type']];
-
-                        // NUEVA MATEMÁTICA: Calculamos todo en base al nuevo importe
-                        $total = (float) $data['importe_adicional'];
-                        $base = $total / 1.18; // Asumiendo que es gravado
-                        $igv = $total - $base;
-
-                        $nota->op_gravadas = round($base, 2);
-                        $nota->igv = round($igv, 2);
-                        $nota->total = round($total, 2);
-                        $nota->op_exoneradas = 0;
-                        $nota->op_inafectas = 0;
-
-                        $nota->save();
-
-                        // En lugar de clonar todos los ítems, creamos UNO SOLO con el cargo extra
-                        $producto = \Percy\Core\Models\Product::find($data['product_id']);
-
-                        $nota->items()->create([
-                            'product_id' => $producto->id,
-                            'item_name' => $producto->name . ' - ' . $nota->cancel_reason_description,
-                            'quantity' => 1,
-                            'unit_price' => round($total, 2),
-                            'unit_value' => round($base, 2),
-                            'igv_amount' => round($igv, 2),
-                            'total' => round($total, 2),
-                            'afectacion_igv_id' => $producto->afectacion_igv_id ?? 1,
-                        ]);
-
-                        // 5. Enviamos la Nota de Débito
-                        $service = new \Percy\Core\Services\SunatService();
-                        $result = $service->processAndSend($nota);
-
-                        if ($result->isSuccess()) {
-                            \Filament\Notifications\Notification::make()
-                                ->title('Nota de Débito Aceptada')
-                                ->body('Se generó el comprobante correctamente.')
-                                ->success()
-                                ->send();
-                        } else {
-                            \Filament\Notifications\Notification::make()
-                                ->title('Error SUNAT ' . $result->getError()->getCode())
-                                ->body($result->getError()->getMessage())
-                                ->danger()
-                                ->persistent()
-                                ->send();
-                        }
-
-                    } catch (\Exception $e) {
-                        \Filament\Notifications\Notification::make()
-                            ->title('Error Crítico')
-                            ->body($e->getMessage())
-                            ->danger()
-                            ->send();
-                    }
-                }),
-
-            // GRUPO 3: Acciones Estándar
-            Tables\Actions\ViewAction::make(),
-            Tables\Actions\EditAction::make(),
         ])
         ->bulkActions([
             Tables\Actions\BulkActionGroup::make([

@@ -14,6 +14,10 @@ class CreateSale extends CreateRecord
 {
     protected static string $resource = SaleResource::class;
 
+    protected static ?string $title = 'Nueva Venta';
+
+    protected ?string $maxContentWidth = 'full';
+
     public function mount(): void
     {
         parent::mount();
@@ -50,5 +54,21 @@ class CreateSale extends CreateRecord
         $data['correlative'] = $serieRecord->correlative;
 
         return $data;
+    }
+
+    protected function getFormActions(): array
+    {
+        return [
+            $this->getCreateFormAction()
+                ->label('Registrar Venta')
+                ->icon('heroicon-o-check-circle'),
+            $this->getCancelFormAction()
+                ->label('Cancelar'),
+        ];
+    }
+
+    protected function getRedirectUrl(): string
+    {
+        return $this->getResource()::getUrl('index');
     }
 }

@@ -10,10 +10,15 @@ class ListUsers extends ListRecords
 {
     protected static string $resource = UserResource::class;
 
+    protected static ?string $title = 'Control de Usuarios';
+
     protected function getHeaderActions(): array
     {
         return [
-            Actions\CreateAction::make(),
+            Actions\CreateAction::make()
+                ->label('Nuevo Usuario')
+                ->icon('heroicon-o-user-plus')
+                ->slideOver(), // Se abre lateralmente
         ];
     }
 }

@@ -10,10 +10,18 @@ class ListSuppliers extends ListRecords
 {
     protected static string $resource = SupplierResource::class;
 
+    public function getTitle(): string
+    {
+        return 'Proveedores';
+    }
+
     protected function getHeaderActions(): array
     {
         return [
-            Actions\CreateAction::make(),
+            Actions\CreateAction::make()
+                ->label('Nuevo Proveedor')
+                ->icon('heroicon-o-plus')
+                ->color('primary'),
         ];
     }
 }
