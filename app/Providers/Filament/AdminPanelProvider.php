@@ -43,7 +43,7 @@ class AdminPanelProvider extends PanelProvider
                 'primary' => Color::Indigo, // Usamos un azul profesional por defecto
             ])
             ->font('Inter')
-            ->sidebarWidth('15rem')
+            ->sidebarWidth('18rem')
             ->sidebarCollapsibleOnDesktop()
             // AQUÍ REGISTRAMOS EL MIDDLEWARE
             ->authMiddleware([
