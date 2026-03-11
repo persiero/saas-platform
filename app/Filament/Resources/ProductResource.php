@@ -13,6 +13,7 @@ use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 
@@ -75,6 +76,61 @@ class ProductResource extends Resource
                             ->maxLength(255)
                             ->columnSpanFull(),
                     ])->columns(2),
+
+                    Forms\Components\Section::make('Datos Farmacéuticos')
+                        // ESTA LÍNEA ES LA MAGIA: Solo se muestra si el sector del Tenant actual es "Farmacia"
+                        ->visible(function () {
+                            $sector = Auth::user()->tenant->businessSector->name ?? '';
+                            return str_contains(strtolower($sector), 'farmacia') || str_contains(strtolower($sector), 'botica');
+                        })
+                        ->schema([
+                            Forms\Components\TextInput::make('active_ingredient')
+                                ->label('Principio Activo (Genérico)'),
+
+                            Forms\Components\TextInput::make('laboratory')
+                                ->label('Laboratorio'),
+
+                            Forms\Components\Toggle::make('requires_prescription')
+                                ->label('Requiere Receta Médica'),
+                        ]),
+
+                    Forms\Components\Section::make('Configuración de Venta Fraccionada')
+                        ->description('Define si este producto se puede vender por blíster o por unidad suelta.')
+                        // SOLO PARA FARMACIAS/BOTICAS
+                        ->visible(function () {
+                            $sector = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->name ?? '';
+                            return str_contains(strtolower($sector), 'farmacia') || str_contains(strtolower($sector), 'botica');
+                        })
+                        ->schema([
+                            Forms\Components\Toggle::make('is_fractionable')
+                                ->label('¿Permitir venta por fracción (Pastillas/Blísteres)?')
+                                ->live() // Esto es vital: Hace que la pantalla reaccione instantáneamente al hacer clic
+                                ->columnSpanFull(),
+
+                            // Este Grid SOLO aparece si el Toggle de arriba está encendido (true)
+                            Forms\Components\Grid::make(3)
+                                ->visible(fn (Forms\Get $get) => $get('is_fractionable'))
+                                ->schema([
+                                    Forms\Components\TextInput::make('units_per_box')
+                                        ->label('Total de pastillas por Caja')
+                                        ->numeric()
+                                        ->required()
+                                        ->helperText('Ej: 100'),
+
+                                    Forms\Components\TextInput::make('units_per_blister')
+                                        ->label('Pastillas por Blíster')
+                                        ->numeric()
+                                        ->helperText('Opcional. Ej: 10'),
+
+                                    Forms\Components\TextInput::make('unit_price')
+                                        ->label('Precio por Pastilla (Unidad)')
+                                        ->numeric()
+                                        ->prefix('S/')
+                                        ->required()
+                                        ->helperText('Precio de venta al menudeo.'),
+                                ]),
+                        ]),
+
                 ])->columnSpan(['lg' => 2]),
 
                 Forms\Components\Group::make()->schema([
@@ -277,9 +333,17 @@ class ProductResource extends Resource
 
     public static function getRelations(): array
     {
-        return [
-            //
-        ];
+        $relations = [];
+
+        // MAGIA DEL SAAS: Condicionamos qué módulos se encienden según el giro del negocio.
+        // Verificamos si el negocio actual tiene el giro de "Farmacia" o "Botica".
+        $sector = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->name ?? '';
+
+        if (str_contains(strtolower($sector), 'farmacia') || str_contains(strtolower($sector), 'botica')) {
+            $relations[] = RelationManagers\BatchesRelationManager::class;
+        }
+
+        return $relations;
     }
 
     public static function getPages(): array

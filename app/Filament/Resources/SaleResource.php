@@ -143,7 +143,7 @@ class SaleResource extends Resource
                                     ->searchable()
                                     ->preload()
                                     ->required()
-                                    ->columnSpan(4)
+                                    ->columnSpan(3)
                                     ->live(onBlur: true)
                                     ->afterStateUpdated(function ($state, Set $set, Get $get) {
                                         if ($state) {
@@ -152,7 +152,36 @@ class SaleResource extends Resource
                                             $set('afectacion_igv_id', $product->afectacion_igv_id);
                                             $set('item_name', $product->name);
                                             $set('_stock_disponible', $product->current_stock);
+
+                                            // MAGIA FARMACIA: Guardamos en secreto los datos de fracción
+                                            $set('_is_fractionable', $product->is_fractionable);
+                                            $set('_box_price', $product->price);
+                                            $set('_fraction_price', $product->unit_price);
+                                            $set('measurement_unit', 'box'); // Por defecto se vende la caja
                                         }
+                                        self::updateRow($get, $set);
+                                        self::updateTotals($get, $set);
+                                    }),
+
+                                // ¡NUEVO CAMPO! Solo aparece si el producto es fraccionable
+                                Forms\Components\Select::make('measurement_unit')
+                                    ->label('U. Medida')
+                                    ->options([
+                                        'box' => 'Caja',
+                                        'unit' => 'Unidad',
+                                    ])
+                                    ->visible(fn (Get $get) => $get('_is_fractionable'))
+                                    ->required(fn (Get $get) => $get('_is_fractionable'))
+                                    ->columnSpan(2)
+                                    ->live()
+                                    ->afterStateUpdated(function ($state, Set $set, Get $get) {
+                                        // Si cambia de Caja a Unidad, cambiamos el precio automáticamente
+                                        if ($state === 'unit') {
+                                            $set('unit_price', $get('_fraction_price'));
+                                        } else {
+                                            $set('unit_price', $get('_box_price'));
+                                        }
+                                        // Recalculamos la fila y los totales globales
                                         self::updateRow($get, $set);
                                         self::updateTotals($get, $set);
                                     }),
@@ -161,7 +190,7 @@ class SaleResource extends Resource
                                     ->relationship('afectacionIgv', 'descripcion')
                                     ->label('Tipo IGV')
                                     ->required()
-                                    ->columnSpan(3)
+                                    ->columnSpan(2)
                                     ->live()
                                     ->afterStateUpdated(fn(Get $get, Set $set) => [self::updateRow($get, $set), self::updateTotals($get, $set)]),
 
@@ -197,6 +226,11 @@ class SaleResource extends Resource
                                 Forms\Components\Hidden::make('item_name'),
                                 Forms\Components\Hidden::make('unit_value'),
                                 Forms\Components\Hidden::make('igv_amount'),
+
+                                // Memoria temporal para la magia de la farmacia
+                                Forms\Components\Hidden::make('_is_fractionable'),
+                                Forms\Components\Hidden::make('_box_price'),
+                                Forms\Components\Hidden::make('_fraction_price'),
                             ])
                             ->columns(12) // Pasamos de 16 a 12 columnas. ¡Diseño perfecto!
                             ->defaultItems(1)
