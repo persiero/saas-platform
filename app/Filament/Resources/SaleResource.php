@@ -186,11 +186,42 @@ class SaleResource extends Resource
                                         self::updateTotals($get, $set);
                                     }),
 
+                                // 🌟 3. ¡NUEVO CAMPO! EL SELECTOR DE LOTE (Solo para Farmacias)
+                                Forms\Components\Select::make('product_batch_id')
+                                    ->label('Lote')
+                                    ->options(function (Get $get) {
+                                        $productId = $get('product_id');
+                                        if (!$productId) return [];
+
+                                        // Solo traemos los lotes de este producto que tengan stock > 0
+                                        return \Percy\Core\Models\ProductBatch::where('product_id', $productId)
+                                            ->where('current_quantity', '>', 0)
+                                            ->where('is_active', true)
+                                            // Formateamos para que el cajero vea el Lote y su fecha de vencimiento
+                                            ->get()
+                                            ->mapWithKeys(function ($batch) {
+                                                $vence = $batch->expiration_date ? $batch->expiration_date->format('d/m/Y') : 'N/A';
+                                                return [$batch->id => "{$batch->batch_number} (Vence: {$vence})"];
+                                            });
+                                    })
+                                    ->visible(function () {
+                                        $sector = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->name ?? '';
+                                        return str_contains(strtolower($sector), 'farmacia') || str_contains(strtolower($sector), 'botica');
+                                    })
+                                    // Es requerido SOLO si el negocio es una farmacia
+                                    ->required(function () {
+                                        $sector = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->name ?? '';
+                                        return str_contains(strtolower($sector), 'farmacia') || str_contains(strtolower($sector), 'botica');
+                                    })
+                                    ->searchable()
+                                    ->preload()
+                                    ->columnSpan(2), // Ajusta los columnSpan de los demás campos para que sumen 12
+
                                 Forms\Components\Select::make('afectacion_igv_id')
                                     ->relationship('afectacionIgv', 'descripcion')
                                     ->label('Tipo IGV')
                                     ->required()
-                                    ->columnSpan(2)
+                                    ->columnSpan(1)
                                     ->live()
                                     ->afterStateUpdated(fn(Get $get, Set $set) => [self::updateRow($get, $set), self::updateTotals($get, $set)]),
 
@@ -219,7 +250,7 @@ class SaleResource extends Resource
                                     ->numeric()
                                     ->required()
                                     ->readonly()
-                                    ->columnSpan(2),
+                                    ->columnSpan(1),
 
                                 // CAMPOS OCULTOS: Se calculan solos y van a la BD para SUNAT, pero no ensucian la pantalla
                                 Forms\Components\Hidden::make('_stock_disponible'),

@@ -125,11 +125,41 @@ class PurchaseResource extends Resource
                                             if ($state) {
                                                 $product = Product::find($state);
                                                 $set('unit_cost', $product->cost ?? 0);
+                                                // Magia secreta: detectamos si es fraccionable para saber si pedimos lote
+                                                $set('_is_fractionable', $product->is_fractionable);
                                             }
                                             self::updateRow($get, $set);
                                             self::updateTotals($get, $set);
                                         })
                                         ->columnSpan(4),
+
+                                    // 🌟 NUEVO: NÚMERO DE LOTE (Solo para Farmacias)
+                                    Forms\Components\TextInput::make('batch_number')
+                                        ->label('N° de Lote')
+                                        ->visible(function () {
+                                            $sector = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->name ?? '';
+                                            return str_contains(strtolower($sector), 'farmacia') || str_contains(strtolower($sector), 'botica');
+                                        })
+                                        ->required(function () {
+                                            $sector = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->name ?? '';
+                                            return str_contains(strtolower($sector), 'farmacia') || str_contains(strtolower($sector), 'botica');
+                                        })
+                                        ->columnSpan(2),
+
+                                    // 🌟 NUEVO: FECHA DE VENCIMIENTO
+                                    Forms\Components\DatePicker::make('expiration_date')
+                                        ->label('Vencimiento')
+                                        ->native(false)
+                                        ->displayFormat('d/m/Y')
+                                        ->visible(function () {
+                                            $sector = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->name ?? '';
+                                            return str_contains(strtolower($sector), 'farmacia') || str_contains(strtolower($sector), 'botica');
+                                        })
+                                        ->required(function () {
+                                            $sector = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->name ?? '';
+                                            return str_contains(strtolower($sector), 'farmacia') || str_contains(strtolower($sector), 'botica');
+                                        })
+                                        ->columnSpan(2),
 
                                     Forms\Components\TextInput::make('quantity')
                                         ->label('Cantidad')
@@ -139,7 +169,7 @@ class PurchaseResource extends Resource
                                         ->required()
                                         ->live(onBlur: true)
                                         ->afterStateUpdated(fn(Get $get, Set $set) => [self::updateRow($get, $set), self::updateTotals($get, $set)])
-                                        ->columnSpan(2),
+                                        ->columnSpan(1),
 
                                     Forms\Components\TextInput::make('unit_cost')
                                         ->label('Costo Unitario')
@@ -150,7 +180,7 @@ class PurchaseResource extends Resource
                                         ->minValue(0)
                                         ->live(onBlur: true)
                                         ->afterStateUpdated(fn(Get $get, Set $set) => [self::updateRow($get, $set), self::updateTotals($get, $set)])
-                                        ->columnSpan(3),
+                                        ->columnSpan(2),
 
                                     Forms\Components\TextInput::make('subtotal')
                                         ->label('Subtotal')
@@ -158,7 +188,7 @@ class PurchaseResource extends Resource
                                         ->readonly()
                                         ->prefix('S/')
                                         ->dehydrated()
-                                        ->columnSpan(3),
+                                        ->columnSpan(2),
                                 ])
                                 ->columns(12)
                                 ->defaultItems(1)

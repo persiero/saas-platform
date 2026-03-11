@@ -147,21 +147,21 @@
 
             <div class="overflow-x-auto">
                 <table class="w-full">
-                    <thead class="bg-gray-50 dark:bg-gray-800">
-                        <tr class="border-b border-gray-200 dark:border-gray-700">
-                            <th class="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
+                    <thead class="bg-gray-50 dark:bg-white/5">
+                        <tr class="border-b border-gray-200 dark:border-white/10">
+                            <th class="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-200">
                                 <div class="flex items-center gap-2">
                                     <x-heroicon-o-cube class="w-4 h-4" />
                                     Producto
                                 </div>
                             </th>
-                            <th class="text-right py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
+                            <th class="text-right py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-200">
                                 <div class="flex items-center justify-end gap-2">
                                     <x-heroicon-o-hashtag class="w-4 h-4" />
                                     Cantidad
                                 </div>
                             </th>
-                            <th class="text-right py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-300">
+                            <th class="text-right py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-200">
                                 <div class="flex items-center justify-end gap-2">
                                     <x-heroicon-o-currency-dollar class="w-4 h-4" />
                                     Total Vendido
@@ -169,19 +169,19 @@
                             </th>
                         </tr>
                     </thead>
-                    <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                    <tbody class="divide-y divide-gray-200 dark:divide-white/10">
                         @forelse($topProducts as $index => $product)
-                            <tr class="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition">
+                            <tr class="hover:bg-gray-50 dark:hover:bg-white/5 transition">
                                 <td class="py-3 px-4">
                                     <div class="flex items-center gap-3">
-                                        <div class="flex items-center justify-center w-8 h-8 rounded-full {{ $index < 3 ? 'bg-warning-100 dark:bg-warning-900/30 text-warning-700 dark:text-warning-300' : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400' }} font-bold text-sm">
+                                        <div class="flex items-center justify-center w-8 h-8 rounded-full {{ $index < 3 ? 'bg-warning-100 dark:bg-warning-500/20 text-warning-700 dark:text-warning-300' : 'bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-gray-300' }} font-bold text-sm">
                                             {{ $index + 1 }}
                                         </div>
-                                        <span class="font-medium text-gray-900 dark:text-gray-100">{{ $product['name'] }}</span>
+                                        <span class="font-medium text-gray-900 dark:text-white">{{ $product['name'] }}</span>
                                     </div>
                                 </td>
                                 <td class="text-right py-3 px-4">
-                                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-primary-100 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300">
+                                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-primary-100 dark:bg-primary-500/20 text-primary-700 dark:text-primary-300">
                                         {{ number_format($product['total_quantity'], 0) }}
                                     </span>
                                 </td>
@@ -193,9 +193,9 @@
                             <tr>
                                 <td colspan="3" class="text-center py-12">
                                     <div class="flex flex-col items-center justify-center gap-2 text-gray-500">
-                                        <x-heroicon-o-inbox style="width: 4rem; height: 4rem; margin: 0 auto;" class="text-gray-400" />
+                                        <x-heroicon-o-inbox style="width: 4rem; height: 4rem; margin: 0 auto;" class="text-gray-400 dark:text-gray-500" />
                                         <p class="text-base font-medium mt-2 text-gray-600 dark:text-gray-300">No hay datos disponibles</p>
-                                        <p class="text-sm text-gray-500">No se encontraron productos vendidos en este período</p>
+                                        <p class="text-sm text-gray-500 dark:text-gray-400">No se encontraron productos vendidos en este período</p>
                                     </div>
                                 </td>
                             </tr>
@@ -218,38 +218,38 @@
             </x-slot>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div class="bg-gradient-to-br from-success-50 to-success-100 dark:from-success-900/20 dark:to-success-800/20 rounded-lg p-6 border border-success-200 dark:border-success-800">
+                <div class="bg-success-50 dark:bg-success-500/10 rounded-lg p-6 border border-success-200 dark:border-success-500/20">
                     <div class="flex items-center gap-3 mb-4">
-                        <div class="p-3 bg-success-200 dark:bg-success-800 rounded-lg">
-                            <x-heroicon-o-lock-open class="w-6 h-6 text-success-700 dark:text-success-300" />
+                        <div class="p-3 bg-success-200 dark:bg-success-500/20 rounded-lg">
+                            <x-heroicon-o-lock-open class="w-6 h-6 text-success-700 dark:text-success-400" />
                         </div>
                         <div>
-                            <div class="text-sm font-medium text-success-700 dark:text-success-300">Cajas Abiertas</div>
+                            <div class="text-sm font-medium text-success-700 dark:text-success-400">Cajas Abiertas</div>
                             <div class="text-2xl font-bold text-success-900 dark:text-success-100">{{ $cashStatus['open_registers'] ?? 0 }}</div>
                         </div>
                     </div>
-                    <div class="pt-3 border-t border-success-200 dark:border-success-700">
+                    <div class="pt-3 border-t border-success-200 dark:border-success-500/20">
                         <div class="flex items-center justify-between">
-                            <span class="text-sm text-success-700 dark:text-success-300">Total en cajas:</span>
+                            <span class="text-sm text-success-700 dark:text-success-400">Total en cajas:</span>
                             <span class="text-lg font-bold text-success-900 dark:text-success-100">S/ {{ number_format($cashStatus['total_open_amount'] ?? 0, 2) }}</span>
                         </div>
                     </div>
                 </div>
 
-                <div class="bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900/20 dark:to-gray-800/20 rounded-lg p-6 border border-gray-200 dark:border-gray-800">
+                <div class="bg-danger-50 dark:bg-danger-500/10 rounded-lg p-6 border border-danger-200 dark:border-danger-500/20">
                     <div class="flex items-center gap-3 mb-4">
-                        <div class="p-3 bg-gray-200 dark:bg-gray-800 rounded-lg">
-                            <x-heroicon-o-lock-closed class="w-6 h-6 text-gray-700 dark:text-gray-300" />
+                        <div class="p-3 bg-danger-200 dark:bg-danger-500/20 rounded-lg">
+                            <x-heroicon-o-lock-closed class="w-6 h-6 text-danger-700 dark:text-danger-400" />
                         </div>
                         <div>
-                            <div class="text-sm font-medium text-gray-700 dark:text-gray-300">Cerradas Hoy</div>
-                            <div class="text-2xl font-bold text-gray-900 dark:text-gray-100">{{ $cashStatus['today_closed'] ?? 0 }}</div>
+                            <div class="text-sm font-medium text-danger-700 dark:text-danger-400">Cerradas Hoy</div>
+                            <div class="text-2xl font-bold text-danger-900 dark:text-danger-100">{{ $cashStatus['today_closed'] ?? 0 }}</div>
                         </div>
                     </div>
-                    <div class="pt-3 border-t border-gray-200 dark:border-gray-700">
+                    <div class="pt-3 border-t border-danger-200 dark:border-danger-500/20">
                         <div class="flex items-center justify-between">
-                            <span class="text-sm text-gray-700 dark:text-gray-300">Total cerrado:</span>
-                            <span class="text-lg font-bold text-gray-900 dark:text-gray-100">S/ {{ number_format($cashStatus['today_closed_amount'] ?? 0, 2) }}</span>
+                            <span class="text-sm text-danger-700 dark:text-danger-400">Total cerrado:</span>
+                            <span class="text-lg font-bold text-danger-900 dark:text-danger-100">S/ {{ number_format($cashStatus['today_closed_amount'] ?? 0, 2) }}</span>
                         </div>
                     </div>
                 </div>

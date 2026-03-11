@@ -46,7 +46,10 @@ class BatchesRelationManager extends RelationManager
                     ->required()
                     ->numeric()
                     ->minValue(1)
-                    ->default(1),
+                    ->default(1)
+                    // MAGIA: Editable al crear, bloqueado al editar
+                    ->disabledOn('edit')
+                    ->dehydrated(), // Asegura que el valor se envíe aunque esté bloqueado
 
                 // El stock actual inicia igual a la cantidad ingresada
                 Forms\Components\Hidden::make('current_quantity')
@@ -101,16 +104,60 @@ class BatchesRelationManager extends RelationManager
                         $data['tenant_id'] = Auth::user()->tenant_id;
                         $data['batch_number'] = strtoupper($data['batch_number']);
                         return $data;
+                    })
+                    // 🌟 LA MAGIA SEGURA: Actualizamos el stock global contando los lotes reales
+                    ->after(function (\Illuminate\Database\Eloquent\Model $record) {
+                        $product = $record->product;
+                        $qtyIngresada = $record->initial_quantity;
+
+                        // 1. CÁLCULO ABSOLUTO (A prueba de dobles sumas)
+                        // Sumamos el stock exacto de todos los lotes de este producto
+                        $stockRealExacto = $product->batches()->where('is_active', true)->sum('current_quantity');
+
+                        $product->current_stock = $stockRealExacto;
+                        $product->save();
+
+                        // 2. Dejamos la huella en el Kardex Universal
+                        \Percy\Core\Models\InventoryMovement::create([
+                            'tenant_id'        => $record->tenant_id,
+                            'product_id'       => $record->product_id,
+                            'product_batch_id' => $record->id,
+                            'user_id'          => \Illuminate\Support\Facades\Auth::id(),
+                            'type'             => 'IN',
+                            'quantity'         => $qtyIngresada,
+                            'balance_after'    => $product->current_stock, // Ahora el Kardex reflejará el número exacto
+                            'reason'           => 'Registro Manual de Lote',
+                        ]);
                     }),
             ])
             ->actions([
-                Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
+                //Tables\Actions\EditAction::make(),
+                Tables\Actions\DeleteAction::make()
+                    ->before(function (\Illuminate\Database\Eloquent\Model $record) {
+                        // $record es el Lote que estamos a punto de borrar
+                        $product = $record->product;
+                        $qtyToDeduct = $record->current_quantity; // Lo que quedaba vivo en este lote
+
+                        // 1. Restamos la mercancía del stock global
+                        $product->current_stock -= $qtyToDeduct;
+                        $product->save();
+
+                        // 2. Dejamos la huella en el Kardex explicando por qué desapareció el stock
+                        \Percy\Core\Models\InventoryMovement::create([
+                            'tenant_id'        => $record->tenant_id,
+                            'product_id'       => $record->product_id,
+                            'user_id'          => \Illuminate\Support\Facades\Auth::id(),
+                            'type'             => 'OUT',
+                            'quantity'         => $qtyToDeduct,
+                            'balance_after'    => $product->current_stock,
+                            'reason'           => 'Eliminación manual de Lote: ' . $record->batch_number,
+                        ]);
+                    }),
             ])
             ->bulkActions([
-                Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
-                ]),
+                //Tables\Actions\BulkActionGroup::make([
+                  //  Tables\Actions\DeleteBulkAction::make(),
+                //]),
             ]);
     }
 }
