@@ -26,6 +26,15 @@ class UserResource extends Resource
     protected static ?string $navigationGroup = 'Configuración';
     protected static ?int $navigationSort = 63;
 
+    public static function canViewAny(): bool
+    {
+        /** @var \Percy\Core\Models\User $user */
+        $user = \Illuminate\Support\Facades\Auth::user();
+
+        // Bloquea a los cajeros, permite el paso a los Admins (tanto al Súper Admin como al Dueño local)
+        return $user->isAdmin();
+    }
+
     public static function form(Form $form): Form
     {
         return $form

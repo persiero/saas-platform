@@ -12,8 +12,16 @@ use Illuminate\Support\Facades\Auth;
 class StatsOverview extends BaseWidget
 {
     protected static ?int $sort = 1;
-    
+
     protected int | string | array $columnSpan = 'full';
+
+    /**
+     * Oculta este widget estadístico para el Súper Admin
+     */
+    public static function canView(): bool
+    {
+        return \Illuminate\Support\Facades\Auth::user()->tenant_id !== null;
+    }
 
     protected function getColumns(): int
     {
@@ -63,8 +71,8 @@ class StatsOverview extends BaseWidget
             ->count();
 
         // Calcular tendencia de ventas
-        $trend = $yesterdaySales > 0 
-            ? (($todaySales - $yesterdaySales) / $yesterdaySales) * 100 
+        $trend = $yesterdaySales > 0
+            ? (($todaySales - $yesterdaySales) / $yesterdaySales) * 100
             : ($todaySales > 0 ? 100 : 0);
 
         return [
@@ -79,7 +87,7 @@ class StatsOverview extends BaseWidget
 
             Stat::make('Estado de Caja', $openCash ? 'ABIERTA' : 'CERRADA')
                 ->description(
-                    $openCash 
+                    $openCash
                         ? 'Apertura: S/ ' . number_format($openCash->opening_amount, 2) . ' | ' . $openCash->opened_at->format('H:i')
                         : 'Debes abrir caja para iniciar ventas'
                 )
@@ -88,8 +96,8 @@ class StatsOverview extends BaseWidget
 
             Stat::make('Inventario', $totalProducts . ' producto' . ($totalProducts != 1 ? 's' : ''))
                 ->description(
-                    $lowStock > 0 
-                        ? $lowStock . ' con stock bajo (≤ 5 unidades)' 
+                    $lowStock > 0
+                        ? $lowStock . ' con stock bajo (≤ 5 unidades)'
                         : 'Stock saludable en todos los productos'
                 )
                 ->descriptionIcon($lowStock > 0 ? 'heroicon-m-exclamation-triangle' : 'heroicon-m-check-circle')

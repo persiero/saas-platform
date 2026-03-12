@@ -21,6 +21,15 @@ class ExpenseResource extends Resource
     protected static ?string $navigationGroup = 'Finanzas';
     protected static ?int $navigationSort = 32;
 
+    /**
+     * Oculta el módulo de Reportes para el Súper Admin
+     */
+    public static function canViewAny(): bool
+    {
+        // Retorna TRUE (lo muestra) solo si el usuario pertenece a una empresa
+        return \Illuminate\Support\Facades\Auth::user()->tenant_id !== null;
+    }
+
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()->where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id);

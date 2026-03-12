@@ -34,6 +34,27 @@ class ProductResource extends Resource
         return parent::getEloquentQuery()->where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id);
     }
 
+    public static function canCreate(): bool
+    {
+        /** @var \Percy\Core\Models\User $user */
+        $user = \Illuminate\Support\Facades\Auth::user();
+        return $user->isAdmin();
+    }
+
+    public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        /** @var \Percy\Core\Models\User $user */
+        $user = \Illuminate\Support\Facades\Auth::user();
+        return $user->isAdmin();
+    }
+
+    public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        /** @var \Percy\Core\Models\User $user */
+        $user = \Illuminate\Support\Facades\Auth::user();
+        return $user->isAdmin();
+    }
+
     public static function form(Form $form): Form
     {
         return $form
@@ -241,14 +262,27 @@ class ProductResource extends Resource
             ])
             ->actions([
                 Tables\Actions\ActionGroup::make([
+                    // 1. NUEVO BOTÓN: Para que el Cajero pueda consultar el producto sin modificarlo
+                    Tables\Actions\ViewAction::make()
+                        ->label('Ver detalles')
+                        ->icon('heroicon-o-eye')
+                        ->color('info'),
+
+                    // 2. BOTÓN EDITAR (Filament lo oculta solo gracias a canEdit)
                     Tables\Actions\EditAction::make()
                         ->label('Editar')
                         ->icon('heroicon-o-pencil'),
 
+                    // 3. BOTÓN AJUSTE DE INVENTARIO: Protegido solo para el Admin
                     Tables\Actions\Action::make('manual_adjustment')
                         ->label('Ajuste de Inventario')
                         ->icon('heroicon-o-scale')
                         ->color('warning') // Color de advertencia
+                        ->visible(function () {
+                            /** @var \Percy\Core\Models\User $user */
+                            $user = \Illuminate\Support\Facades\Auth::user();
+                            return $user->isAdmin();
+                        })
                         ->form([
                             Forms\Components\Select::make('type')
                                 ->label('Motivo del Ajuste')
@@ -308,6 +342,14 @@ class ProductResource extends Resource
                                 'reason' => $data['reason'],
                             ]);
 
+                            // Aquí te agrego la actualización del stock físico general que faltaba en tu código
+                            if ($data['type'] === 'OUT') {
+                                $record->current_stock -= $data['quantity'];
+                            } else {
+                                $record->current_stock += $data['quantity'];
+                            }
+                            $record->save();
+
                             Notification::make()
                                 ->title('Inventario Actualizado')
                                 ->success()
@@ -351,6 +393,7 @@ class ProductResource extends Resource
         return [
             'index' => Pages\ListProducts::route('/'),
             'create' => Pages\CreateProduct::route('/create'),
+            'view' => Pages\ViewProduct::route('/{record}'),
             'edit' => Pages\EditProduct::route('/{record}/edit'),
         ];
     }

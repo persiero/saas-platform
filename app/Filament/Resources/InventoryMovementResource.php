@@ -25,6 +25,19 @@ class InventoryMovementResource extends Resource
     protected static ?string $navigationGroup = 'Inventario';
     protected static ?int $navigationSort = 30;
 
+    /**
+     * Oculta el módulo de Reportes para el Súper Admin y para los Cajeros/Vendedores
+     */
+    public static function canViewAny(): bool
+    {
+        /** @var \Percy\Core\Models\User $user */
+        $user = \Illuminate\Support\Facades\Auth::user();
+
+        // 1. tenant_id !== null (Bloquea al Súper Admin para que no exploten las gráficas)
+        // 2. isAdmin() (Bloquea a los empleados normales para proteger las finanzas)
+        return $user->tenant_id !== null && $user->isAdmin();
+    }
+
     // Solo mostramos los movimientos de la empresa actual
     public static function getEloquentQuery(): Builder
     {

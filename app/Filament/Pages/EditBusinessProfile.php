@@ -33,11 +33,14 @@ class EditBusinessProfile extends Page implements HasForms
 
     public ?array $data = [];
 
-    // MAGIA DE SEGURIDAD: Solo los inquilinos pueden ver esta página (el Superadmin no)
+    // MAGIA DE SEGURIDAD REFORZADA: Solo los administradores de la farmacia pueden ver esta página
     public static function canAccess(): bool
     {
-        // Usamos != en lugar de !== por si acaso Laravel lo está leyendo como texto "1" en vez de entero
-        return Auth::check() && Auth::user()->tenant_id != null;
+        /** @var \Percy\Core\Models\User $user */
+        $user = Auth::user();
+
+        // Debe estar logueado, pertenecer a una empresa, Y tener el rol de Administrador
+        return Auth::check() && $user->tenant_id != null && $user->isAdmin();
     }
 
     public function mount(): void

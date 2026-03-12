@@ -16,6 +16,10 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Filament\Notifications\Notification;
+use Filament\Infolists\Infolist;
+use Filament\Infolists\Components\Section;
+use Filament\Infolists\Components\TextEntry;
+use Filament\Infolists\Components\RepeatableEntry;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Tables\Actions\Action;
@@ -33,6 +37,24 @@ class SaleResource extends Resource
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()->where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id);
+    }
+
+    // Nadie edita una venta ya hecha.
+    public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return false;
+    }
+
+    // Nadie borra una venta ya hecha (se anulan con Nota de Crédito, no se borran de la base de datos).
+    public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return false;
+    }
+
+    // Todos pueden crear ventas (Cajeros y Admins).
+    public static function canCreate(): bool
+    {
+        return true;
     }
 
     public static function form(Form $form): Form
@@ -165,14 +187,14 @@ class SaleResource extends Resource
 
                                 // ¡NUEVO CAMPO! Solo aparece si el producto es fraccionable
                                 Forms\Components\Select::make('measurement_unit')
-                                    ->label('U. Medida')
+                                    ->label('Present.')
                                     ->options([
                                         'box' => 'Caja',
                                         'unit' => 'Unidad',
                                     ])
                                     ->visible(fn (Get $get) => $get('_is_fractionable'))
                                     ->required(fn (Get $get) => $get('_is_fractionable'))
-                                    ->columnSpan(2)
+                                    ->columnSpan(1)
                                     ->live()
                                     ->afterStateUpdated(function ($state, Set $set, Get $get) {
                                         // Si cambia de Caja a Unidad, cambiamos el precio automáticamente
@@ -250,7 +272,7 @@ class SaleResource extends Resource
                                     ->numeric()
                                     ->required()
                                     ->readonly()
-                                    ->columnSpan(1),
+                                    ->columnSpan(2),
 
                                 // CAMPOS OCULTOS: Se calculan solos y van a la BD para SUNAT, pero no ensucian la pantalla
                                 Forms\Components\Hidden::make('_stock_disponible'),
@@ -306,6 +328,89 @@ class SaleResource extends Resource
                 ])->columnSpan(['lg' => 1]),
             ])
             ->columns(4);
+    }
+
+    public static function infolist(Infolist $infolist): Infolist
+    {
+        return $infolist
+            ->schema([
+                Section::make('Información del Comprobante')
+                    ->schema([
+                        TextEntry::make('document_type')
+                            ->label('Comprobante')
+                            ->formatStateUsing(fn ($state) => match ($state) {
+                                '01' => 'Factura',
+                                '03' => 'Boleta',
+                                '07' => 'Nota de Crédito',
+                                '08' => 'Nota de Débito',
+                                default => $state,
+                            })
+                            ->badge()
+                            ->color('info'),
+
+                        TextEntry::make('series')
+                            ->label('Serie')
+                            ->weight('bold'),
+
+                        // Si tienes un campo de correlativo en tu BD, ponlo aquí. Si no, bórralo.
+                        TextEntry::make('correlative')
+                            ->label('Correlativo')
+                            ->weight('bold'),
+
+                        TextEntry::make('customer.name')
+                            ->label('Cliente')
+                            ->icon('heroicon-o-user'),
+
+                        TextEntry::make('sold_at')
+                            ->label('Fecha de Emisión')
+                            ->dateTime('d/m/Y h:i A'),
+                    ])->columns(5),
+
+                Section::make('Detalle de Productos')
+                    ->schema([
+                        RepeatableEntry::make('items') // Asegúrate que tu relación de ítems se llame 'items'
+                            ->label('')
+                            ->schema([
+                                TextEntry::make('product.name')
+                                    ->label('Producto')
+                                    ->weight('bold'),
+
+                                TextEntry::make('quantity')
+                                    ->label('Cant.')
+                                    ->badge()
+                                    ->color('gray'),
+
+                                TextEntry::make('unit_price')
+                                    ->label('Precio Unit.')
+                                    ->money('PEN'),
+
+                                TextEntry::make('total')
+                                    ->label('Subtotal')
+                                    ->money('PEN')
+                                    ->color('success')
+                                    ->weight('bold'),
+                            ])
+                            ->columns(4)
+                    ]),
+
+                Section::make('Resumen Financiero')
+                    ->schema([
+                        TextEntry::make('op_gravadas')
+                            ->label('Op. Gravadas')
+                            ->money('PEN'),
+
+                        TextEntry::make('igv')
+                            ->label('IGV (18%)')
+                            ->money('PEN'),
+
+                        TextEntry::make('total')
+                            ->label('IMPORTE TOTAL')
+                            ->money('PEN')
+                            ->size(TextEntry\TextEntrySize::Large) // Letra más grande para el total
+                            ->weight('bold')
+                            ->color('primary'),
+                    ])->columns(3),
+            ]);
     }
 
     public static function table(Table $table): Table
@@ -540,8 +645,13 @@ class SaleResource extends Resource
 
             // GRUPO 2: Archivos Digitales
             Tables\Actions\ActionGroup::make([
-                Tables\Actions\ViewAction::make()->label('Ver Detalle'),
-                Tables\Actions\EditAction::make()->label('Editar'),
+                // 1. Mejoramos el botón Ver para que tenga icono y color
+                Tables\Actions\ViewAction::make()
+                    ->label('Ver Detalle')
+                    ->icon('heroicon-o-eye')
+                    ->color('info'),
+
+                //Tables\Actions\EditAction::make()->label('Editar'),
 
                 Tables\Actions\Action::make('downloadXml')
                     ->label('Descargar XML')
@@ -922,7 +1032,8 @@ class SaleResource extends Resource
         return [
             'index' => Pages\ListSales::route('/'),
             'create' => Pages\CreateSale::route('/create'),
-            'edit' => Pages\EditSale::route('/{record}/edit'),
+            'view' => Pages\ViewSale::route('/{record}'), // NUEVA RUTA DE LECTURA
+            //'edit' => Pages\EditSale::route('/{record}/edit'),
         ];
     }
 }
