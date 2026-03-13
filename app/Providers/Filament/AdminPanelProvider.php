@@ -42,6 +42,25 @@ class AdminPanelProvider extends PanelProvider
             ->colors([
                 'primary' => Color::Indigo, // Usamos un azul profesional por defecto
             ])
+            ->brandName(function () {
+                // Usamos el Facade completo para que Intelephense lo reconozca
+                if (\Illuminate\Support\Facades\Auth::check()) {
+
+                    /** @var \Percy\Core\Models\User $user */
+                    $user = \Illuminate\Support\Facades\Auth::user();
+
+                    // Si es un cliente (Cajero o Admin de farmacia)
+                    if ($user->tenant_id !== null) {
+                        return $user->tenant->name ?? 'Mi Negocio';
+                    }
+
+                    // Si eres tú (Súper Admin)
+                    return 'SaaS Súper Admin';
+                }
+
+                // Texto por defecto para la pantalla de Login
+                return 'Mi Ecosistema SaaS';
+            })
             ->font('Inter')
             ->sidebarWidth('18rem')
             ->sidebarCollapsibleOnDesktop()

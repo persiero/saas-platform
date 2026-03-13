@@ -77,6 +77,11 @@ class UserResource extends Resource
                     ->dehydrateStateUsing(fn (string $state) => \Illuminate\Support\Facades\Hash::make($state)) // ENCRIPTACIÓN MÁGICA
                     ->helperText('Déjalo vacío si no deseas cambiar la contraseña.')
                     ->columnSpanFull(),
+
+                Forms\Components\Toggle::make('is_active')
+                ->label('Usuario Activo')
+                ->default(true)
+                ->helperText('Apágalo para quitarle el acceso al sistema sin borrar su historial.'),
             ])->columns(2);
     }
 
@@ -106,6 +111,10 @@ class UserResource extends Resource
                     ->label('Fecha de creación')
                     ->date('d/m/Y')
                     ->sortable(),
+
+                Tables\Columns\ToggleColumn::make('is_active')
+                ->label('Activo')
+                ->sortable(),
 
             ])
             ->filters([
