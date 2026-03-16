@@ -7,18 +7,13 @@
     "license": "MIT",
     "repositories": [
         {
-            "type": "path",
-            "url": "../core-business",
-            "options": {
-                "symlink": true
-            }
-        },
-        {
             "type": "vcs",
             "url": "https://github.com/persiero/core-business.git"
         }
     ],
     "require": {
+        "ext-intl": "*",
+        "ext-zip": "*",
         "php": "^8.2",
         "barryvdh/laravel-dompdf": "^3.1",
         "filament/filament": "^3.2",
@@ -97,7 +92,11 @@
         "allow-plugins": {
             "pestphp/pest-plugin": true,
             "php-http/discovery": true
+        },
+        "platform": {
+            "php": "8.2"
         }
+
     },
     "minimum-stability": "stable",
     "prefer-stable": true
