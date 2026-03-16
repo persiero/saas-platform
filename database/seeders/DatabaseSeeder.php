@@ -16,11 +16,11 @@ class DatabaseSeeder extends Seeder
         // En lugar de User::create, usamos updateOrCreate
         // Busca por email; si existe, lo actualiza. Si no, lo crea.
         \App\Models\User::updateOrCreate(
-            ['email' => 'admin@admin.com'], // Condición de búsqueda
+            ['email' => 'percyrojasrod@gmail.com'], // Condición de búsqueda
             [
-                'name' => 'Administrador',
+                'name' => 'Súper Administrador',
                 'password' => \Illuminate\Support\Facades\Hash::make('password123'),
-                'tenant_id' => 1, // Descomenta esto si ya tienes un tenant creado
+                'tenant_id' => null, // Descomenta esto si ya tienes un tenant creado
             ]
         );
 
