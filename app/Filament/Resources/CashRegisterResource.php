@@ -12,6 +12,11 @@ use Filament\Tables\Table;
 use Filament\Notifications\Notification;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\HtmlString;
+use Filament\Infolists\Infolist;
+use Filament\Infolists\Components\Section;
+use Filament\Infolists\Components\TextEntry;
+use Filament\Infolists\Components\Grid;
+use Illuminate\Support\Facades\Auth;
 
 class CashRegisterResource extends Resource
 {
@@ -128,7 +133,8 @@ class CashRegisterResource extends Resource
                     ->icon('heroicon-o-lock-closed')
                     ->color('danger')
                     ->button()
-                    ->visible(fn (CashRegister $record) => $record->status === 'open')
+                    // 🌟 MAGIA DE SEGURIDAD: Solo el dueño de la caja ve el botón
+                    ->visible(fn (CashRegister $record) => $record->status === 'open' && $record->user_id === Auth::id())
                     ->modalHeading('Cerrar Turno de Caja')
                     ->modalWidth('md') // Le damos un ancho mediano al modal
                     ->form([
@@ -138,11 +144,13 @@ class CashRegisterResource extends Resource
                             ->content(function (CashRegister $record) {
                                 // Buscamos todas las ventas desde que se abrió esta caja
                                 $sales = \Percy\Core\Models\Sale::where('tenant_id', $record->tenant_id)
+                                    ->where('user_id', $record->user_id)
                                     ->where('sold_at', '>=', $record->opened_at)
                                     ->get();
 
                                 // Buscamos todos los gastos registrados en este turno
                                 $expenses = \Percy\Core\Models\Expense::where('tenant_id', $record->tenant_id)
+                                    ->where('user_id', $record->user_id)
                                     ->where('created_at', '>=', $record->opened_at)
                                     ->sum('amount');
 
@@ -207,6 +215,198 @@ class CashRegisterResource extends Resource
             ->emptyStateHeading('Sin cajas registradas')
             ->emptyStateDescription('Abre tu primera caja para comenzar a registrar ventas')
             ->emptyStateIcon('heroicon-o-calculator');
+    }
+
+    public static function infolist(Infolist $infolist): Infolist
+    {
+        return $infolist
+            ->schema([
+                Grid::make(3)->schema([
+                    // COLUMNA 1: Datos del Turno y Auditoría (Resumen de Efectivo)
+                    Grid::make(1)->schema([
+                        Section::make('Turno de Caja')
+                            ->schema([
+                                TextEntry::make('user.name')
+                                    ->label('Usuario')
+                                    ->icon('heroicon-o-user')
+                                    ->weight('bold'),
+
+                                TextEntry::make('status')
+                                    ->label('Estado')
+                                    ->badge()
+                                    ->color(fn (string $state): string => match ($state) {
+                                        'open' => 'success',
+                                        'closed' => 'danger',
+                                        default => 'gray',
+                                    })
+                                    ->formatStateUsing(fn ($state) => $state === 'open' ? 'Abierta' : 'Cerrada'),
+
+                                TextEntry::make('opened_at')
+                                    ->label('Fecha Apertura')
+                                    ->dateTime('d/m/Y H:i'),
+
+                                TextEntry::make('closed_at')
+                                    ->label('Fecha Cierre')
+                                    ->dateTime('d/m/Y H:i')
+                                    ->placeholder('Aún abierta'),
+                            ])->columns(2),
+
+                        Section::make('Auditoría de Efectivo (Cajón)')
+                            ->description('Dinero físico manejado durante el turno.')
+                            ->schema([
+                                TextEntry::make('opening_amount')
+                                    ->label('Fondo Inicial')
+                                    ->money('PEN'),
+
+                                // --- AQUÍ COMIENZA LA MAGIA DE LOS CÁLCULOS AL VUELO ---
+
+                                TextEntry::make('calc_cash_sales')
+                                    ->label('(+) Ventas en Efectivo')
+                                    ->money('PEN')
+                                    ->color('success')
+                                    ->state(function (CashRegister $record) {
+                                        $endDate = $record->closed_at ?? now();
+                                        return \Percy\Core\Models\Sale::where('tenant_id', $record->tenant_id)
+                                            ->where('user_id', $record->user_id)
+                                            ->whereBetween('sold_at', [$record->opened_at, $endDate])
+                                            ->where('payment_method', 'Efectivo')
+                                            ->sum('total');
+                                    }),
+
+                                TextEntry::make('calc_expenses')
+                                    ->label('(-) Gastos Registrados')
+                                    ->money('PEN')
+                                    ->color('danger')
+                                    ->state(function (CashRegister $record) {
+                                        $endDate = $record->closed_at ?? now();
+                                        return \Percy\Core\Models\Expense::where('tenant_id', $record->tenant_id)
+                                            ->where('user_id', $record->user_id)
+                                            ->whereBetween('created_at', [$record->opened_at, $endDate])
+                                            ->sum('amount');
+                                    }),
+
+                                TextEntry::make('calc_expected')
+                                    ->label('Efectivo Esperado')
+                                    ->money('PEN')
+                                    ->weight('bold')
+                                    ->size(TextEntry\TextEntrySize::Large)
+                                    ->state(function (CashRegister $record) {
+                                        $endDate = $record->closed_at ?? now();
+                                        $cashSales = \Percy\Core\Models\Sale::where('tenant_id', $record->tenant_id)
+                                            ->where('user_id', $record->user_id)
+                                            ->whereBetween('sold_at', [$record->opened_at, $endDate])
+                                            ->where('payment_method', 'Efectivo')
+                                            ->sum('total');
+
+                                        $expenses = \Percy\Core\Models\Expense::where('tenant_id', $record->tenant_id)
+                                            ->where('user_id', $record->user_id)
+                                            ->whereBetween('created_at', [$record->opened_at, $endDate])
+                                            ->sum('amount');
+
+                                        return $record->opening_amount + $cashSales - $expenses;
+                                    }),
+
+                                TextEntry::make('closing_amount') // ESTA SÍ ES TU COLUMNA REAL
+                                    ->label('Efectivo Contado')
+                                    ->money('PEN')
+                                    ->weight('bold')
+                                    ->placeholder('Esperando cierre...'),
+
+                                TextEntry::make('calc_difference')
+                                    ->label('Diferencia')
+                                    ->money('PEN')
+                                    ->weight('bold')
+                                    ->color(fn ($state) => $state < 0 ? 'danger' : ($state > 0 ? 'warning' : 'success'))
+                                    ->state(function (CashRegister $record) {
+                                        if ($record->status === 'open') return 0;
+
+                                        $cashSales = \Percy\Core\Models\Sale::where('tenant_id', $record->tenant_id)
+                                            ->where('user_id', $record->user_id)
+                                            ->whereBetween('sold_at', [$record->opened_at, $record->closed_at])
+                                            ->where('payment_method', 'Efectivo')
+                                            ->sum('total');
+
+                                        $expenses = \Percy\Core\Models\Expense::where('tenant_id', $record->tenant_id)
+                                            ->where('user_id', $record->user_id)
+                                            ->whereBetween('created_at', [$record->opened_at, $record->closed_at])
+                                            ->sum('amount');
+
+                                        $expected = $record->opening_amount + $cashSales - $expenses;
+                                        return $record->closing_amount - $expected;
+                                    }),
+                            ])->columns(2),
+                    ])->columnSpan(2),
+
+                    // COLUMNA 2: Desglose Digital y Estadísticas
+                    Grid::make(1)->schema([
+                        Section::make('Ventas por Método de Pago')
+                            ->schema([
+                                // Función de ayuda para no repetir tanto código
+                                ...collect(['Yape', 'Plin', 'Tarjeta', 'Transferencia'])->map(function ($method) {
+                                    return TextEntry::make("calc_sales_{$method}")
+                                        ->label($method)
+                                        ->money('PEN')
+                                        ->state(function (CashRegister $record) use ($method) {
+                                            $endDate = $record->closed_at ?? now();
+                                            return \Percy\Core\Models\Sale::where('tenant_id', $record->tenant_id)
+                                                ->where('user_id', $record->user_id)
+                                                ->whereBetween('sold_at', [$record->opened_at, $endDate])
+                                                ->where('payment_method', $method)
+                                                ->sum('total');
+                                        });
+                                }),
+
+                                TextEntry::make('calc_total_sales')
+                                    ->label('TOTAL VENTAS')
+                                    ->money('PEN')
+                                    ->weight('black')
+                                    ->color('primary')
+                                    ->size(TextEntry\TextEntrySize::Large)
+                                    ->state(function (CashRegister $record) {
+                                        $endDate = $record->closed_at ?? now();
+                                        return \Percy\Core\Models\Sale::where('tenant_id', $record->tenant_id)
+                                            ->where('user_id', $record->user_id)
+                                            ->whereBetween('sold_at', [$record->opened_at, $endDate])
+                                            ->sum('total');
+                                    }),
+                            ])->columns(2),
+
+                        Section::make('Rendimiento del Turno')
+                            ->schema([
+                                TextEntry::make('calc_sales_count')
+                                    ->label('Ventas Realizadas')
+                                    ->badge()
+                                    ->state(function (CashRegister $record) {
+                                        $endDate = $record->closed_at ?? now();
+                                        return \Percy\Core\Models\Sale::where('tenant_id', $record->tenant_id)
+                                            ->where('user_id', $record->user_id)
+                                            ->whereBetween('sold_at', [$record->opened_at, $endDate])
+                                            ->count();
+                                    }),
+
+                                TextEntry::make('calc_average_ticket')
+                                    ->label('Ticket Promedio')
+                                    ->money('PEN')
+                                    ->state(function (CashRegister $record) {
+                                        $endDate = $record->closed_at ?? now();
+                                        $count = \Percy\Core\Models\Sale::where('tenant_id', $record->tenant_id)
+                                            ->where('user_id', $record->user_id)
+                                            ->whereBetween('sold_at', [$record->opened_at, $endDate])
+                                            ->count();
+
+                                        if ($count === 0) return 0;
+
+                                        $total = \Percy\Core\Models\Sale::where('tenant_id', $record->tenant_id)
+                                            ->where('user_id', $record->user_id)
+                                            ->whereBetween('sold_at', [$record->opened_at, $endDate])
+                                            ->sum('total');
+
+                                        return $total / $count;
+                                    }),
+                            ])->columns(2),
+                    ])->columnSpan(1),
+                ]),
+            ]);
     }
 
     public static function getPages(): array

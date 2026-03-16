@@ -21,6 +21,7 @@ use Filament\Infolists\Components\Section;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Infolists\Components\RepeatableEntry;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Tables\Actions\Action;
 
@@ -57,6 +58,15 @@ class SaleResource extends Resource
         return true;
     }
 
+    // Asegurarnos de que toda nueva venta guarde el ID del cajero y el tenant
+    public static function mutateFormDataBeforeCreate(array $data): array
+    {
+        $data['user_id'] = Auth::id();
+        $data['tenant_id'] = Auth::user()->tenant_id;
+
+        return $data;
+    }
+
     public static function form(Form $form): Form
     {
         return $form
@@ -71,25 +81,37 @@ class SaleResource extends Resource
                             ])
                             ->required()
                             ->default('03')
-                            ->live() // Escucha el cambio
+                            ->live()
                             ->afterStateUpdated(function (Set $set, $state) {
-                                // Magia: Si cambia de Boleta a Factura, borramos la serie seleccionada
-                                $set('series', null);
+                                // Buscamos la serie, pero ESTRICTAMENTE de esta farmacia
+                                $serieAuto = \Percy\Core\Models\Serie::where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id)
+                                    ->where('document_type', $state)
+                                    ->where('active', true)
+                                    ->value('serie');
+
+                                $set('series', $serieAuto);
                             }),
 
                         Forms\Components\Select::make('series')
                             ->label('Serie')
                             ->required()
-                            // Magia: Busca las series activas en la BD según el tipo de comprobante elegido
                             ->options(function (Get $get) {
                                 $docType = $get('document_type');
                                 if (!$docType) return [];
 
-                                // Gracias a tu Súper Candado, esto SOLO trae las series de ESTE negocio
-                                return \Percy\Core\Models\Serie::where('document_type', $docType)
+                                // Traemos las opciones, ESTRICTAMENTE de esta farmacia
+                                return \Percy\Core\Models\Serie::where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id)
+                                    ->where('document_type', $docType)
                                     ->where('active', true)
                                     ->pluck('serie', 'serie');
-                            }),
+                            })
+                            ->default(function () {
+                                return \Percy\Core\Models\Serie::where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id)
+                                    ->where('document_type', '03')
+                                    ->where('active', true)
+                                    ->value('serie');
+                            })
+                            ->selectablePlaceholder(false), // Oculta la opción "Select an option" si ya hay datos
 
                         Forms\Components\Hidden::make('correlative'),
 
@@ -111,7 +133,8 @@ class SaleResource extends Resource
                             ->searchable()
                             ->preload()
                             ->live() // Para que se refresque si cambias el tipo de comprobante
-                            ->required()
+                            ->required(fn (Get $get) => $get('document_type') === '01') // Solo obligatorio si es Factura
+                            ->helperText(fn (Get $get) => $get('document_type') === '01' ? 'Obligatorio para Facturas' : 'Opcional. Déjalo en blanco para Consumidor Final.')
                             ->columnSpan(2),
 
                         Forms\Components\Select::make('payment_method')
@@ -148,6 +171,77 @@ class SaleResource extends Resource
                     ])->columns(4),
 
                     Forms\Components\Section::make('Detalle de Productos')->schema([
+
+                        // 🔫 LECTOR DE CÓDIGO DE BARRAS
+                        Forms\Components\TextInput::make('scanner')
+                            ->label('Lector de Código de Barras')
+                            ->placeholder('Dispare la pistola aquí...')
+                            ->prefixIcon('heroicon-o-qr-code')
+                            ->autofocus() // El cursor siempre estará aquí al abrir la venta
+                            // Evitamos que el "Enter" de la pistola guarde la venta accidentalmente
+                            ->extraInputAttributes(['x-on:keydown.enter.prevent' => '$wire.$refresh()'])
+                            ->live(debounce: 250) // Espera un cuarto de segundo a que la pistola termine de escribir
+                            ->afterStateUpdated(function ($state, Set $set, Get $get) {
+                                if (empty($state)) return;
+
+                                // Buscamos el producto por su código de barras
+                                $product = \Percy\Core\Models\Product::where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id)
+                                    ->where('barcode', $state)
+                                    ->first();
+
+                                if ($product) {
+                                    // Traemos los items actuales del carrito
+                                    $items = $get('items') ?? [];
+
+                                    // Buscamos el lote FEFO igual que arriba
+                                    $batch = \Percy\Core\Models\ProductBatch::where('product_id', $product->id)
+                                        ->where('current_quantity', '>', 0)
+                                        ->whereDate('expiration_date', '>=', now())
+                                        ->orderBy('expiration_date', 'asc')
+                                        ->first();
+
+                                    // CALCULAMOS LOS IMPUESTOS FALTANTES PARA QUE LA BD NO EXPLOTE
+                                    $afectacion = \Percy\Core\Models\AfectacionIgv::find($product->afectacion_igv_id ?? 1);
+                                    $porcentaje = ($afectacion && $afectacion->gravado) ? ($afectacion->porcentaje / 100) : 0;
+                                    $unitValue = $product->price / (1 + $porcentaje);
+                                    $igvAmount = $product->price - $unitValue;
+
+                                    // INYECTAMOS EL PRODUCTO CON TODOS SUS DATOS COMPLETOS
+                                    $items[(string) \Illuminate\Support\Str::uuid()] = [
+                                        'product_id' => $product->id,
+                                        'product_batch_id' => $batch ? $batch->id : null,
+                                        'measurement_unit' => 'box',
+                                        'quantity' => 1,
+                                        'unit_price' => $product->price,
+                                        'total' => $product->price,
+                                        'afectacion_igv_id' => $product->afectacion_igv_id,
+                                        'unit_code' => $product->unidadSunat ? $product->unidadSunat->codigo : 'NIU',
+                                        '_stock_disponible' => $product->current_stock,
+                                        '_is_fractionable' => $product->is_fractionable,
+                                        '_box_price' => $product->price,
+                                        '_fraction_price' => $product->unit_price,
+                                        // 🌟 LOS CAMPOS FALTANTES QUE CAUSARON EL ERROR:
+                                        'item_name' => $product->name,
+                                        'unit_value' => round($unitValue, 2),
+                                        'igv_amount' => round($igvAmount, 2),
+                                    ];
+
+                                    // Guardamos el carrito actualizado
+                                    $set('items', $items);
+
+                                    // Forzamos la actualización de los totales globales
+                                    self::updateTotals($get, $set);
+
+                                    \Filament\Notifications\Notification::make()->title('Agregado: ' . $product->name)->success()->send();
+                                } else {
+                                    \Filament\Notifications\Notification::make()->title('Código no encontrado')->danger()->send();
+                                }
+
+                                // Limpiamos la caja para el siguiente disparo láser
+                                $set('scanner', null);
+                            })
+                            ->columnSpanFull(), // Ocupa todo el ancho
+
                         Forms\Components\Repeater::make('items')
                             ->relationship()
                             ->label('')
@@ -172,6 +266,7 @@ class SaleResource extends Resource
                                             $product = Product::find($state);
                                             $set('unit_price', $product->price);
                                             $set('afectacion_igv_id', $product->afectacion_igv_id);
+                                            $set('unit_code', $product->unidadSunat ? $product->unidadSunat->codigo : 'NIU');
                                             $set('item_name', $product->name);
                                             $set('_stock_disponible', $product->current_stock);
 
@@ -180,6 +275,17 @@ class SaleResource extends Resource
                                             $set('_box_price', $product->price);
                                             $set('_fraction_price', $product->unit_price);
                                             $set('measurement_unit', 'box'); // Por defecto se vende la caja
+
+                                            // 🌟 NUEVA MAGIA FEFO: Auto-seleccionar el lote más próximo a vencer
+                                            $loteProximo = \Percy\Core\Models\ProductBatch::where('product_id', $state)
+                                                ->where('current_quantity', '>', 0)
+                                                ->whereDate('expiration_date', '>=', now())
+                                                ->orderBy('expiration_date', 'asc') // Del más viejo al más nuevo
+                                                ->where('is_active', true)
+                                                ->first();
+
+                                            // Si encontró un lote, lo asigna directo al campo 'product_batch_id'
+                                            $set('product_batch_id', $loteProximo ? $loteProximo->id : null);
                                         }
                                         self::updateRow($get, $set);
                                         self::updateTotals($get, $set);
@@ -218,6 +324,8 @@ class SaleResource extends Resource
                                         // Solo traemos los lotes de este producto que tengan stock > 0
                                         return \Percy\Core\Models\ProductBatch::where('product_id', $productId)
                                             ->where('current_quantity', '>', 0)
+                                            ->whereDate('expiration_date', '>=', now()) // No muestra lotes vencidos
+                                            ->orderBy('expiration_date', 'asc') // FEFO
                                             ->where('is_active', true)
                                             // Formateamos para que el cajero vea el Lote y su fecha de vencimiento
                                             ->get()
@@ -237,21 +345,59 @@ class SaleResource extends Resource
                                     })
                                     ->searchable()
                                     ->preload()
-                                    ->columnSpan(2), // Ajusta los columnSpan de los demás campos para que sumen 12
+                                    ->columnSpan(3), // Ajusta los columnSpan de los demás campos para que sumen 12
 
-                                Forms\Components\Select::make('afectacion_igv_id')
-                                    ->relationship('afectacionIgv', 'descripcion')
-                                    ->label('Tipo IGV')
-                                    ->required()
-                                    ->columnSpan(1)
-                                    ->live()
-                                    ->afterStateUpdated(fn(Get $get, Set $set) => [self::updateRow($get, $set), self::updateTotals($get, $set)]),
+                                //Forms\Components\Hidden::make('afectacion_igv_id')
+                                  //  ->relationship('afectacionIgv', 'descripcion')
+                                  //  ->label('IGV')
+                                   // ->required()
+                                    //->columnSpan(1)
+                                    //->live()
+                                    //->afterStateUpdated(fn(Get $get, Set $set) => [self::updateRow($get, $set), self::updateTotals($get, $set)]),
 
                                 Forms\Components\TextInput::make('quantity')
                                     ->label('Cant.')
                                     ->numeric()
                                     ->default(1)
                                     ->minValue(0.01)
+                                    ->maxValue(function (Get $get) {
+                                        $stock = null;
+                                        if ($batchId = $get('product_batch_id')) {
+                                            $batch = \Percy\Core\Models\ProductBatch::find($batchId);
+                                            $stock = $batch ? $batch->current_quantity : null;
+                                        } elseif ($productId = $get('product_id')) {
+                                            $product = \Percy\Core\Models\Product::find($productId);
+                                            $stock = $product ? $product->current_stock : null;
+                                        }
+
+                                        if ($stock === null) return null;
+
+                                        // Si está vendiendo por UNIDAD, quitamos el límite estricto para que pueda poner 20, 50 o 100 pastillas.
+                                        if ($get('measurement_unit') === 'unit') {
+                                            return 99999;
+                                        }
+
+                                        // Si vende por CAJA, respeta el stock exacto del lote (Ej: 9)
+                                        return $stock;
+                                    })
+                                    ->required()
+                                    ->columnSpan(1)
+                                    ->live(onBlur: true)
+                                    ->afterStateUpdated(fn(Get $get, Set $set) => [self::updateRow($get, $set), self::updateTotals($get, $set)])
+                                    // MEJORA UX: Le mostramos a la cajera el stock del lote vs el total
+                                    ->helperText(function (Get $get) {
+                                        if (!$get('product_id')) return null;
+
+                                        $totalStock = $get('_stock_disponible') ?? 0;
+
+                                        if ($batchId = $get('product_batch_id')) {
+                                            $batch = \Percy\Core\Models\ProductBatch::find($batchId);
+                                            $loteStock = $batch ? $batch->current_quantity : 0;
+                                            return "Lote: {$loteStock} | Total: {$totalStock}";
+                                        }
+
+                                        return "Stock Total: {$totalStock}";
+                                    })
                                     ->required()
                                     ->columnSpan(1)
                                     ->live(onBlur: true)
@@ -278,7 +424,9 @@ class SaleResource extends Resource
                                 Forms\Components\Hidden::make('_stock_disponible'),
                                 Forms\Components\Hidden::make('item_name'),
                                 Forms\Components\Hidden::make('unit_value'),
+                                Forms\Components\Hidden::make('afectacion_igv_id'),
                                 Forms\Components\Hidden::make('igv_amount'),
+                                Forms\Components\Hidden::make('unit_code')->default('NIU'),
 
                                 // Memoria temporal para la magia de la farmacia
                                 Forms\Components\Hidden::make('_is_fractionable'),
@@ -286,7 +434,7 @@ class SaleResource extends Resource
                                 Forms\Components\Hidden::make('_fraction_price'),
                             ])
                             ->columns(12) // Pasamos de 16 a 12 columnas. ¡Diseño perfecto!
-                            ->defaultItems(1)
+                            ->defaultItems(0)
                             ->addActionLabel('Agregar otro producto'),
                     ]),
                 ])->columnSpan(['lg' => 3]),
@@ -307,6 +455,15 @@ class SaleResource extends Resource
                             ->label('Op. Inafectas')
                             ->content(fn (Get $get): string => 'S/ ' . number_format((float)($get('op_inafectas') ?? 0), 2))
                             ->extraAttributes(['class' => 'flex justify-between border-b pb-1 text-gray-500']),
+
+                        // EL NUEVO SUBTOTAL (Suma de todas las bases antes de impuestos)
+                        Forms\Components\Placeholder::make('subtotal_lbl')
+                            ->label('SUBTOTAL')
+                            ->content(function (Get $get) {
+                                $sub = (float)($get('op_gravadas') ?? 0) + (float)($get('op_exoneradas') ?? 0) + (float)($get('op_inafectas') ?? 0);
+                                return 'S/ ' . number_format($sub, 2);
+                            })
+                            ->extraAttributes(['class' => 'flex justify-between border-b pb-1 font-semibold text-gray-700 dark:text-gray-300']),
 
                         Forms\Components\Placeholder::make('igv_lbl')
                             ->label('IGV (18%)')
@@ -360,6 +517,12 @@ class SaleResource extends Resource
                         TextEntry::make('customer.name')
                             ->label('Cliente')
                             ->icon('heroicon-o-user'),
+
+                        // AGREGA ESTE NUEVO CAMPO:
+                        TextEntry::make('user.name')
+                            ->label('Atendido por (Cajero)')
+                            ->icon('heroicon-o-identification')
+                            ->weight('bold'),
 
                         TextEntry::make('sold_at')
                             ->label('Fecha de Emisión')
@@ -455,6 +618,12 @@ class SaleResource extends Resource
                 ->icon('heroicon-o-user')
                 ->limit(30)
                 ->tooltip(fn (Sale $record): ?string => $record->customer?->name),
+
+            Tables\Columns\TextColumn::make('user.name')
+                ->label('Cajero')
+                ->icon('heroicon-o-identification')
+                ->limit(20)
+                ->toggleable(), // Permite ocultar la columna si la pantalla es pequeña
 
             Tables\Columns\TextColumn::make('total')
                 ->label('Total')
@@ -579,7 +748,7 @@ class SaleResource extends Resource
         ->actions([
             // GRUPO 1: Acciones Principales (Envío y Ticket)
             Tables\Actions\Action::make('sendToSunat')
-                ->label('Enviar SUNAT')
+                ->label('SUNAT')
                 ->icon('heroicon-o-paper-airplane')
                 ->color('success')
 
@@ -930,7 +1099,7 @@ class SaleResource extends Resource
                     }),
 
             ])
-            ->label('Más Opciones')
+            ->label('Opciones')
             ->icon('heroicon-m-ellipsis-vertical')
             ->button()
             ->color('gray'),

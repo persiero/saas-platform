@@ -66,16 +66,19 @@ class ProductResource extends Resource
                             ->required()
                             ->maxLength(150),
 
-                        Forms\Components\Select::make('unit_code')
+                        Forms\Components\TextInput::make('barcode')
+                            ->label('Código de Barras')
+                            ->prefixIcon('heroicon-o-qr-code')
+                            ->placeholder('Escanea o digita el código')
+                            ->unique(ignoreRecord: true), // Evita que dos productos tengan el mismo código
+
+                        Forms\Components\Select::make('unidad_sunat_id')
+                            ->relationship('unidadSunat', 'descripcion')
                             ->label('Unidad de Medida (SUNAT)')
-                            ->options([
-                                'NIU' => 'Unidad (Bienes)',
-                                'ZZ'  => 'Servicio (Atención, Delivery, etc.)',
-                                'KGM' => 'Kilogramos',
-                                'LTR' => 'Litros',
-                            ])
-                            ->default('NIU')
-                            ->required(),
+                            ->required()
+                            ->default(1) // Por defecto NIU (Id 1)
+                            ->searchable()
+                            ->preload(),
 
                         Forms\Components\Select::make('type')
                             ->label('Tipo de Ítem')
@@ -94,8 +97,7 @@ class ProductResource extends Resource
 
                         Forms\Components\TextInput::make('description')
                             ->label('Descripción')
-                            ->maxLength(255)
-                            ->columnSpanFull(),
+                            ->maxLength(255),
                     ])->columns(2),
 
                     Forms\Components\Section::make('Datos Farmacéuticos')
@@ -176,13 +178,6 @@ class ProductResource extends Resource
                             ->searchable()
                             ->preload(),
 
-                        Forms\Components\Select::make('unidad_sunat_id')
-                            ->relationship('unidadSunat', 'descripcion')
-                            ->label('Unidad de Medida (SUNAT)')
-                            ->required()
-                            ->default(1) // Por defecto NIU (Id 1)
-                            ->searchable()
-                            ->preload(),
                     ]),
                 ])->columnSpan(['lg' => 1]),
             ])
@@ -200,6 +195,16 @@ class ProductResource extends Resource
                     ->weight('bold')
                     ->icon('heroicon-o-cube')
                     ->description(fn (Product $record): ?string => $record->category?->name),
+
+                Tables\Columns\TextColumn::make('barcode')
+                    ->label('Cód. Barras')
+                    ->icon('heroicon-o-qr-code')
+                    ->searchable() // ¡Esto automáticamente agrega la búsqueda general por código!
+                    ->sortable()
+                    ->copyable() // UX Extra: Permite copiar el código con un clic
+                    ->copyMessage('Código copiado')
+                    ->placeholder('Sin código')
+                    ->toggleable(),
 
                 Tables\Columns\TextColumn::make('price')
                     ->label('Precio')
@@ -252,6 +257,16 @@ class ProductResource extends Resource
                     ->trueLabel('Solo activos')
                     ->falseLabel('Solo inactivos')
                     ->native(false),
+
+                Tables\Filters\TernaryFilter::make('has_barcode')
+                    ->label('¿Tiene Cód. Barras?')
+                    ->placeholder('Todos los productos')
+                    ->trueLabel('Con código')
+                    ->falseLabel('Sin código')
+                    ->queries(
+                        true: fn (Builder $query) => $query->whereNotNull('barcode'),
+                        false: fn (Builder $query) => $query->whereNull('barcode'),
+                    ),
 
                 Tables\Filters\Filter::make('low_stock')
                     ->label('Stock bajo')

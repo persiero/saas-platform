@@ -103,6 +103,13 @@ class ExpenseResource extends Resource
                     ->icon('heroicon-o-calendar')
                     ->description(fn (Expense $record): string => $record->expense_date->diffForHumans()),
 
+                Tables\Columns\TextColumn::make('user.name')
+                    ->label('Registrado por')
+                    ->icon('heroicon-o-identification')
+                    ->sortable()
+                    ->searchable()
+                    ->toggleable(),
+
                 Tables\Columns\TextColumn::make('category')
                     ->label('Categoría')
                     ->searchable()
