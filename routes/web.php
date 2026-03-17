@@ -3,9 +3,7 @@
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\SaleController;
 
-Route::get('/', function () {
-    return view('welcome');
-});
+Route::redirect('/', '/admin');
 
 // Reemplazamos la función anónima por una llamada al controlador
 Route::get('/sales/{sale}/ticket', [SaleController::class, 'printTicket'])->name('sales.ticket');
