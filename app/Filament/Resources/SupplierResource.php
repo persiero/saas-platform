@@ -10,6 +10,8 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Filament\Tables\Filters\TrashedFilter;
+use Illuminate\Database\Eloquent\SoftDeletingScope;
 
 class SupplierResource extends Resource
 {
@@ -36,7 +38,60 @@ class SupplierResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()->where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id);
+        return parent::getEloquentQuery()
+            ->where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id) // 1. Filtro SaaS
+            // ❌ Quitamos el ->with(['category']) porque estos módulos no lo necesitan
+            ->withoutGlobalScopes([
+                SoftDeletingScope::class, // 2. Permite ver la papelera
+            ]);
+    }
+
+    public static function canCreate(): bool
+    {
+        /** @var \Percy\Core\Models\User $user */
+        $user = \Illuminate\Support\Facades\Auth::user();
+        return $user->isAdmin();
+    }
+
+    public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        /** @var \Percy\Core\Models\User $user */
+        $user = \Illuminate\Support\Facades\Auth::user();
+        return $user->isAdmin();
+    }
+
+    public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        /** @var \Percy\Core\Models\User $user */
+        $user = \Illuminate\Support\Facades\Auth::user();
+        return $user->isAdmin();
+    }
+
+    public static function canRestore(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        /** @var \Percy\Core\Models\User $user */
+        $user = \Illuminate\Support\Facades\Auth::user();
+        return $user->isAdmin(); // Solo el Admin puede restaurar
+    }
+
+    public static function canForceDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return false;
+    }
+
+    // 5. Restricción general para Bulk Actions (Aplica para eliminar/restaurar masivamente)
+    public static function canDeleteAny(): bool
+    {
+        /** @var \Percy\Core\Models\User $user */
+        $user = \Illuminate\Support\Facades\Auth::user();
+        return $user->isAdmin();
+    }
+
+    public static function canRestoreAny(): bool
+    {
+        /** @var \Percy\Core\Models\User $user */
+        $user = \Illuminate\Support\Facades\Auth::user();
+        return $user->isAdmin();
     }
 
     public static function form(Form $form): Form
@@ -167,26 +222,36 @@ class SupplierResource extends Resource
                     ->falseLabel('Solo inactivos')
                     ->native(false)
                     ->indicator('Estado'),
+
+                TrashedFilter::make(),
             ])
             ->actions([
                 Tables\Actions\ActionGroup::make([
                     Tables\Actions\ViewAction::make()
-                        ->label('Ver')
+                        ->label('Ver detalles')
                         ->icon('heroicon-o-eye')
-                        ->modalHeading('Detalles del Proveedor')
-                        ->modalSubmitAction(false)
-                        ->modalCancelActionLabel('Cerrar'),
+                        ->color('info'),
+
                     Tables\Actions\EditAction::make()
                         ->label('Editar')
-                        ->icon('heroicon-o-pencil'),
+                        ->icon('heroicon-o-pencil')
+                        ->color('warning'),
+
                     Tables\Actions\DeleteAction::make()
                         ->label('Eliminar')
                         ->icon('heroicon-o-trash')
                         ->requiresConfirmation()
                         ->modalHeading('Eliminar Proveedor')
-                        ->modalDescription('¿Estás seguro de que deseas eliminar este proveedor? Esta acción no se puede deshacer.')
-                        ->modalSubmitActionLabel('Sí, eliminar')
-                        ->modalCancelActionLabel('Cancelar'),
+                        ->modalDescription('¿Estás seguro de que deseas eliminar este proveedor? Esta acción no se puede deshacer.'),
+
+                    Tables\Actions\RestoreAction::make()
+                        ->label('Restaurar')
+                        ->icon('heroicon-o-arrow-uturn-left') // Icono de "Deshacer"
+                        ->color('success') // Color verde positivo
+                        ->requiresConfirmation()
+                        ->modalHeading('Restaurar Proveedor')
+                        ->modalDescription('¿Deseas rescatar este proveedor de la papelera? Volverá a estar visible y activo en el sistema.'),
+
                 ])->label('Acciones')
                   ->icon('heroicon-o-ellipsis-vertical')
                   ->button()
@@ -198,9 +263,15 @@ class SupplierResource extends Resource
                         ->label('Eliminar seleccionados')
                         ->requiresConfirmation()
                         ->modalHeading('Eliminar Proveedores')
-                        ->modalDescription('¿Estás seguro de que deseas eliminar los proveedores seleccionados?')
-                        ->modalSubmitActionLabel('Sí, eliminar')
-                        ->modalCancelActionLabel('Cancelar'),
+                        ->modalDescription('¿Estás seguro de que deseas eliminar los proveedores seleccionados?'),
+
+                    Tables\Actions\RestoreBulkAction::make()
+                        ->label('Restaurar seleccionados')
+                        ->icon('heroicon-o-arrow-uturn-left')
+                        ->color('success')
+                        ->requiresConfirmation()
+                        ->modalHeading('Restaurar Proveedores')
+                        ->modalDescription('¿Deseas restaurar los proveedores seleccionados y devolverlos al catálogo activo?'),
                 ]),
             ])
             ->emptyStateHeading('No hay proveedores registrados')

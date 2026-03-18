@@ -40,14 +40,32 @@ class SaleResource extends Resource
         return parent::getEloquentQuery()->where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id);
     }
 
-    // Nadie edita una venta ya hecha.
+    // 1.Nadie edita una venta ya hecha.
     public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
     {
         return false;
     }
 
-    // Nadie borra una venta ya hecha (se anulan con Nota de Crédito, no se borran de la base de datos).
+    // 2.Nadie borra una venta ya hecha (se anulan con Nota de Crédito, no se borran de la base de datos).
     public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return false;
+    }
+
+    // 3. CANDADO: Nadie hace borrado masivo.
+    public static function canDeleteAny(): bool
+    {
+        return false;
+    }
+
+    // 4. CANDADO: Nadie destruye registros de la BD.
+    public static function canForceDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return false;
+    }
+
+    // 5. CANDADO: Nadie destruye registros masivamente.
+    public static function canForceDeleteAny(): bool
     {
         return false;
     }
@@ -838,8 +856,14 @@ class SaleResource extends Resource
                     ->label('Nota de Credito')
                     ->icon('heroicon-o-document-minus')
                     ->color('danger')
-                    // Solo se muestra si el documento original es Boleta o Factura y ya fue aceptado
-                    ->visible(fn (Sale $record) => $record->sunat_status === 'accepted' && in_array($record->document_type, ['01', '03']))
+                    // 🌟 CANDADO: Solo si es Admin + Documento Aceptado + Es Boleta/Factura
+                    ->visible(function (Sale $record) {
+                        $isAdmin = \Illuminate\Support\Facades\Auth::user()->isAdmin();
+                        $isAccepted = $record->sunat_status === 'accepted';
+                        $isValidDocument = in_array($record->document_type, ['01', '03']);
+
+                        return $isAdmin && $isAccepted && $isValidDocument;
+                    })
                     ->form([
                         Forms\Components\Select::make('serie_nota')
                             ->label('Serie de Nota de Crédito')
@@ -956,7 +980,14 @@ class SaleResource extends Resource
                     ->label('Nota de Débito')
                     ->icon('heroicon-o-document-plus') // Un ícono de "más"
                     ->color('warning') // Color amarillo para diferenciarlo del rojo de anulación
-                    ->visible(fn (Sale $record) => $record->sunat_status === 'accepted' && in_array($record->document_type, ['01', '03']))
+                    // 🌟 CANDADO: Solo si es Admin + Documento Aceptado + Es Boleta/Factura
+                    ->visible(function (Sale $record) {
+                        $isAdmin = \Illuminate\Support\Facades\Auth::user()->isAdmin();
+                        $isAccepted = $record->sunat_status === 'accepted';
+                        $isValidDocument = in_array($record->document_type, ['01', '03']);
+
+                        return $isAdmin && $isAccepted && $isValidDocument;
+                    })
                     ->form([
                         Forms\Components\Select::make('serie_nota')
                             ->label('Serie de Nota de Débito (Ej: BD01 o FD01)')
@@ -1107,7 +1138,7 @@ class SaleResource extends Resource
         ])
         ->bulkActions([
             Tables\Actions\BulkActionGroup::make([
-                Tables\Actions\DeleteBulkAction::make(),
+                //Tables\Actions\DeleteBulkAction::make(),
             ]),
         ]);
     }

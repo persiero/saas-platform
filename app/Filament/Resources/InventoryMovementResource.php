@@ -51,6 +51,27 @@ class InventoryMovementResource extends Resource
         return false;
     }
 
+    // 🔒 NUEVOS CANDADOS EXTREMOS PARA KARDEX
+    public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return false; // El historial es inmutable
+    }
+
+    public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return false;
+    }
+
+    public static function canDeleteAny(): bool
+    {
+        return false;
+    }
+
+    public static function canForceDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return false;
+    }
+
     public static function form(Form $form): Form
     {
         return $form
@@ -162,7 +183,10 @@ class InventoryMovementResource extends Resource
                     ->searchable(),
             ])
             ->actions([
-                Tables\Actions\ViewAction::make()->label('Ver'),
+                Tables\Actions\ViewAction::make()
+                ->label('Ver detalles')
+                ->icon('heroicon-o-eye')
+                ->color('info'),
             ])
             ->bulkActions([
                 // En un Kardex estricto, no se debe permitir eliminar movimientos en bloque

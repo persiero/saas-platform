@@ -35,6 +35,30 @@ class ExpenseResource extends Resource
         return parent::getEloquentQuery()->where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id);
     }
 
+    // 🔒 1. Solo el Admin puede editar un gasto registrado
+    public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        /** @var \Percy\Core\Models\User $user */
+        $user = \Illuminate\Support\Facades\Auth::user();
+        return $user->isAdmin();
+    }
+
+    // 🔒 2. Solo el Admin puede eliminar un gasto individualmente
+    public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        /** @var \Percy\Core\Models\User $user */
+        $user = \Illuminate\Support\Facades\Auth::user();
+        return $user->isAdmin();
+    }
+
+    // 🔒 3. Solo el Admin puede usar el botón rojo de borrado masivo
+    public static function canDeleteAny(): bool
+    {
+        /** @var \Percy\Core\Models\User $user */
+        $user = \Illuminate\Support\Facades\Auth::user();
+        return $user->isAdmin();
+    }
+
     public static function form(Form $form): Form
     {
         return $form
@@ -206,6 +230,12 @@ class ExpenseResource extends Resource
             ])
             ->actions([
                 Tables\Actions\ActionGroup::make([
+                    Tables\Actions\ViewAction::make()
+                        ->label('Ver detalles')
+                        ->icon('heroicon-o-eye')
+                        ->color('info')
+                        ->modalHeading('Detalle del Gasto')
+                        ->modalCancelActionLabel('Cerrar'),
                     Tables\Actions\EditAction::make()
                         ->label('Editar')
                         ->icon('heroicon-o-pencil'),

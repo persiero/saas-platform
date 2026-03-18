@@ -38,6 +38,27 @@ class PurchaseResource extends Resource
         return parent::getEloquentQuery()->where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id);
     }
 
+    // 🔒 NUEVOS CANDADOS PARA COMPRAS
+    public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return false; // Las compras finalizadas no se editan (o cámbialo a $user->isAdmin() si el dueño puede corregir errores)
+    }
+
+    public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return false; // Se anulan, no se borran
+    }
+
+    public static function canDeleteAny(): bool
+    {
+        return false;
+    }
+
+    public static function canForceDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return false;
+    }
+
     public static function form(Form $form): Form
     {
         return $form
@@ -140,7 +161,7 @@ class PurchaseResource extends Resource
                                             self::updateRow($get, $set);
                                             self::updateTotals($get, $set);
                                         })
-                                        ->columnSpan(4),
+                                        ->columnSpan(5),
 
                                     // 🌟 NUEVO: NÚMERO DE LOTE (Solo para Farmacias)
                                     Forms\Components\TextInput::make('batch_number')
@@ -178,7 +199,7 @@ class PurchaseResource extends Resource
                                         ->required()
                                         ->live(onBlur: true)
                                         ->afterStateUpdated(fn(Get $get, Set $set) => [self::updateRow($get, $set), self::updateTotals($get, $set)])
-                                        ->columnSpan(1),
+                                        ->columnSpan(2),
 
                                     Forms\Components\TextInput::make('unit_cost')
                                         ->label('Costo Unitario')
@@ -197,7 +218,7 @@ class PurchaseResource extends Resource
                                         ->readonly()
                                         ->prefix('S/')
                                         ->dehydrated()
-                                        ->columnSpan(2),
+                                        ->columnSpan(3),
                                 ])
                                 ->columns(12)
                                 ->defaultItems(1)
@@ -369,22 +390,20 @@ class PurchaseResource extends Resource
             ->actions([
                 Tables\Actions\ActionGroup::make([
                     Tables\Actions\ViewAction::make()
-                        ->label('Ver')
+                        ->label('Ver detalles')
                         ->icon('heroicon-o-eye')
+                        ->color('info')
                         ->modalHeading('Detalles de la Compra')
                         ->modalSubmitAction(false)
-                        ->modalCancelActionLabel('Cerrar'),
+                        ->modalCancelActionLabel('Cerrar')
+                        ->modalWidth('6xl'),
+
                     Tables\Actions\EditAction::make()
                         ->label('Editar')
-                        ->icon('heroicon-o-pencil'),
-                    Tables\Actions\DeleteAction::make()
-                        ->label('Eliminar')
-                        ->icon('heroicon-o-trash')
-                        ->requiresConfirmation()
-                        ->modalHeading('Eliminar Compra')
-                        ->modalDescription('¿Estás seguro de que deseas eliminar esta compra?')
-                        ->modalSubmitActionLabel('Sí, eliminar')
-                        ->modalCancelActionLabel('Cancelar'),
+                        ->icon('heroicon-o-pencil')
+                        ->color('warning'),
+
+                    //Tables\Actions\DeleteAction::make()
                 ])->label('Acciones')
                   ->icon('heroicon-o-ellipsis-vertical')
                   ->button()
@@ -392,13 +411,7 @@ class PurchaseResource extends Resource
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make()
-                        ->label('Eliminar seleccionadas')
-                        ->requiresConfirmation()
-                        ->modalHeading('Eliminar Compras')
-                        ->modalDescription('¿Estás seguro de que deseas eliminar las compras seleccionadas?')
-                        ->modalSubmitActionLabel('Sí, eliminar')
-                        ->modalCancelActionLabel('Cancelar'),
+                    //Tables\Actions\DeleteBulkAction::make()
                 ]),
             ])
             ->emptyStateHeading('No hay compras registradas')

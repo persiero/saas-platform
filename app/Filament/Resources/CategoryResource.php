@@ -12,6 +12,7 @@ use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
+use Filament\Tables\Filters\TrashedFilter;
 
 class CategoryResource extends Resource
 {
@@ -26,7 +27,60 @@ class CategoryResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()->where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id);
+        return parent::getEloquentQuery()
+            ->where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id) // 1. Filtro SaaS
+            // ❌ Quitamos el ->with(['category']) porque estos módulos no lo necesitan
+            ->withoutGlobalScopes([
+                SoftDeletingScope::class, // 2. Permite ver la papelera
+            ]);
+    }
+
+    public static function canCreate(): bool
+    {
+        /** @var \Percy\Core\Models\User $user */
+        $user = \Illuminate\Support\Facades\Auth::user();
+        return $user->isAdmin();
+    }
+
+    public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        /** @var \Percy\Core\Models\User $user */
+        $user = \Illuminate\Support\Facades\Auth::user();
+        return $user->isAdmin();
+    }
+
+    public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        /** @var \Percy\Core\Models\User $user */
+        $user = \Illuminate\Support\Facades\Auth::user();
+        return $user->isAdmin();
+    }
+
+    public static function canRestore(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        /** @var \Percy\Core\Models\User $user */
+        $user = \Illuminate\Support\Facades\Auth::user();
+        return $user->isAdmin(); // Solo el Admin puede restaurar
+    }
+
+    public static function canForceDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return false;
+    }
+
+    // 5. Restricción general para Bulk Actions (Aplica para eliminar/restaurar masivamente)
+    public static function canDeleteAny(): bool
+    {
+        /** @var \Percy\Core\Models\User $user */
+        $user = \Illuminate\Support\Facades\Auth::user();
+        return $user->isAdmin();
+    }
+
+    public static function canRestoreAny(): bool
+    {
+        /** @var \Percy\Core\Models\User $user */
+        $user = \Illuminate\Support\Facades\Auth::user();
+        return $user->isAdmin();
     }
 
     public static function form(Form $form): Form
@@ -89,16 +143,35 @@ class CategoryResource extends Resource
                     ->trueLabel('Solo activas')
                     ->falseLabel('Solo inactivas')
                     ->native(false),
+
+                TrashedFilter::make(),
             ])
             ->actions([
                 Tables\Actions\ActionGroup::make([
+                    Tables\Actions\ViewAction::make()
+                        ->label('Ver detalles')
+                        ->icon('heroicon-o-eye')
+                        ->color('info'),
+
                     Tables\Actions\EditAction::make()
                         ->label('Editar')
-                        ->icon('heroicon-o-pencil'),
+                        ->icon('heroicon-o-pencil')
+                        ->color('warning'),
+
                     Tables\Actions\DeleteAction::make()
                         ->label('Eliminar')
                         ->icon('heroicon-o-trash')
-                        ->requiresConfirmation(),
+                        ->requiresConfirmation()
+                        ->modalHeading('Eliminar Categoría')
+                        ->modalDescription('¿Estás seguro de que deseas eliminar esta categoría? Esta acción no se puede deshacer.'),
+
+                    Tables\Actions\RestoreAction::make()
+                        ->label('Restaurar')
+                        ->icon('heroicon-o-arrow-uturn-left') // Icono de "Deshacer"
+                        ->color('success') // Color verde positivo
+                        ->requiresConfirmation()
+                        ->modalHeading('Restaurar Categoría')
+                        ->modalDescription('¿Deseas rescatar esta categoría de la papelera? Volverá a estar visible y activo en el sistema.'),
                 ])
                 ->label('Acciones')
                 ->icon('heroicon-o-ellipsis-vertical')
@@ -107,7 +180,12 @@ class CategoryResource extends Resource
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
+                    Tables\Actions\DeleteBulkAction::make()
+                        ->label('Eliminar seleccionados')
+                        ->requiresConfirmation()
+                        ->modalHeading('Eliminar Categorías')
+                        ->modalDescription('¿Estás seguro de que deseas eliminar las categorías seleccionados?'),
+                    Tables\Actions\RestoreBulkAction::make(), // 🌟 Restaurar varios a la vez
                 ]),
             ])
             ->emptyStateHeading('Sin categorías registradas')

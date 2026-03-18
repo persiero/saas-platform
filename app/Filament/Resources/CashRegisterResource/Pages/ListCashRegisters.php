@@ -23,7 +23,25 @@ class ListCashRegisters extends ListRecords
                 ->icon('heroicon-o-lock-open')
                 ->modalHeading('Apertura de Turno')
                 ->modalWidth('sm') // Modal pequeño y elegante
-                // ESTE ES TU CANDADO MOVIDO AQUÍ:
+
+                // 🌟 MAGIA VISUAL: Bloquea el botón si ya hay una caja abierta
+                ->disabled(function () {
+                    return CashRegister::where('tenant_id', Auth::user()->tenant_id)
+                        ->where('user_id', Auth::id())
+                        ->where('status', 'open')
+                        ->exists();
+                })
+                // 🌟 TOOLTIP: Le explica al usuario por qué el botón está bloqueado
+                ->tooltip(function () {
+                    $hasOpenCash = CashRegister::where('tenant_id', Auth::user()->tenant_id)
+                        ->where('user_id', Auth::id())
+                        ->where('status', 'open')
+                        ->exists();
+
+                    return $hasOpenCash ? 'Debes cerrar tu caja actual para abrir una nueva.' : '';
+                })
+
+                // ESTE ES TU CANDADO BACKEND (Lo dejamos como doble seguridad):
                 ->action(function (array $data) {
                     $hasOpenCash = CashRegister::where('tenant_id', Auth::user()->tenant_id)
                         ->where('user_id', Auth::id())
@@ -52,4 +70,5 @@ class ListCashRegisters extends ListRecords
                 }),
         ];
     }
+
 }

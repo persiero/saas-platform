@@ -16,6 +16,11 @@ use Filament\Tables\Table;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
+use Filament\Tables\Filters\TrashedFilter;
+use Filament\Tables\Actions\RestoreAction;
+use Filament\Tables\Actions\ForceDeleteAction;
+use Filament\Tables\Actions\RestoreBulkAction;
+use Filament\Tables\Actions\ForceDeleteBulkAction;
 
 class ProductResource extends Resource
 {
@@ -31,7 +36,12 @@ class ProductResource extends Resource
     // Filtro global para asegurar que solo se vean productos del tenant actual
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()->where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id);
+        return parent::getEloquentQuery()
+            ->where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id) // 1. Mantiene tu filtro de seguridad SaaS
+            ->with(['category']) // 2. Soluciona el error N+1 (Carga ansiosa)
+            ->withoutGlobalScopes([
+                SoftDeletingScope::class, // 3. Permite que la papelera (TrashedFilter) funcione correctamente
+            ]);
     }
 
     public static function canCreate(): bool
@@ -49,6 +59,33 @@ class ProductResource extends Resource
     }
 
     public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        /** @var \Percy\Core\Models\User $user */
+        $user = \Illuminate\Support\Facades\Auth::user();
+        return $user->isAdmin();
+    }
+
+    public static function canRestore(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        /** @var \Percy\Core\Models\User $user */
+        $user = \Illuminate\Support\Facades\Auth::user();
+        return $user->isAdmin(); // Solo el Admin puede restaurar
+    }
+
+    public static function canForceDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return false;
+    }
+
+    // 5. Restricción general para Bulk Actions (Aplica para eliminar/restaurar masivamente)
+    public static function canDeleteAny(): bool
+    {
+        /** @var \Percy\Core\Models\User $user */
+        $user = \Illuminate\Support\Facades\Auth::user();
+        return $user->isAdmin();
+    }
+
+    public static function canRestoreAny(): bool
     {
         /** @var \Percy\Core\Models\User $user */
         $user = \Illuminate\Support\Facades\Auth::user();
@@ -187,6 +224,7 @@ class ProductResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->modifyQueryUsing(fn (\Illuminate\Database\Eloquent\Builder $query) => $query->with('category'))
             ->columns([
                 Tables\Columns\TextColumn::make('name')
                     ->label('Producto')
@@ -274,6 +312,8 @@ class ProductResource extends Resource
                         // Filtro personalizado para stock bajo
                     }))
                     ->toggle(),
+
+                TrashedFilter::make(),
             ])
             ->actions([
                 Tables\Actions\ActionGroup::make([
@@ -286,7 +326,23 @@ class ProductResource extends Resource
                     // 2. BOTÓN EDITAR (Filament lo oculta solo gracias a canEdit)
                     Tables\Actions\EditAction::make()
                         ->label('Editar')
-                        ->icon('heroicon-o-pencil'),
+                        ->icon('heroicon-o-pencil')
+                        ->color('warning'),
+
+                    Tables\Actions\DeleteAction::make() // Borrado lógico
+                        ->label('Eliminar')
+                        ->icon('heroicon-o-trash')
+                        ->requiresConfirmation()
+                        ->modalHeading('Eliminar Producto')
+                        ->modalDescription('¿Estás seguro de que deseas eliminar este producto? Esta acción no se puede deshacer.'),
+
+                    Tables\Actions\RestoreAction::make()
+                        ->label('Restaurar')
+                        ->icon('heroicon-o-arrow-uturn-left') // Icono de "Deshacer"
+                        ->color('success') // Color verde positivo
+                        ->requiresConfirmation()
+                        ->modalHeading('Restaurar Producto')
+                        ->modalDescription('¿Deseas rescatar este producto de la papelera? Volverá a estar visible y activo en el sistema.'),
 
                     // 3. BOTÓN AJUSTE DE INVENTARIO: Protegido solo para el Admin
                     Tables\Actions\Action::make('manual_adjustment')
@@ -339,31 +395,43 @@ class ProductResource extends Resource
                                 ->maxLength(255)
                                 ->placeholder('Ej: Producto vencido, Frasco roto...'),
                         ])
-                        ->action(function (array $data, $record) {
-                            if ($data['type'] === 'OUT' && $record->current_stock < $data['quantity']) {
+                        ->action(function (array $data, $record) { // Usar clone previene modificar el modelo original antes de tiempo
+                            $stockActual = (float) $record->current_stock;
+                            $cantidadAjuste = abs((float) $data['quantity']);
+                            $tipoAjuste = $data['type'];
+
+                            // 1. Validar que no haya saldo negativo en salidas
+                            if ($tipoAjuste === 'OUT' && $stockActual < $cantidadAjuste) {
                                 Notification::make()
                                     ->title('Stock Insuficiente')
-                                    ->body("No puedes retirar más de lo que hay. Stock actual: {$record->current_stock}")
+                                    ->body("No puedes retirar más de lo que hay. Stock actual: {$stockActual}")
                                     ->danger()
                                     ->send();
                                 return;
                             }
 
-                            InventoryMovement::create([
+                            // 2. Calcular el Saldo Posterior (Balance After)
+                            if ($tipoAjuste === 'OUT') {
+                                $saldoFinal = $stockActual - $cantidadAjuste;
+                            } else {
+                                $saldoFinal = $stockActual + $cantidadAjuste;
+                            }
+
+                            // 3. Crear el registro en el Kardex (Añadido 'balance_after')
+                            \Percy\Core\Models\InventoryMovement::create([
                                 'tenant_id' => \Illuminate\Support\Facades\Auth::user()->tenant_id,
                                 'product_id' => $record->id,
-                                'type' => $data['type'],
-                                'quantity' => $data['quantity'],
+                                'user_id' => \Illuminate\Support\Facades\Auth::id(), // Recomendado registrar quién lo hizo
+                                'type' => $tipoAjuste,
+                                'quantity' => $cantidadAjuste,
                                 'reason' => $data['reason'],
+                                'balance_after' => $saldoFinal, // 🌟 AQUÍ ESTÁ LA SOLUCIÓN
                             ]);
 
-                            // Aquí te agrego la actualización del stock físico general que faltaba en tu código
-                            if ($data['type'] === 'OUT') {
-                                $record->current_stock -= $data['quantity'];
-                            } else {
-                                $record->current_stock += $data['quantity'];
-                            }
-                            $record->save();
+                            // 4. Actualizar el stock en la tabla de Productos
+                            $record->update([
+                                'current_stock' => $saldoFinal
+                            ]);
 
                             Notification::make()
                                 ->title('Inventario Actualizado')
@@ -380,7 +448,12 @@ class ProductResource extends Resource
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
+                    Tables\Actions\DeleteBulkAction::make()
+                        ->label('Eliminar seleccionados')
+                        ->requiresConfirmation()
+                        ->modalHeading('Eliminar Productos')
+                        ->modalDescription('¿Estás seguro de que deseas eliminar los productos seleccionados?'),
+                    Tables\Actions\RestoreBulkAction::make(), // 🌟 Restaurar varios a la vez
                 ]),
             ])
             ->emptyStateHeading('Sin productos registrados')
@@ -412,4 +485,6 @@ class ProductResource extends Resource
             'edit' => Pages\EditProduct::route('/{record}/edit'),
         ];
     }
+
+
 }

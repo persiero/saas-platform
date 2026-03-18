@@ -7,6 +7,13 @@
     "license": "MIT",
     "repositories": [
         {
+            "type": "path",
+            "url": "../core-business",
+            "options": {
+                "symlink": true
+            }
+        },
+        {
             "type": "vcs",
             "url": "https://github.com/persiero/core-business.git"
         }

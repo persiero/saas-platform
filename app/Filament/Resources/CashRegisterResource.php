@@ -417,4 +417,21 @@ class CashRegisterResource extends Resource
             'view' => Pages\ViewCashRegister::route('/{record}'),
         ];
     }
+
+    // Añade esto al final de CashRegisterResource.php
+
+    public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return false; // Nadie edita una caja. Se abre, se cierra, y queda en el historial.
+    }
+
+    public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return false; // Las cajas jamás se borran
+    }
+
+    public static function canDeleteAny(): bool
+    {
+        return false;
+    }
 }
