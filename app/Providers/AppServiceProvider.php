@@ -32,5 +32,21 @@ class AppServiceProvider extends ServiceProvider
         if (app()->environment('production')) {
             URL::forceScheme('https');
         }
+
+        // 🌟 SISTEMA AUTOSANABLE: Crear directorios críticos si el volumen está vacío
+        $directorios = [
+            'app/private/certificates',
+            'app/private/sunat',
+            'app/livewire-tmp',
+            'app/public'
+        ];
+
+        foreach ($directorios as $dir) {
+            $path = storage_path($dir);
+            if (!file_exists($path)) {
+                // Crea la carpeta y todas las subcarpetas necesarias con permisos de escritura
+                mkdir($path, 0775, true);
+            }
+        }
     }
 }
