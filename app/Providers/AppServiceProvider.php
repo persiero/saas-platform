@@ -33,11 +33,6 @@ class AppServiceProvider extends ServiceProvider
             URL::forceScheme('https');
         }
 
-        // 🌟 LA MAGIA DEL HTTPS: Forza las URLs seguras en producción
-        if (config('app.env') === 'production') {
-            URL::forceScheme('https');
-        }
-
         // 🌟 SISTEMA AUTOSANABLE: Crear directorios críticos si el volumen está vacío
         $directorios = [
             'app/private/certificates',

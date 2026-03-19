@@ -12,14 +12,15 @@
         }
     ],
     "require": {
+        "php": "^8.2",
         "ext-intl": "*",
         "ext-zip": "*",
-        "php": "^8.2",
         "barryvdh/laravel-dompdf": "^3.1",
         "filament/filament": "^3.2",
         "greenter/ws": "^5.1",
         "laravel/framework": "^12.0",
         "laravel/tinker": "^2.10.1",
+        "league/flysystem-aws-s3-v3": "3.0",
         "percy/core-business": "@dev"
     },
     "require-dev": {

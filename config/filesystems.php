@@ -40,11 +40,14 @@ return [
 
         // NUESTRO DISCO EXCLUSIVO Y BLINDADO
         'sunat' => [
-            'driver' => 'local',
-            'root' => storage_path('app/private'), // Apunta directamente a la zona segura
-            'visibility' => 'private',
+            'driver' => 's3',
+            'key' => env('46289769770e364684dbd2c534329c0d'),
+            'secret' => env('bf93eea6391714e8b01b5fcf5ac72fc9d5438ca6468330550435b4e7a263d8af'),
+            'region' => 'us-east-1', // R2 usa esta región por defecto en su API
+            'bucket' => env('saas-facturacion'),
+            'endpoint' => env('https://455174ee8fe898c800c489adbdd2801d.r2.cloudflarestorage.com'),
+            'use_path_style_endpoint' => true,
             'throw' => false,
-            'report' => false,
         ],
 
         'public' => [
