@@ -39,9 +39,19 @@ class UserResource extends Resource
     {
         return $form
             ->schema([
-                // Campo oculto para multi-tenant
-                Forms\Components\Hidden::make('tenant_id')
-                    ->default(fn () => Auth::user()->tenant_id),
+                // EL SELECTOR DE NEGOCIO INTELIGENTE
+                Forms\Components\Select::make('tenant_id')
+                    ->relationship('tenant', 'name')
+                    ->label('Negocio / Sucursal')
+                    ->default(fn () => Auth::user()->tenant_id) // Por defecto toma el ID de quien lo crea
+                    ->disabled(fn () => Auth::user()->tenant_id !== null) // Bloquea el campo si NO eres el Súper Admin
+                    ->dehydrated() // OBLIGATORIO: Le dice a Filament que guarde el dato en la BD aunque el campo esté bloqueado
+                    ->searchable()
+                    ->preload()
+                    ->helperText(fn () => Auth::user()->tenant_id === null
+                        ? 'Selecciona la empresa del cliente. (Déjalo vacío para crear otro Súper Administrador).'
+                        : 'El usuario será asignado automáticamente a tu negocio.')
+                    ->columnSpanFull(),
 
                 Forms\Components\TextInput::make('name')
                     ->label('Nombre completo')
@@ -100,6 +110,17 @@ class UserResource extends Resource
                     ->label('Correo electrónico')
                     ->searchable()
                     ->copyable(),
+
+                Tables\Columns\TextColumn::make('tenant.name')
+                    ->label('Empresa')
+                    ->badge()
+                    ->color(fn ($state): string => match ($state) {
+                        null => 'danger', // Rojo para los Súper Admins
+                        default => 'success', // Verde para los usuarios de negocios
+                    })
+                    ->default('SÚPER ADMIN') // Texto si el tenant_id es null
+                    ->sortable()
+                    ->searchable(),
 
                 Tables\Columns\TextColumn::make('roles.name')
                     ->label('Roles')
