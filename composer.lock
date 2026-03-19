@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "5acf630835ca5a267e62fd16962db8f4",
+    "content-hash": "3c0a8bd0694193cf5c692d22ab9b707f",
     "packages": [
         {
             "name": "anourvalar/eloquent-serialize",
@@ -4982,17 +4982,11 @@
         },
         {
             "name": "percy/core-business",
-            "version": "dev-main",
-            "source": {
-                "type": "git",
-                "url": "git@github.com:persiero/core-business.git",
-                "reference": "991eadaadcf83c9ffc5b9e0cb11d64dbd163b97d"
-            },
+            "version": "dev-develop",
             "dist": {
-                "type": "zip",
-                "url": "https://api.github.com/repos/persiero/core-business/zipball/991eadaadcf83c9ffc5b9e0cb11d64dbd163b97d",
-                "reference": "991eadaadcf83c9ffc5b9e0cb11d64dbd163b97d",
-                "shasum": ""
+                "type": "path",
+                "url": "../core-business",
+                "reference": "991eadaadcf83c9ffc5b9e0cb11d64dbd163b97d"
             },
             "require": {
                 "barryvdh/laravel-dompdf": "^3.1",
@@ -5009,7 +5003,6 @@
             "require-dev": {
                 "orchestra/testbench": "^10.9"
             },
-            "default-branch": true,
             "type": "library",
             "extra": {
                 "laravel": {
@@ -5028,11 +5021,10 @@
                 "MIT"
             ],
             "description": "El nucleo compartido de mis proyectos",
-            "support": {
-                "source": "https://github.com/persiero/core-business/tree/develop",
-                "issues": "https://github.com/persiero/core-business/issues"
-            },
-            "time": "2026-03-18T16:20:45+00:00"
+            "transport-options": {
+                "symlink": true,
+                "relative": true
+            }
         },
         {
             "name": "phpoption/phpoption",
