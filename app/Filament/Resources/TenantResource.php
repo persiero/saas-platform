@@ -130,8 +130,9 @@ class TenantResource extends Resource
                                     ->disk('sunat') // <-- OBLIGATORIO: Indica que use storage/app
                                     ->directory('certificates') // Se guardará en storage/app/private/certificates
                                     ->visibility('private')
-                                    ->acceptedFileTypes(['application/x-x509-ca-cert', 'application/x-pkcs12', 'text/plain'])
-                                    ->required(),
+                                    //->acceptedFileTypes(['application/x-x509-ca-cert', 'application/x-pkcs12', 'text/plain'])
+                                    ->nullable()
+                                    ->helperText('Puedes subir el certificado más adelante.'),
 
                                 Forms\Components\TextInput::make('sunat_certificate_password')
                                     ->label('Contraseña del Certificado')
