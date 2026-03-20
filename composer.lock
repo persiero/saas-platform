@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "5acf630835ca5a267e62fd16962db8f4",
+    "content-hash": "0e78da78387622a7f317443c364b14e0",
     "packages": [
         {
             "name": "anourvalar/eloquent-serialize",
@@ -4983,16 +4983,10 @@
         {
             "name": "percy/core-business",
             "version": "dev-main",
-            "source": {
-                "type": "git",
-                "url": "git@github.com:persiero/core-business.git",
-                "reference": "670363315582a857e0c880f367be1c721178fb6b"
-            },
             "dist": {
-                "type": "zip",
-                "url": "https://api.github.com/repos/persiero/core-business/zipball/670363315582a857e0c880f367be1c721178fb6b",
-                "reference": "670363315582a857e0c880f367be1c721178fb6b",
-                "shasum": ""
+                "type": "path",
+                "url": "../core-business",
+                "reference": "670363315582a857e0c880f367be1c721178fb6b"
             },
             "require": {
                 "barryvdh/laravel-dompdf": "^3.1",
@@ -5009,7 +5003,6 @@
             "require-dev": {
                 "orchestra/testbench": "^10.9"
             },
-            "default-branch": true,
             "type": "library",
             "extra": {
                 "laravel": {
@@ -5028,11 +5021,10 @@
                 "MIT"
             ],
             "description": "El nucleo compartido de mis proyectos",
-            "support": {
-                "source": "https://github.com/persiero/core-business/tree/develop",
-                "issues": "https://github.com/persiero/core-business/issues"
-            },
-            "time": "2026-03-19T23:43:19+00:00"
+            "transport-options": {
+                "symlink": true,
+                "relative": true
+            }
         },
         {
             "name": "phpoption/phpoption",
@@ -11753,6 +11745,7 @@
     "platform": {
         "php": "^8.2",
         "ext-intl": "*",
+        "ext-soap": "*",
         "ext-zip": "*"
     },
     "platform-dev": {},
