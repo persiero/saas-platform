@@ -4982,7 +4982,7 @@
         },
         {
             "name": "percy/core-business",
-            "version": "dev-main",
+            "version": "dev-develop",
             "dist": {
                 "type": "path",
                 "url": "../core-business",
