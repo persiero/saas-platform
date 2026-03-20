@@ -21,6 +21,7 @@
     "require": {
         "php": "^8.2",
         "ext-intl": "*",
+        "ext-soap": "*",
         "ext-zip": "*",
         "barryvdh/laravel-dompdf": "^3.1",
         "filament/filament": "^3.2",

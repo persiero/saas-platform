@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "3c0a8bd0694193cf5c692d22ab9b707f",
+    "content-hash": "0e78da78387622a7f317443c364b14e0",
     "packages": [
         {
             "name": "anourvalar/eloquent-serialize",
@@ -4982,11 +4982,11 @@
         },
         {
             "name": "percy/core-business",
-            "version": "dev-develop",
+            "version": "dev-main",
             "dist": {
                 "type": "path",
                 "url": "../core-business",
-                "reference": "991eadaadcf83c9ffc5b9e0cb11d64dbd163b97d"
+                "reference": "670363315582a857e0c880f367be1c721178fb6b"
             },
             "require": {
                 "barryvdh/laravel-dompdf": "^3.1",
@@ -11745,6 +11745,7 @@
     "platform": {
         "php": "^8.2",
         "ext-intl": "*",
+        "ext-soap": "*",
         "ext-zip": "*"
     },
     "platform-dev": {},
