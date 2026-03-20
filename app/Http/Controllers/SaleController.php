@@ -16,13 +16,15 @@ class SaleController extends Controller
      */
     public function printTicket(Sale $sale)
     {
-        // Si el PDF ya fue guardado, lo servimos directamente
+
+        // Si el PDF ya fue guardado en la nube, lo mostramos directamente
         if ($sale->sunat_pdf_path && Storage::disk('sunat')->exists($sale->sunat_pdf_path)) {
-            return response()->file(Storage::disk('sunat')->path($sale->sunat_pdf_path));
+            // 🌟 Usamos ->response() para mostrar el archivo de Cloudflare en el navegador
+            return Storage::disk('sunat')->response($sale->sunat_pdf_path);
         }
 
         // 1. Instanciamos el servicio que vive en el Core
-        $sunatService = new SunatService();
+        $sunatService = new \Percy\Core\Services\SunatService();
 
         // 2. Generamos el código QR en formato Base64
         // Este método usa el sunat_hash que guardamos en Trujillo
@@ -48,9 +50,8 @@ class SaleController extends Controller
         if (!$sale->sunat_xml_path || !Storage::disk('sunat')->exists($sale->sunat_xml_path)) {
             abort(404, 'Archivo XML no encontrado.');
         }
-        // Obtenemos la ruta absoluta y forzamos la descarga (Amigable con Intelephense)
-        $path = Storage::disk('sunat')->path($sale->sunat_xml_path);
-        return response()->download($path);
+        // 🌟 ESTO DESCARGA DIRECTO DESDE CLOUDFLARE R2
+        return Storage::disk('sunat')->download($sale->sunat_xml_path);
     }
 
     public function downloadCdr(Sale $sale)
@@ -58,7 +59,7 @@ class SaleController extends Controller
         if (!$sale->sunat_cdr_path || !Storage::disk('sunat')->exists($sale->sunat_cdr_path)) {
             abort(404, 'Archivo CDR no encontrado.');
         }
-        $path = Storage::disk('sunat')->path($sale->sunat_cdr_path);
-        return response()->download($path);
+        // 🌟 ESTO DESCARGA DIRECTO DESDE CLOUDFLARE R2
+        return Storage::disk('sunat')->download($sale->sunat_cdr_path);
     }
 }
