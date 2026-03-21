@@ -101,14 +101,95 @@ class CustomerResource extends Resource
                             ->default('DNI')
                             ->required()
                             ->native(false)
+                            ->live() // 🌟 ¡ESTO ES VITAL PARA QUE APAREZCA LA LUPA AL CAMBIAR A RUC
                             ->columnSpan(1),
 
                         Forms\Components\TextInput::make('document_number')
                             ->label('Número')
-                            ->maxLength(20)
-                            ->placeholder('Ej: 12345678')
+                            // 🌟 Validación Dinámica: Longitud máxima
+                            ->maxLength(fn (\Filament\Forms\Get $get) => match ($get('document_type')) {
+                                'DNI' => 8,
+                                'RUC' => 11,
+                                default => 15,
+                            })
+                            // 🌟 Validación Dinámica: Longitud mínima estricta
+                            ->minLength(fn (\Filament\Forms\Get $get) => match ($get('document_type')) {
+                                'DNI' => 8,
+                                'RUC' => 11,
+                                default => null,
+                            })
+                            // 🌟 Forzar teclado numérico
+                            ->numeric(fn (\Filament\Forms\Get $get) => in_array($get('document_type'), ['DNI', 'RUC']))
+                            ->placeholder(fn (\Filament\Forms\Get $get) => $get('document_type') === 'RUC' ? 'Ej: 20... (11 dígitos)' : 'Ej: 12345678')
                             ->required()
-                            ->columnSpan(1),
+                            ->columnSpan(1)
+                            // 🌟 MAGIA: Botón de Decolecta (Solo visible en RUC)
+                            ->suffixAction(
+                                \Filament\Forms\Components\Actions\Action::make('searchDecolecta')
+                                    ->icon('heroicon-m-magnifying-glass')
+                                    ->color('primary')
+                                    ->tooltip('Buscar RUC (Decolecta)')
+                                    ->visible(fn (\Filament\Forms\Get $get) => $get('document_type') === 'RUC')
+                                    ->action(function ($state, \Filament\Forms\Set $set) {
+                                        if (blank($state) || strlen($state) !== 11) {
+                                            \Filament\Notifications\Notification::make()
+                                                ->danger()
+                                                ->title('Error')
+                                                ->body('Ingrese un RUC válido de 11 dígitos.')
+                                                ->send();
+                                            return;
+                                        }
+
+                                        // 🌟 Llamamos al config() como unos verdaderos pros
+                                        $token = config('services.decolecta.token');
+
+                                        try {
+                                            $response = \Illuminate\Support\Facades\Http::withToken($token)
+                                                ->timeout(10)
+                                                ->get("https://api.decolecta.com/v1/sunat/ruc?numero={$state}");
+
+                                            if ($response->successful()) {
+                                                $data = $response->json();
+
+                                                if (($data['estado'] ?? '') !== 'ACTIVO') {
+                                                    \Filament\Notifications\Notification::make()
+                                                        ->warning()
+                                                        ->title('Cuidado')
+                                                        ->body('Este RUC figura como ' . ($data['estado'] ?? 'INACTIVO') . ' en SUNAT.')
+                                                        ->send();
+                                                } else {
+                                                    \Filament\Notifications\Notification::make()->success()->title('RUC Encontrado')->send();
+                                                }
+
+                                                $set('name', $data['razon_social'] ?? '');
+
+                                                // Construcción de la dirección limpia
+                                                $dir = trim($data['direccion'] ?? '');
+                                                $dep = trim($data['departamento'] ?? '');
+                                                $prov = trim($data['provincia'] ?? '');
+                                                $dist = trim($data['distrito'] ?? '');
+
+                                                $fullAddress = trim("$dir $dep - $prov - $dist", " -");
+                                                $fullAddress = preg_replace('/\s+/', ' ', $fullAddress);
+
+                                                $set('address', $fullAddress);
+
+                                            } else {
+                                                \Filament\Notifications\Notification::make()
+                                                    ->danger()
+                                                    ->title('No encontrado')
+                                                    ->body('El RUC no existe en SUNAT o superó el límite.')
+                                                    ->send();
+                                            }
+                                        } catch (\Exception $e) {
+                                            \Filament\Notifications\Notification::make()
+                                                ->danger()
+                                                ->title('Error de conexión')
+                                                ->body('No se pudo conectar con la API de Decolecta.')
+                                                ->send();
+                                        }
+                                    })
+                            ),
 
                         Forms\Components\TextInput::make('name')
                             ->label('Nombre Completo o Razón Social')
@@ -159,6 +240,10 @@ class CustomerResource extends Resource
                     ->searchable()
                     ->sortable()
                     ->weight('bold')
+                    // 🌟 MAGIA UI: Limita a 40 caracteres y pone "..."
+                    ->limit(40)
+                    // 🌟 MAGIA UX: Muestra el nombre completo al pasar el mouse
+                    ->tooltip(fn (Customer $record): string => $record->name)
                     ->icon(fn (Customer $record): string => match ($record->document_type) {
                         'RUC', '6' => 'heroicon-o-building-office-2', // Icono de edificio para empresas
                         default => 'heroicon-o-user', // Icono de persona para DNI, CE, etc.
