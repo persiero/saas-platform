@@ -133,27 +133,173 @@ class SaleResource extends Resource
 
                         Forms\Components\Hidden::make('correlative'),
 
-
                         Forms\Components\Select::make('customer_id')
                             ->label('Cliente')
-                            ->relationship('customer', 'name', function (Builder $query, Get $get) {
+                            ->relationship('customer', 'name', function (Builder $query, \Filament\Forms\Get $get) {
                                 $docType = $get('document_type'); // '01' Factura, '03' Boleta
-
                                 return $query->when($docType === '01', function ($q) {
-                                    // Solo clientes con RUC para Facturas
-                                    // (Asegúrate de que en tu BD el código para RUC sea '6' o 'RUC')
-                                    return $q->whereIn('document_type', ['6', 'RUC']);
+                                    return $q->whereIn('document_type', ['RUC', '6']);
                                 })->when($docType === '03', function ($q) {
-                                    // DNI y otros para Boletas
-                                    return $q->whereIn('document_type', ['1', 'DNI', '0', '7', '4']);
+                                    return $q->whereIn('document_type', ['DNI', '1', 'CE', '0', '7', '4']);
                                 });
                             })
-                            ->searchable()
+                            ->searchable(['name', 'document_number'])
                             ->preload()
-                            ->live() // Para que se refresque si cambias el tipo de comprobante
-                            ->required(fn (Get $get) => $get('document_type') === '01') // Solo obligatorio si es Factura
-                            ->helperText(fn (Get $get) => $get('document_type') === '01' ? 'Obligatorio para Facturas' : 'Opcional. Déjalo en blanco para Consumidor Final.')
-                            ->columnSpan(2),
+                            ->live()
+                            ->required(fn (\Filament\Forms\Get $get) => $get('document_type') === '01')
+                            ->helperText(fn (\Filament\Forms\Get $get) => $get('document_type') === '01' ? 'Obligatorio para Facturas' : 'Opcional. Déjalo en blanco para Consumidor Final.')
+                            ->columnSpan(2)
+
+                            // 🌟 MEJORA UX/UI: Usamos el color corporativo del tenant
+                            ->createOptionAction(
+                                fn (\Filament\Forms\Components\Actions\Action $action) => $action
+                                    ->icon('heroicon-s-user-plus')
+                                    ->color('primary') // 🔥 EL CAMBIO ESTÁ AQUÍ
+                                    ->tooltip('Registrar Nuevo Cliente')
+                                    ->mutateFormDataUsing(function (array $data) {
+                                        $data['tenant_id'] = \Illuminate\Support\Facades\Auth::user()->tenant_id;
+                                        return $data;
+                                    })
+                                    ->modalHeading('Registrar Nuevo Cliente')
+                                    ->modalWidth('2xl')
+                            )
+                            ->createOptionForm([
+                                Forms\Components\Section::make('Identidad del Cliente')
+                                    ->schema([
+                                        Forms\Components\Select::make('document_type')
+                                            ->label('Tipo de Documento')
+                                            ->options([
+                                                'DNI' => 'DNI',
+                                                'RUC' => 'RUC',
+                                                'CE' => 'Carné de Extranjería',
+                                            ])
+                                            ->default('DNI')
+                                            ->required()
+                                            ->native(false)
+                                            ->live() // 🌟 IMPORTANTE: Activa la reactividad para ocultar/mostrar la lupa
+                                            ->columnSpan(1),
+
+                                        Forms\Components\TextInput::make('document_number')
+                                            ->label('Número')
+                                            // 🌟 Validación Dinámica: Longitud máxima
+                                            ->maxLength(fn (\Filament\Forms\Get $get) => match ($get('document_type')) {
+                                                'DNI' => 8,
+                                                'RUC' => 11,
+                                                default => 15, // Para Carné de Extranjería u otros
+                                            })
+                                            // 🌟 Validación Dinámica: Longitud mínima estricta
+                                            ->minLength(fn (\Filament\Forms\Get $get) => match ($get('document_type')) {
+                                                'DNI' => 8,
+                                                'RUC' => 11,
+                                                default => null,
+                                            })
+                                            // 🌟 Forzar teclado numérico solo para DNI y RUC
+                                            ->numeric(fn (\Filament\Forms\Get $get) => in_array($get('document_type'), ['DNI', 'RUC']))
+                                            ->placeholder(fn (\Filament\Forms\Get $get) => $get('document_type') === 'RUC' ? 'Ej: 20... (11 dígitos)' : 'Ej: 12345678')
+                                            ->required()
+                                            ->columnSpan(1)
+                                            // 🌟 MAGIA: Botón de Decolecta (Solo visible en RUC)
+                                            ->suffixAction(
+                                                \Filament\Forms\Components\Actions\Action::make('searchDecolecta')
+                                                    ->icon('heroicon-m-magnifying-glass')
+                                                    ->color('primary')
+                                                    ->tooltip('Buscar RUC (Decolecta)')
+                                                    ->visible(fn (\Filament\Forms\Get $get) => $get('document_type') === 'RUC')
+                                                    ->action(function ($state, \Filament\Forms\Set $set) {
+                                                        if (blank($state) || strlen($state) !== 11) {
+                                                            \Filament\Notifications\Notification::make()
+                                                                ->danger()
+                                                                ->title('Error')
+                                                                ->body('Ingrese un RUC válido de 11 dígitos.')
+                                                                ->send();
+                                                            return;
+                                                        }
+
+                                                        $token = config('services.decolecta.token');
+
+                                                        try {
+                                                            $response = \Illuminate\Support\Facades\Http::withToken($token)
+                                                                ->timeout(10)
+                                                                ->get("https://api.decolecta.com/v1/sunat/ruc?numero={$state}");
+
+                                                            if ($response->successful()) {
+                                                                $data = $response->json();
+
+                                                                if (($data['estado'] ?? '') !== 'ACTIVO') {
+                                                                    \Filament\Notifications\Notification::make()
+                                                                        ->warning()
+                                                                        ->title('Cuidado')
+                                                                        ->body('Este RUC figura como ' . ($data['estado'] ?? 'INACTIVO') . ' en SUNAT.')
+                                                                        ->send();
+                                                                } else {
+                                                                    \Filament\Notifications\Notification::make()->success()->title('RUC Encontrado')->send();
+                                                                }
+
+                                                                // Seteamos la Razón Social
+                                                                $set('name', $data['razon_social'] ?? '');
+
+                                                                // 🌟 CONSTRUCCIÓN DE DIRECCIÓN COMPLETA
+                                                                // Extraemos las partes asegurándonos de que no vengan como null
+                                                                $dir = trim($data['direccion'] ?? '');
+                                                                $dep = trim($data['departamento'] ?? '');
+                                                                $prov = trim($data['provincia'] ?? '');
+                                                                $dist = trim($data['distrito'] ?? '');
+
+                                                                // Unimos todo: "DIRECCION LIMA - LIMA - SAN ISIDRO"
+                                                                $fullAddress = trim("$dir $dep - $prov - $dist", " -");
+
+                                                                // Limpiamos los espacios dobles feos que a veces manda la SUNAT
+                                                                $fullAddress = preg_replace('/\s+/', ' ', $fullAddress);
+
+                                                                $set('address', $fullAddress);
+
+                                                            } else {
+                                                                \Filament\Notifications\Notification::make()
+                                                                    ->danger()
+                                                                    ->title('No encontrado')
+                                                                    ->body('El RUC no existe en SUNAT o superó el límite.')
+                                                                    ->send();
+                                                            }
+                                                        } catch (\Exception $e) {
+                                                            \Filament\Notifications\Notification::make()
+                                                                ->danger()
+                                                                ->title('Error de conexión')
+                                                                ->body('No se pudo conectar con la API de Decolecta.')
+                                                                ->send();
+                                                        }
+                                                    })
+                                            ),
+
+                                        Forms\Components\TextInput::make('name')
+                                            ->label('Nombre Completo o Razón Social')
+                                            ->required()
+                                            ->maxLength(150)
+                                            ->columnSpanFull(),
+                                    ])->columns(2),
+
+                                Forms\Components\Section::make('Datos de Contacto')
+                                    ->schema([
+                                        Forms\Components\TextInput::make('phone')
+                                            ->label('Teléfono')
+                                            ->tel()
+                                            ->maxLength(30)
+                                            ->prefixIcon('heroicon-o-phone')
+                                            ->columnSpan(1),
+
+                                        Forms\Components\TextInput::make('email')
+                                            ->label('Correo Electrónico')
+                                            ->email()
+                                            ->maxLength(150)
+                                            ->prefixIcon('heroicon-o-envelope')
+                                            ->columnSpan(1),
+
+                                        Forms\Components\Textarea::make('address')
+                                            ->label('Dirección Fija')
+                                            ->maxLength(255)
+                                            ->rows(2)
+                                            ->columnSpanFull(),
+                                    ])->columns(2)->collapsible(),
+                            ]),
 
                         Forms\Components\Select::make('payment_method')
                             ->label('Método de Pago')
