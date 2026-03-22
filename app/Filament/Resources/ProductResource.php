@@ -344,102 +344,177 @@ class ProductResource extends Resource
                         ->modalHeading('Restaurar Producto')
                         ->modalDescription('¿Deseas rescatar este producto de la papelera? Volverá a estar visible y activo en el sistema.'),
 
-                    // 3. BOTÓN AJUSTE DE INVENTARIO: Protegido solo para el Admin
+                    // 3. BOTÓN AJUSTE DE INVENTARIO: Protegido solo para el Admin y optimizado para Farmacias
                     Tables\Actions\Action::make('manual_adjustment')
                         ->label('Ajuste de Inventario')
                         ->icon('heroicon-o-scale')
-                        ->color('warning') // Color de advertencia
+                        ->color('warning')
                         ->visible(function () {
                             /** @var \Percy\Core\Models\User $user */
                             $user = \Illuminate\Support\Facades\Auth::user();
                             return $user->isAdmin();
                         })
-                        ->form([
-                            Forms\Components\Select::make('type')
-                                ->label('Motivo del Ajuste')
-                                ->options([
-                                    'OUT' => 'Salida (Merma, Vencimiento, Rotura)',
-                                    'IN' => 'Ingreso (Inventario Inicial, Sobrante)', // Quitamos "Compra"
-                                ])
-                                ->required()
-                                ->default('OUT') // Por defecto es salida (lo más común)
-                                ->live(),
+                        ->form(function ($record) {
+                            // Detectamos si el usuario pertenece a una Farmacia/Botica
+                            $sector = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->name ?? '';
+                            $isPharmacy = str_contains(strtolower($sector), 'farmacia') || str_contains(strtolower($sector), 'botica');
 
-                            Forms\Components\TextInput::make('quantity')
-                                ->label('Cantidad')
-                                ->numeric()
-                                ->minValue(0.01)
-                                ->required()
-                                ->live(),
+                            return [
+                                Forms\Components\Select::make('type')
+                                    ->label('Motivo del Ajuste')
+                                    ->options([
+                                        'OUT' => 'Salida (Merma, Vencimiento, Rotura)',
+                                        'IN' => 'Ingreso (Inventario Inicial, Sobrante)',
+                                    ])
+                                    ->required()
+                                    ->default('OUT')
+                                    ->live(),
 
-                            Forms\Components\Placeholder::make('stock_warning')
-                                ->label('')
-                                ->content(function (Get $get, $record) {
-                                    if ($get('type') === 'OUT' && $get('quantity')) {
-                                        $stockActual = $record->current_stock;
-                                        $cantidad = (float) $get('quantity');
-                                        $stockFinal = $stockActual - $cantidad;
+                                // 🌟 NUEVO: Selección de Lote (Solo visible para Farmacias)
+                                Forms\Components\Select::make('product_batch_id')
+                                    ->label('Lote a afectar')
+                                    ->options(function () use ($record) {
+                                        return \Percy\Core\Models\ProductBatch::where('product_id', $record->id)
+                                            ->get()
+                                            ->mapWithKeys(function ($b) {
+                                                $vence = $b->expiration_date ? \Carbon\Carbon::parse($b->expiration_date)->format('d/m/Y') : 'N/D';
+                                                return [$b->id => "Lote: {$b->batch_number} | Vence: {$vence} | Stock Actual: " . (float)$b->current_quantity];
+                                            });
+                                    })
+                                    ->visible(fn () => $isPharmacy)
+                                    ->required(fn () => $isPharmacy)
+                                    ->searchable()
+                                    ->preload(),
 
-                                        if ($stockFinal < 0) {
-                                            return "⚠️ Stock insuficiente. Actual: {$stockActual} | Quedaría: {$stockFinal}";
+                                // 🌟 NUEVO: Unidad de Ajuste (Solo si es farmacia Y el producto es fraccionable)
+                                Forms\Components\Select::make('measurement_unit')
+                                    ->label('Unidad de Ajuste')
+                                    ->options([
+                                        'box' => 'Caja Entera',
+                                        'unit' => 'Unidad Suelta (Pastilla/Blíster)',
+                                    ])
+                                    ->visible(fn () => $isPharmacy && $record->is_fractionable && $record->units_per_box > 0)
+                                    ->required(fn () => $isPharmacy && $record->is_fractionable && $record->units_per_box > 0)
+                                    ->default('box')
+                                    ->live(),
+
+                                Forms\Components\TextInput::make('quantity')
+                                    ->label('Cantidad')
+                                    ->numeric()
+                                    ->minValue(0.01)
+                                    ->required()
+                                    ->live(),
+
+                                Forms\Components\Placeholder::make('stock_warning')
+                                    ->label('')
+                                    ->content(function (Forms\Get $get, $record) use ($isPharmacy) {
+                                        if ($get('type') === 'OUT' && $get('quantity')) {
+                                            $stockActual = (float) $record->current_stock;
+                                            $cantidadIngresada = (float) $get('quantity');
+
+                                            // Matemática rápida para el aviso visual
+                                            $cantidadAjuste = $cantidadIngresada;
+                                            if ($isPharmacy && $record->is_fractionable && $get('measurement_unit') === 'unit' && $record->units_per_box > 0) {
+                                                $cantidadAjuste = $cantidadIngresada / $record->units_per_box;
+                                            }
+
+                                            $stockFinal = $stockActual - $cantidadAjuste;
+
+                                            if ($stockFinal < 0) {
+                                                return "⚠️ Stock Global insuficiente. Actual: {$stockActual} | Faltarían: " . abs($stockFinal);
+                                            }
+                                            return "✓ Stock Global actual: {$stockActual} | Quedará en: {$stockFinal}";
                                         }
-                                        return "✓ Stock actual: {$stockActual} | Quedará en: {$stockFinal}";
-                                    }
-                                    return '';
-                                })
-                                ->visible(fn (Get $get) => $get('type') === 'OUT'),
+                                        return '';
+                                    })
+                                    ->visible(fn (Forms\Get $get) => $get('type') === 'OUT'),
 
-                            Forms\Components\TextInput::make('reason')
-                                ->label('Detalle / Observación')
-                                ->required()
-                                ->maxLength(255)
-                                ->placeholder('Ej: Producto vencido, Frasco roto...'),
-                        ])
-                        ->action(function (array $data, $record) { // Usar clone previene modificar el modelo original antes de tiempo
+                                Forms\Components\TextInput::make('reason')
+                                    ->label('Detalle / Observación')
+                                    ->required()
+                                    ->maxLength(255)
+                                    ->placeholder('Ej: 3 pastillas vencidas, 1 caja rota...'),
+                            ];
+                        })
+                        ->action(function (array $data, $record) {
                             $stockActual = (float) $record->current_stock;
-                            $cantidadAjuste = abs((float) $data['quantity']);
+                            $cantidadIngresada = abs((float) $data['quantity']);
                             $tipoAjuste = $data['type'];
 
-                            // 1. Validar que no haya saldo negativo en salidas
-                            if ($tipoAjuste === 'OUT' && $stockActual < $cantidadAjuste) {
-                                Notification::make()
-                                    ->title('Stock Insuficiente')
-                                    ->body("No puedes retirar más de lo que hay. Stock actual: {$stockActual}")
-                                    ->danger()
-                                    ->send();
-                                return;
+                            // Detectamos el negocio
+                            $sector = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->name ?? '';
+                            $isPharmacy = str_contains(strtolower($sector), 'farmacia') || str_contains(strtolower($sector), 'botica');
+
+                            // 1. MATEMÁTICA DE FRACCIONES
+                            $cantidadAjuste = $cantidadIngresada;
+                            if ($isPharmacy && $record->is_fractionable && ($data['measurement_unit'] ?? null) === 'unit' && $record->units_per_box > 0) {
+                                $cantidadAjuste = $cantidadIngresada / $record->units_per_box;
                             }
 
-                            // 2. Calcular el Saldo Posterior (Balance After)
+                            // 2. BUSCAR EL LOTE AFECTADO
+                            $batch = null;
+                            if ($isPharmacy && isset($data['product_batch_id'])) {
+                                $batch = \Percy\Core\Models\ProductBatch::find($data['product_batch_id']);
+                            }
+
+                            // 3. VALIDACIONES DE STOCK NEGATIVO (Global y Lote)
                             if ($tipoAjuste === 'OUT') {
-                                $saldoFinal = $stockActual - $cantidadAjuste;
-                            } else {
-                                $saldoFinal = $stockActual + $cantidadAjuste;
+                                if ($stockActual < $cantidadAjuste) {
+                                    \Filament\Notifications\Notification::make()
+                                        ->title('Stock Global Insuficiente')
+                                        ->body("Intentas retirar {$cantidadAjuste} pero solo hay {$stockActual}.")
+                                        ->danger()->send();
+                                    return;
+                                }
+                                if ($batch && $batch->current_quantity < $cantidadAjuste) {
+                                    \Filament\Notifications\Notification::make()
+                                        ->title('Stock de Lote Insuficiente')
+                                        ->body("El lote seleccionado solo tiene {$batch->current_quantity} disponible.")
+                                        ->danger()->send();
+                                    return;
+                                }
                             }
 
-                            // 3. Crear el registro en el Kardex (Añadido 'balance_after')
+                            // 4. CALCULAR SALDOS
+                            $saldoFinal = $tipoAjuste === 'OUT' ? $stockActual - $cantidadAjuste : $stockActual + $cantidadAjuste;
+
+                            // 5. AFECTAR EL LOTE
+                            if ($batch) {
+                                $batch->current_quantity = $tipoAjuste === 'OUT'
+                                    ? $batch->current_quantity - $cantidadAjuste
+                                    : $batch->current_quantity + $cantidadAjuste;
+                                $batch->save();
+                            }
+
+                            // 6. CREAR REGISTRO EN KARDEX (Inyectando el Lote)
                             \Percy\Core\Models\InventoryMovement::create([
                                 'tenant_id' => \Illuminate\Support\Facades\Auth::user()->tenant_id,
                                 'product_id' => $record->id,
-                                'user_id' => \Illuminate\Support\Facades\Auth::id(), // Recomendado registrar quién lo hizo
+                                'product_batch_id' => $batch ? $batch->id : null, // 🌟 GUARDAMOS EL LOTE
+                                'user_id' => \Illuminate\Support\Facades\Auth::id(),
                                 'type' => $tipoAjuste,
                                 'quantity' => $cantidadAjuste,
                                 'reason' => $data['reason'],
-                                'balance_after' => $saldoFinal, // 🌟 AQUÍ ESTÁ LA SOLUCIÓN
+                                'balance_after' => $saldoFinal,
                             ]);
 
-                            // 4. Actualizar el stock en la tabla de Productos
-                            $record->update([
-                                'current_stock' => $saldoFinal
-                            ]);
+                            // 7. ACTUALIZAR PRODUCTO PRINCIPAL
+                            $record->update(['current_stock' => $saldoFinal]);
 
-                            Notification::make()
-                                ->title('Inventario Actualizado')
+                            \Filament\Notifications\Notification::make()
+                                ->title('Inventario Ajustado')
+                                ->body('El Kardex y el stock han sido actualizados correctamente.')
                                 ->success()
                                 ->send();
                         })
                         ->requiresConfirmation()
-                        ->modalHeading('Ajuste Manual de Inventario'),
+                        // 🌟 Título dinámico con el nombre del producto
+                        ->modalHeading(fn ($record) => 'Ajuste de Inventario: ' . $record->name)
+                        // 🌟 Descripción extra para darle más seguridad al usuario
+                        ->modalDescription(fn ($record) => new \Illuminate\Support\HtmlString(
+                            'Estás a punto de modificar el stock de <strong>' . $record->name . '</strong>. <br>Stock global actual: <strong>' . (float)$record->current_stock . '</strong>'
+                        ))
+                        ->modalWidth('lg'),
                 ])
                 ->label('Acciones')
                 ->icon('heroicon-o-ellipsis-vertical')

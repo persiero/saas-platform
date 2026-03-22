@@ -5029,7 +5029,7 @@
             ],
             "description": "El nucleo compartido de mis proyectos",
             "support": {
-                "source": "https://github.com/persiero/core-business/tree/develop",
+                "source": "https://github.com/persiero/core-business/tree/main",
                 "issues": "https://github.com/persiero/core-business/issues"
             },
             "time": "2026-03-22T04:03:59+00:00"
