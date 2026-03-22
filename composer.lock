@@ -4986,12 +4986,12 @@
             "source": {
                 "type": "git",
                 "url": "git@github.com:persiero/core-business.git",
-                "reference": "a36c4c8dc74fd595d80d0bb08cf879fef6ef1261"
+                "reference": "ad5c011af9045fe8b73fba50f2344b06fa5b6f5c"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/persiero/core-business/zipball/a36c4c8dc74fd595d80d0bb08cf879fef6ef1261",
-                "reference": "a36c4c8dc74fd595d80d0bb08cf879fef6ef1261",
+                "url": "https://api.github.com/repos/persiero/core-business/zipball/ad5c011af9045fe8b73fba50f2344b06fa5b6f5c",
+                "reference": "ad5c011af9045fe8b73fba50f2344b06fa5b6f5c",
                 "shasum": ""
             },
             "require": {
@@ -5029,10 +5029,10 @@
             ],
             "description": "El nucleo compartido de mis proyectos",
             "support": {
-                "source": "https://github.com/persiero/core-business/tree/main",
+                "source": "https://github.com/persiero/core-business/tree/develop",
                 "issues": "https://github.com/persiero/core-business/issues"
             },
-            "time": "2026-03-22T04:03:59+00:00"
+            "time": "2026-03-22T23:00:47+00:00"
         },
         {
             "name": "phpoption/phpoption",

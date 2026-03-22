@@ -96,6 +96,7 @@ class SaleResource extends Resource
                             ->options([
                                 '03' => 'Boleta Electrónica',
                                 '01' => 'Factura Electrónica',
+                                '00' => 'Nota de Venta (Interno)', // 🌟 NUEVA OPCIÓN
                             ])
                             ->required()
                             ->default('03')
@@ -136,10 +137,11 @@ class SaleResource extends Resource
                         Forms\Components\Select::make('customer_id')
                             ->label('Cliente')
                             ->relationship('customer', 'name', function (Builder $query, \Filament\Forms\Get $get) {
-                                $docType = $get('document_type'); // '01' Factura, '03' Boleta
+                                $docType = $get('document_type');
+
                                 return $query->when($docType === '01', function ($q) {
                                     return $q->whereIn('document_type', ['RUC', '6']);
-                                })->when($docType === '03', function ($q) {
+                                })->when(in_array($docType, ['03', '00']), function ($q) { // 🌟 Acepta '00' aquí
                                     return $q->whereIn('document_type', ['DNI', '1', 'CE', '0', '7', '4']);
                                 });
                             })
@@ -750,28 +752,32 @@ class SaleResource extends Resource
                 ->searchable(['series', 'correlative'])
                 ->sortable(false)
                 ->weight('bold')
-                ->icon(fn (Sale $record): string => match ($record->document_type) {
-                    '01' => 'heroicon-o-document-text',
-                    '03' => 'heroicon-o-receipt-percent',
-                    '07' => 'heroicon-o-arrow-uturn-left',
-                    '08' => 'heroicon-o-arrow-trending-up',
+                // 🌟 CAMBIO: Evaluamos primero si está anulado
+                ->icon(fn (Sale $record): string => match (true) {
+                    $record->status === 'canceled' => 'heroicon-o-x-circle', // Ícono de anulación
+                    $record->document_type === '01' => 'heroicon-o-document-text',
+                    $record->document_type === '03' => 'heroicon-o-receipt-percent',
+                    $record->document_type === '07' => 'heroicon-o-arrow-uturn-left',
+                    $record->document_type === '08' => 'heroicon-o-arrow-trending-up',
                     default => 'heroicon-o-document',
                 })
-                ->description(fn (Sale $record): ?string =>
-                    in_array($record->document_type, ['07', '08'])
-                        ? "Ref: {$record->affected_document_series}-{$record->affected_document_correlative}"
-                        : match ($record->document_type) {
-                            '01' => 'Factura',
-                            '03' => 'Boleta',
-                            default => null,
-                        }
-                )
-                ->color(fn (Sale $record): string => match ($record->document_type) {
-                    '07' => 'danger',
-                    '08' => 'warning',
-                    '01' => 'info',
-                    '03' => 'success',
+                // 🌟 CAMBIO: Color rojo si está anulado
+                ->color(fn (Sale $record): string => match (true) {
+                    $record->status === 'canceled' => 'danger',
+                    $record->document_type === '07' => 'danger',
+                    $record->document_type === '08' => 'warning',
+                    $record->document_type === '01' => 'info',
+                    $record->document_type === '03' => 'success',
                     default => 'gray',
+                })
+                // 🌟 CAMBIO: Etiqueta "Anulado" debajo del número
+                ->description(fn (Sale $record): ?string => match (true) {
+                    $record->status === 'canceled' => 'Anulado',
+                    in_array($record->document_type, ['07', '08']) => "Ref: {$record->affected_document_series}-{$record->affected_document_correlative}",
+                    $record->document_type === '01' => 'Factura',
+                    $record->document_type === '03' => 'Boleta',
+                    $record->document_type === '00' => 'Nota de Venta',
+                    default => null,
                 }),
 
             Tables\Columns\TextColumn::make('customer.name')
@@ -818,24 +824,30 @@ class SaleResource extends Resource
                 ->toggleable(),
 
             Tables\Columns\TextColumn::make('sunat_status')
-                ->label('SUNAT')
+                ->label('Estado')
                 ->badge()
-                ->icon(fn (string $state): string => match ($state) {
-                    'accepted' => 'heroicon-o-check-circle',
-                    'pending' => 'heroicon-o-clock',
-                    'rejected' => 'heroicon-o-x-circle',
+                ->icon(fn (string $state, Sale $record): string => match (true) {
+                    $record->status === 'canceled' => 'heroicon-o-archive-box-x-mark',
+                    $record->document_type === '00' => 'heroicon-o-building-storefront',
+                    $state === 'accepted' => 'heroicon-o-check-circle',
+                    $state === 'pending' => 'heroicon-o-clock',
+                    $state === 'rejected' => 'heroicon-o-x-circle',
                     default => 'heroicon-o-question-mark-circle',
                 })
-                ->color(fn (string $state): string => match ($state) {
-                    'accepted' => 'success',
-                    'pending' => 'warning',
-                    'rejected' => 'danger',
+                ->color(fn (string $state, Sale $record): string => match (true) {
+                    $record->status === 'canceled' => 'danger',
+                    $record->document_type === '00' => 'gray',
+                    $state === 'accepted' => 'success',
+                    $state === 'pending' => 'warning',
+                    $state === 'rejected' => 'danger',
                     default => 'gray',
                 })
-                ->formatStateUsing(fn (string $state): string => match ($state) {
-                    'accepted' => 'Aceptado',
-                    'pending' => 'Pendiente',
-                    'rejected' => 'Rechazado',
+                ->formatStateUsing(fn (string $state, Sale $record): string => match (true) {
+                    $record->status === 'canceled' => 'Anulado',
+                    $record->document_type === '00' => 'Uso Interno',
+                    $state === 'accepted' => 'Aceptado',
+                    $state === 'pending' => 'Pendiente',
+                    $state === 'rejected' => 'Rechazado',
                     default => ucfirst($state),
                 })
                 ->tooltip(fn (Sale $record): ?string =>
@@ -910,106 +922,193 @@ class SaleResource extends Resource
         ->filtersFormWidth('md')
         ->filtersFormColumns(2)
         ->actions([
-            // GRUPO 1: Acciones Principales (Envío y Ticket)
-            Tables\Actions\Action::make('sendToSunat')
-                ->label('SUNAT')
-                ->icon('heroicon-o-paper-airplane')
-                ->color('success')
 
-                // 1. ¿Se muestra el botón? (Si no ha sido aceptado)
-                ->visible(fn (Sale $record) => $record->sunat_status !== 'accepted')
+            // 🖨️ EL ÚNICO BOTÓN AFUERA: Siempre a la mano para imprimir rápido
+                Tables\Actions\Action::make('print')
+                    ->label('Ticket')
+                    ->icon('heroicon-o-printer')
+                    ->color('info')
+                    ->url(fn (Sale $record): string => route('percy.print.ticket', $record))
+                    ->openUrlInNewTab(),
 
-                // 2. ¿Está habilitado para hacer clic? (Tu código va aquí)
-                // Si es Nota de Crédito y no tiene motivo, el botón se verá gris y no funcionará.
-                ->disabled(fn (Sale $record) =>
-                    in_array($record->document_type, ['07', '08']) && empty($record->credit_note_type)
-                )
-                ->requiresConfirmation()
-                ->modalHeading('Enviar Comprobante')
-                ->modalDescription('¿Estás seguro de enviar este documento a la SUNAT?')
-                ->action(function (Sale $record) {
-                    try {
-                        $service = new \Percy\Core\Services\SunatService();
-                        $result = $service->processAndSend($record);
+                // 📁 GRUPO DE OPCIONES DESPLEGABLE
+                Tables\Actions\ActionGroup::make([
 
-                        if ($result->isSuccess()) {
+                    // 1. Ver Detalle (Siempre visible)
+                    Tables\Actions\ViewAction::make()
+                        ->label('Ver Detalle')
+                        ->icon('heroicon-o-eye')
+                        ->color('info'),
+
+                    // =========================================================
+                    // 🌟 ZONA DE NOTAS DE VENTA (TICKETS INTERNOS)
+                    // =========================================================
+                    Tables\Actions\Action::make('convertToBoleta')
+                        ->label('Convertir a Boleta')
+                        ->icon('heroicon-o-arrow-path-rounded-square')
+                        ->color('success')
+                        ->visible(fn (Sale $record) => $record->document_type === '00' && $record->status !== 'canceled')
+                        ->form([
+                            Forms\Components\Select::make('serie_boleta')
+                                ->label('Seleccione la Serie de Boleta')
+                                ->options(function () {
+                                    return \Percy\Core\Models\Serie::where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id)
+                                        ->where('document_type', '03')
+                                        ->where('active', true)
+                                        ->pluck('serie', 'serie');
+                                })
+                                ->required(),
+                        ])
+                        ->action(function (array $data, Sale $record) {
+                            $originalDocType = $record->document_type;
+                            $originalSeries = $record->series;
+
+                            $serieConfig = \Percy\Core\Models\Serie::where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id)
+                                ->where('document_type', '03')
+                                ->where('serie', $data['serie_boleta'])
+                                ->first();
+
+                            if (!$serieConfig) {
+                                \Filament\Notifications\Notification::make()->danger()->title('Error')->body('Serie no válida.')->send();
+                                return;
+                            }
+
+                            $serieConfig->increment('correlative');
+                            $nuevoCorrelativo = $serieConfig->correlative;
+
+                            $record->update([
+                                'document_type' => '03',
+                                'series' => $data['serie_boleta'],
+                                'correlative' => $nuevoCorrelativo,
+                                'sold_at' => now(),
+                                'sunat_status' => 'pending',
+                            ]);
+
+                            $originalSerieConfig = \Percy\Core\Models\Serie::where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id)
+                                ->where('document_type', $originalDocType)
+                                ->where('serie', $originalSeries)
+                                ->first();
+
+                            if ($originalSerieConfig) {
+                                $originalSerieConfig->decrement('correlative');
+                            }
+
                             \Filament\Notifications\Notification::make()
-                                ->title('¡Aceptado por SUNAT!')
                                 ->success()
+                                ->title('Conversión Exitosa')
+                                ->body("El ticket ahora es la Boleta {$data['serie_boleta']}-{$nuevoCorrelativo}.")
                                 ->send();
-                        } else {
-                            \Filament\Notifications\Notification::make()
-                                ->title('Error SUNAT ' . $result->getError()->getCode())
-                                ->body($result->getError()->getMessage())
-                                ->danger()
-                                ->persistent()
-                                ->send();
-                        }
-                    } catch (\GuzzleHttp\Exception\ConnectException $e) {
-                        \Filament\Notifications\Notification::make()
-                            ->title('Error de Conexión')
-                            ->body('No se pudo conectar con SUNAT. Verifique su conexión a internet.')
-                            ->danger()
-                            ->persistent()
-                            ->send();
-                    } catch (\GuzzleHttp\Exception\RequestException $e) {
-                        \Filament\Notifications\Notification::make()
-                            ->title('Timeout')
-                            ->body('La solicitud a SUNAT tardó demasiado. Inténtelo nuevamente.')
-                            ->warning()
-                            ->persistent()
-                            ->send();
-                    } catch (\Exception $e) {
-                        \Filament\Notifications\Notification::make()
-                            ->title('Error Crítico')
-                            ->body($e->getMessage())
-                            ->danger()
-                            ->send();
-                    }
-                }),
+                        })
+                        ->requiresConfirmation()
+                        ->modalHeading('Convertir Ticket a Boleta')
+                        ->modalDescription('El documento pasará a ser una Boleta Electrónica. El stock se mantendrá intacto. ¿Deseas continuar?'),
 
-            Tables\Actions\Action::make('print')
-                ->label('Ticket') // Cambié el nombre para mayor claridad
-                ->icon('heroicon-o-printer')
-                ->color('info')
-                // Cambiamos 'sales.ticket' por la ruta del core: 'percy.print.ticket'
-                ->url(fn (Sale $record): string => route('percy.print.ticket', $record))
-                ->openUrlInNewTab(),
+                    Tables\Actions\Action::make('anularTicket')
+                        ->label('Anular Ticket')
+                        ->icon('heroicon-o-x-circle')
+                        ->color('danger')
+                        ->visible(fn (Sale $record) => $record->document_type === '00' && $record->status !== 'canceled')
+                        ->form([
+                            Forms\Components\TextInput::make('reason')
+                                ->label('Motivo de anulación')
+                                ->required()
+                                ->maxLength(255),
+                        ])
+                        ->action(function (array $data, Sale $record) {
+                            foreach ($record->items as $item) {
+                                $product = $item->product;
+                                if (!$product) continue;
 
-            // GRUPO 2: Archivos Digitales
-            Tables\Actions\ActionGroup::make([
-                // 1. Mejoramos el botón Ver para que tenga icono y color
-                Tables\Actions\ViewAction::make()
-                    ->label('Ver Detalle')
-                    ->icon('heroicon-o-eye')
-                    ->color('info'),
+                                $quantityToReturn = $item->quantity;
+                                if ($product->is_fractionable && $item->measurement_unit === 'unit' && $product->units_per_box > 0) {
+                                    $quantityToReturn = $item->quantity / $product->units_per_box;
+                                }
 
-                //Tables\Actions\EditAction::make()->label('Editar'),
+                                if ($item->product_batch_id) {
+                                    $batch = \Percy\Core\Models\ProductBatch::find($item->product_batch_id);
+                                    if ($batch) {
+                                        $batch->current_quantity += $quantityToReturn;
+                                        $batch->save();
+                                    }
+                                }
 
-                Tables\Actions\Action::make('downloadXml')
-                    ->label('Descargar XML')
-                    ->icon('heroicon-o-code-bracket')
-                    ->url(fn (Sale $record) => route('sales.download-xml', $record))
-                    ->visible(fn (Sale $record) => !empty($record->sunat_xml_path)),
+                                $product->current_stock += $quantityToReturn;
+                                $product->save();
 
-                Tables\Actions\Action::make('downloadCdr')
-                    ->label('Descargar CDR')
-                    ->icon('heroicon-o-archive-box')
-                    ->url(fn (Sale $record) => route('sales.download-cdr', $record))
-                    ->visible(fn (Sale $record) => !empty($record->sunat_cdr_path)),
+                                \Percy\Core\Models\InventoryMovement::create([
+                                    'tenant_id'        => $record->tenant_id,
+                                    'product_id'       => $item->product_id,
+                                    'product_batch_id' => $item->product_batch_id,
+                                    'user_id'          => \Illuminate\Support\Facades\Auth::id(),
+                                    'type'             => 'IN',
+                                    'quantity'         => $quantityToReturn,
+                                    'balance_after'    => $product->current_stock,
+                                    'reason'           => "Anulación Ticket {$record->series}-{$record->correlative}: {$data['reason']}",
+                                    'reference_type'   => 'Percy\Core\Models\Sale',
+                                    'reference_id'     => $record->id,
+                                ]);
+                            }
 
-                Tables\Actions\Action::make('anularVenta')
-                    ->label('Nota de Credito')
-                    ->icon('heroicon-o-document-minus')
-                    ->color('danger')
-                    // 🌟 CANDADO: Solo si es Admin + Documento Aceptado + Es Boleta/Factura
-                    ->visible(function (Sale $record) {
-                        $isAdmin = \Illuminate\Support\Facades\Auth::user()->isAdmin();
-                        $isAccepted = $record->sunat_status === 'accepted';
-                        $isValidDocument = in_array($record->document_type, ['01', '03']);
+                            $record->update([
+                                'status' => 'canceled',
+                                'sunat_description' => 'ANULADO INTERNAMENTE: ' . $data['reason']
+                            ]);
 
-                        return $isAdmin && $isAccepted && $isValidDocument;
-                    })
+                            \Filament\Notifications\Notification::make()->success()->title('Ticket Anulado')->send();
+                        })
+                        ->requiresConfirmation()
+                        ->modalHeading('Anular Nota de Venta'),
+
+                    // =========================================================
+                    // 🌟 ZONA SUNAT (FACTURAS Y BOLETAS)
+                    // =========================================================
+                    Tables\Actions\Action::make('sendToSunat')
+                        ->label('Enviar a SUNAT')
+                        ->icon('heroicon-o-paper-airplane')
+                        ->color('success')
+                        ->visible(fn (Sale $record) => $record->sunat_status !== 'accepted' && $record->document_type !== '00' && $record->status !== 'canceled')
+                        ->disabled(fn (Sale $record) => in_array($record->document_type, ['07', '08']) && empty($record->credit_note_type))
+                        ->requiresConfirmation()
+                        ->action(function (Sale $record) {
+                            try {
+                                $service = new \Percy\Core\Services\SunatService();
+                                $result = $service->processAndSend($record);
+
+                                if ($result->isSuccess()) {
+                                    \Filament\Notifications\Notification::make()->title('¡Aceptado por SUNAT!')->success()->send();
+                                } else {
+                                    \Filament\Notifications\Notification::make()->title('Error SUNAT ' . $result->getError()->getCode())->body($result->getError()->getMessage())->danger()->persistent()->send();
+                                }
+                            } catch (\Exception $e) {
+                                \Filament\Notifications\Notification::make()->title('Error')->body($e->getMessage())->danger()->send();
+                            }
+                        }),
+
+                    Tables\Actions\Action::make('downloadXml')
+                        ->label('Descargar XML')
+                        ->icon('heroicon-o-code-bracket')
+                        ->url(fn (Sale $record) => route('sales.download-xml', $record))
+                        ->visible(fn (Sale $record) => !empty($record->sunat_xml_path) && $record->status !== 'canceled'),
+
+                    Tables\Actions\Action::make('downloadCdr')
+                        ->label('Descargar CDR')
+                        ->icon('heroicon-o-archive-box')
+                        ->url(fn (Sale $record) => route('sales.download-cdr', $record))
+                        ->visible(fn (Sale $record) => !empty($record->sunat_cdr_path) && $record->status !== 'canceled'),
+
+                    Tables\Actions\Action::make('anularVenta')
+                        ->label('Nota de Crédito')
+                        ->icon('heroicon-o-document-minus')
+                        ->color('danger')
+                        ->visible(function (Sale $record) {
+                            $isAdmin = \Illuminate\Support\Facades\Auth::user()->isAdmin();
+                            $isAccepted = $record->sunat_status === 'accepted';
+                            $isValidDocument = in_array($record->document_type, ['01', '03']);
+                            $isNotCanceled = $record->status !== 'canceled'; // Bloquea si ya está anulada
+
+                            return $isAdmin && $isAccepted && $isValidDocument && $isNotCanceled;
+                        })
+
                     ->form([
                         Forms\Components\Select::make('serie_nota')
                             ->label('Serie de Nota de Crédito')
@@ -1123,17 +1222,17 @@ class SaleResource extends Resource
                     }),
 
                 Tables\Actions\Action::make('aumentarValor')
-                    ->label('Nota de Débito')
-                    ->icon('heroicon-o-document-plus') // Un ícono de "más"
-                    ->color('warning') // Color amarillo para diferenciarlo del rojo de anulación
-                    // 🌟 CANDADO: Solo si es Admin + Documento Aceptado + Es Boleta/Factura
-                    ->visible(function (Sale $record) {
-                        $isAdmin = \Illuminate\Support\Facades\Auth::user()->isAdmin();
-                        $isAccepted = $record->sunat_status === 'accepted';
-                        $isValidDocument = in_array($record->document_type, ['01', '03']);
+                        ->label('Nota de Débito')
+                        ->icon('heroicon-o-document-plus')
+                        ->color('warning')
+                        ->visible(function (Sale $record) {
+                            $isAdmin = \Illuminate\Support\Facades\Auth::user()->isAdmin();
+                            $isAccepted = $record->sunat_status === 'accepted';
+                            $isValidDocument = in_array($record->document_type, ['01', '03']);
+                            $isNotCanceled = $record->status !== 'canceled';
 
-                        return $isAdmin && $isAccepted && $isValidDocument;
-                    })
+                            return $isAdmin && $isAccepted && $isValidDocument && $isNotCanceled;
+                        })
                     ->form([
                         Forms\Components\Select::make('serie_nota')
                             ->label('Serie de Nota de Débito (Ej: BD01 o FD01)')
