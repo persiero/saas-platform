@@ -96,39 +96,61 @@
                 Comparativa de ingresos vs gastos del período seleccionado
             </x-slot>
 
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div class="text-center p-4 bg-success-50 dark:bg-success-900/20 rounded-lg border border-success-200 dark:border-success-800">
-                    <div class="flex items-center justify-center gap-2 mb-2">
-                        <x-heroicon-o-arrow-trending-up class="w-5 h-5 text-success-600" />
-                        <div class="text-sm font-medium text-success-700 dark:text-success-300">Ingresos</div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {{-- FILA 1: La operación de mercadería --}}
+                {{-- Ingresos --}}
+                <div class="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                    <div class="flex items-center justify-center gap-2 text-gray-500 dark:text-gray-400 mb-2">
+                        <x-heroicon-m-arrow-trending-up class="w-5 h-5" />
+                        <span class="text-sm font-medium">Ingresos Totales</span>
                     </div>
-                    <div class="text-2xl font-bold text-success-600">S/ {{ number_format($profitability['sales'] ?? 0, 2) }}</div>
+                    <div class="text-2xl font-bold text-center">S/ {{ number_format($profitability['sales'] ?? 0, 2) }}</div>
                 </div>
 
-                <div class="text-center p-4 bg-danger-50 dark:bg-danger-900/20 rounded-lg border border-danger-200 dark:border-danger-800">
-                    <div class="flex items-center justify-center gap-2 mb-2">
-                        <x-heroicon-o-arrow-trending-down class="w-5 h-5 text-danger-600" />
-                        <div class="text-sm font-medium text-danger-700 dark:text-danger-300">Gastos</div>
+                {{-- Costo de Ventas --}}
+                <div class="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                    <div class="flex items-center justify-center gap-2 text-orange-500 mb-2">
+                        <x-heroicon-m-shopping-cart class="w-5 h-5" />
+                        <span class="text-sm font-medium">Costo de Mercadería</span>
                     </div>
-                    <div class="text-2xl font-bold text-danger-600">S/ {{ number_format($profitability['expenses'] ?? 0, 2) }}</div>
+                    <div class="text-2xl font-bold text-center">S/ {{ number_format($profitability['cogs'] ?? 0, 2) }}</div>
                 </div>
 
-                <div class="text-center p-4 {{ ($profitability['profit'] ?? 0) >= 0 ? 'bg-success-50 dark:bg-success-900/20 border-success-200 dark:border-success-800' : 'bg-danger-50 dark:bg-danger-900/20 border-danger-200 dark:border-danger-800' }} rounded-lg border">
-                    <div class="flex items-center justify-center gap-2 mb-2">
-                        <x-heroicon-o-banknotes class="w-5 h-5 {{ ($profitability['profit'] ?? 0) >= 0 ? 'text-success-600' : 'text-danger-600' }}" />
-                        <div class="text-sm font-medium {{ ($profitability['profit'] ?? 0) >= 0 ? 'text-success-700 dark:text-success-300' : 'text-danger-700 dark:text-danger-300' }}">Utilidad Neta</div>
+                {{-- Utilidad Bruta (NUEVA) --}}
+                <div class="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm bg-blue-50/30">
+                    <div class="flex items-center justify-center gap-2 text-blue-600 mb-2">
+                        <x-heroicon-m-calculator class="w-5 h-5" />
+                        <span class="text-sm font-medium">Utilidad Bruta</span>
                     </div>
-                    <div class="text-2xl font-bold {{ ($profitability['profit'] ?? 0) >= 0 ? 'text-success-600' : 'text-danger-600' }}">
-                        S/ {{ number_format($profitability['profit'] ?? 0, 2) }}
-                    </div>
+                    <div class="text-2xl font-bold text-center text-blue-700">S/ {{ number_format($profitability['gross_profit'] ?? 0, 2) }}</div>
                 </div>
 
-                <div class="text-center p-4 bg-primary-50 dark:bg-primary-900/20 rounded-lg border border-primary-200 dark:border-primary-800">
-                    <div class="flex items-center justify-center gap-2 mb-2">
-                        <x-heroicon-o-chart-bar class="w-5 h-5 text-primary-600" />
-                        <div class="text-sm font-medium text-primary-700 dark:text-primary-300">Margen</div>
+                {{-- FILA 2: La utilidad final --}}
+                {{-- Gastos --}}
+                <div class="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                    <div class="flex items-center justify-center gap-2 text-danger-500 mb-2">
+                        <x-heroicon-m-arrow-trending-down class="w-5 h-5" />
+                        <span class="text-sm font-medium">Gastos Operativos</span>
                     </div>
-                    <div class="text-2xl font-bold text-primary-600">{{ number_format($profitability['margin_percentage'] ?? 0, 2) }}%</div>
+                    <div class="text-2xl font-bold text-center text-danger-600">S/ {{ number_format($profitability['expenses'] ?? 0, 2) }}</div>
+                </div>
+
+                {{-- Utilidad Neta --}}
+                <div class="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm bg-success-50/30">
+                    <div class="flex items-center justify-center gap-2 text-success-600 mb-2">
+                        <x-heroicon-m-banknotes class="w-5 h-5" />
+                        <span class="text-sm font-medium">Utilidad Neta (Bolsillo)</span>
+                    </div>
+                    <div class="text-2xl font-bold text-center text-success-700">S/ {{ number_format($profitability['profit'] ?? 0, 2) }}</div>
+                </div>
+
+                {{-- Margen --}}
+                <div class="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                    <div class="flex items-center justify-center gap-2 text-gray-500 mb-2">
+                        <x-heroicon-m-presentation-chart-line class="w-5 h-5" />
+                        <span class="text-sm font-medium">Margen de Ganancia</span>
+                    </div>
+                    <div class="text-2xl font-bold text-center">{{ $profitability['margin_percentage'] ?? 0 }}%</div>
                 </div>
             </div>
         </x-filament::section>
@@ -182,7 +204,7 @@
                                 </td>
                                 <td class="text-right py-3 px-4">
                                     <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-primary-100 dark:bg-primary-500/20 text-primary-700 dark:text-primary-300">
-                                        {{ number_format($product['total_quantity'], 0) }}
+                                        {{ $product['total_quantity'] }}
                                     </span>
                                 </td>
                                 <td class="text-right py-3 px-4">
