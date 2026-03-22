@@ -50,14 +50,16 @@
         </a>
 
         {{-- 4. BOTÓN DE REPORTES --}}
-        <a href="{{ route('filament.admin.resources.reports.index') }}"
-           style="background: linear-gradient(135deg, #06b6d4 0%, #0e7490 100%); color: white; padding: 1.5rem; border-radius: 1rem; display: flex; flex-direction: column; align-items: center; justify-content: center; text-decoration: none; box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: transform 0.2s ease;"
-           onmouseover="this.style.transform='translateY(-5px)'"
-           onmouseout="this.style.transform='translateY(0)'">
-            <x-heroicon-o-chart-bar style="width: 2.5rem; height: 2.5rem; margin-bottom: 0.5rem; color: white;" />
-            <span style="font-size: 1.125rem; font-weight: bold; color: white;">Reportes</span>
-            <span style="font-size: 0.75rem; opacity: 0.9; color: white; margin-top: 0.25rem;">Ver finanzas</span>
-        </a>
+        @if(auth()->user()->isAdmin())
+            <a href="{{ route('filament.admin.resources.reports.index') }}"
+            style="background: linear-gradient(135deg, #06b6d4 0%, #0e7490 100%); color: white; padding: 1.5rem; border-radius: 1rem; display: flex; flex-direction: column; align-items: center; justify-content: center; text-decoration: none; box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: transform 0.2s ease;"
+            onmouseover="this.style.transform='translateY(-5px)'"
+            onmouseout="this.style.transform='translateY(0)'">
+                <x-heroicon-o-chart-bar style="width: 2.5rem; height: 2.5rem; margin-bottom: 0.5rem; color: white;" />
+                <span style="font-size: 1.125rem; font-weight: bold; color: white;">Reportes</span>
+                <span style="font-size: 0.75rem; opacity: 0.9; color: white; margin-top: 0.25rem;">Ver finanzas</span>
+            </a>
+        @endif
 
     </div>
 </x-filament-widgets::widget>
