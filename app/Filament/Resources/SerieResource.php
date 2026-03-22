@@ -45,6 +45,7 @@ class SerieResource extends Resource
                     '03' => 'Boleta Electrónica',
                     '07' => 'Nota de Crédito',
                     '08' => 'Nota de Débito',
+                    '00' => 'Nota de Venta (Ticket Interno)', // 🌟 NUEVA OPCIÓN
                 ])
                 ->required()
                 ->native(false)
@@ -53,7 +54,7 @@ class SerieResource extends Resource
 
             Forms\Components\TextInput::make('serie')
                 ->label('Serie')
-                ->placeholder('Ej: F001')
+                ->placeholder('Ej: F001, B001, N001, BC01, FC01')
                 ->required()
                 ->length(4)
                 ->extraInputAttributes(['style' => 'text-transform: uppercase'])
@@ -71,6 +72,10 @@ class SerieResource extends Resource
                         }
                         if (in_array($type, ['07', '08']) && !in_array(substr($value, 0, 1), ['F', 'B'])) {
                             $fail('Las notas deben empezar con F (si es de factura) o B (si es de boleta).');
+                        }
+                        // 🌟 NUEVA REGLA PARA NOTAS DE VENTA
+                        if ($type === '00' && !str_starts_with($value, 'N') && !str_starts_with($value, 'T')) {
+                            $fail('La serie para Notas de Venta debe empezar con N o T (Ej: N001, T001).');
                         }
                     },
                 ])
@@ -103,6 +108,7 @@ class SerieResource extends Resource
                         '03' => 'Boleta',
                         '07' => 'Nota Crédito',
                         '08' => 'Nota Débito',
+                        '00' => 'Nota de Venta', // 🌟 NUEVA ETIQUETA
                         default => $state,
                     })
                     ->badge()
@@ -111,6 +117,7 @@ class SerieResource extends Resource
                         '03' => 'info',
                         '07' => 'warning',
                         '08' => 'danger',
+                        '00' => 'gray', // 🌟 COLOR GRIS (Para indicar que no va a SUNAT)
                         default => 'gray',
                     }),
 
