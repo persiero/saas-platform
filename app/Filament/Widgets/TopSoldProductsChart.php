@@ -20,14 +20,18 @@ class TopSoldProductsChart extends ChartWidget
         $startOfMonth = now()->startOfMonth();
         $endOfMonth = now()->endOfMonth();
 
-        // Consulta SQL profesional: Suma cantidades de items vendidos este mes, agrupa por producto y ordena
-        $topProducts = SaleItem::select('item_name', DB::raw('SUM(quantity) as total_quantity'))
+        // 🌟 CAMBIO CLAVE: Hacemos Join con la tabla products para obtener el nombre ACTUAL
+        $topProducts = SaleItem::join('products', 'sale_items.product_id', '=', 'products.id')
+            ->select(
+                'products.name as actual_name', // Jalamos el nombre del catálogo
+                DB::raw('SUM(sale_items.quantity) as total_quantity')
+            )
             ->whereHas('sale', function ($query) use ($tenantId, $startOfMonth, $endOfMonth) {
                 $query->where('tenant_id', $tenantId)
                     ->whereBetween('sold_at', [$startOfMonth, $endOfMonth])
-                    ->where('sunat_status', '!=', 'rejected'); // Solo facturas válidas
+                    ->where('sunat_status', '!=', 'rejected');
             })
-            ->groupBy('item_name')
+            ->groupBy('products.id', 'products.name') // Agrupamos por el ID real del producto
             ->orderBy('total_quantity', 'desc')
             ->limit(5)
             ->get();
@@ -37,12 +41,13 @@ class TopSoldProductsChart extends ChartWidget
                 [
                     'label' => 'Unidades Vendidas',
                     'data' => $topProducts->pluck('total_quantity')->toArray(),
-                    'backgroundColor' => '#10b981', // Verde esmeralda matching con "Abrir Caja"
+                    'backgroundColor' => '#10b981',
                     'borderColor' => '#047857',
-                    'borderRadius' => 6, // Esquinas redondeadas en las barras
+                    'borderRadius' => 6,
                 ],
             ],
-            'labels' => $topProducts->pluck('item_name')->toArray(), // Nombres de las medicinas
+            // 🌟 CAMBIO CLAVE: Usamos el alias 'actual_name' para las etiquetas
+            'labels' => $topProducts->pluck('actual_name')->toArray(),
         ];
     }
 
