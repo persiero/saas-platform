@@ -117,7 +117,7 @@
                 </div>
 
                 {{-- Utilidad Bruta (NUEVA) --}}
-                <div class="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm bg-blue-50/30">
+                <div class="dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm bg-blue-50/30">
                     <div class="flex items-center justify-center gap-2 text-blue-600 mb-2">
                         <x-heroicon-m-calculator class="w-5 h-5" />
                         <span class="text-sm font-medium">Utilidad Bruta</span>
