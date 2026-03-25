@@ -359,12 +359,17 @@ class SaleResource extends Resource
                                     // Traemos los items actuales del carrito
                                     $items = $get('items') ?? [];
 
-                                    // Buscamos el lote FEFO igual que arriba
-                                    $batch = \Percy\Core\Models\ProductBatch::where('product_id', $product->id)
-                                        ->where('current_quantity', '>', 0)
-                                        ->whereDate('expiration_date', '>=', now())
-                                        ->orderBy('expiration_date', 'asc')
-                                        ->first();
+                                    // 🌟 OPTIMIZACIÓN SAAS: Solo busca lotes si el negocio los maneja
+                                    $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                                    $batch = null;
+
+                                    if ($features['has_lots'] ?? false) {
+                                        $batch = \Percy\Core\Models\ProductBatch::where('product_id', $product->id)
+                                            ->where('current_quantity', '>', 0)
+                                            ->whereDate('expiration_date', '>=', now())
+                                            ->orderBy('expiration_date', 'asc')
+                                            ->first();
+                                    }
 
                                     // CALCULAMOS LOS IMPUESTOS FALTANTES PARA QUE LA BD NO EXPLOTE
                                     $afectacion = \Percy\Core\Models\AfectacionIgv::find($product->afectacion_igv_id ?? 1);
@@ -442,15 +447,20 @@ class SaleResource extends Resource
                                             $set('_fraction_price', $product->unit_price);
                                             $set('measurement_unit', 'box'); // Por defecto se vende la caja
 
-                                            // 🌟 NUEVA MAGIA FEFO: Auto-seleccionar el lote más próximo a vencer
-                                            $loteProximo = \Percy\Core\Models\ProductBatch::where('product_id', $state)
-                                                ->where('current_quantity', '>', 0)
-                                                ->whereDate('expiration_date', '>=', now())
-                                                ->orderBy('expiration_date', 'asc') // Del más viejo al más nuevo
-                                                ->where('is_active', true)
-                                                ->first();
+                                            // 🌟 OPTIMIZACIÓN SAAS: Auto-seleccionar lote SOLO si maneja lotes
+                                            $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                                            $loteProximo = null;
 
-                                            // Si encontró un lote, lo asigna directo al campo 'product_batch_id'
+                                            if ($features['has_lots'] ?? false) {
+                                                $loteProximo = \Percy\Core\Models\ProductBatch::where('product_id', $state)
+                                                    ->where('current_quantity', '>', 0)
+                                                    ->whereDate('expiration_date', '>=', now())
+                                                    ->orderBy('expiration_date', 'asc') // Del más viejo al más nuevo
+                                                    ->where('is_active', true)
+                                                    ->first();
+                                            }
+
+                                            // Si encontró un lote (y si el negocio maneja lotes), lo asigna
                                             $set('product_batch_id', $loteProximo ? $loteProximo->id : null);
                                         }
                                         self::updateRow($get, $set);
@@ -500,15 +510,9 @@ class SaleResource extends Resource
                                                 return [$batch->id => "{$batch->batch_number} (Vence: {$vence})"];
                                             });
                                     })
-                                    ->visible(function () {
-                                        $sector = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->name ?? '';
-                                        return str_contains(strtolower($sector), 'farmacia') || str_contains(strtolower($sector), 'botica');
-                                    })
+                                    ->visible(fn () => \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features['has_lots'] ?? false)
                                     // Es requerido SOLO si el negocio es una farmacia
-                                    ->required(function () {
-                                        $sector = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->name ?? '';
-                                        return str_contains(strtolower($sector), 'farmacia') || str_contains(strtolower($sector), 'botica');
-                                    })
+                                    ->required(fn () => \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features['has_lots'] ?? false)
                                     ->searchable()
                                     ->preload()
                                     ->columnSpan(3), // Ajusta los columnSpan de los demás campos para que sumen 12

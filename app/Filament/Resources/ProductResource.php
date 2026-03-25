@@ -138,10 +138,10 @@ class ProductResource extends Resource
                     ])->columns(2),
 
                     Forms\Components\Section::make('Datos Farmacéuticos')
-                        // ESTA LÍNEA ES LA MAGIA: Solo se muestra si el sector del Tenant actual es "Farmacia"
+                        // 🌟 MAGIA SAAS: Leemos la característica 'has_recipes' del JSON
                         ->visible(function () {
-                            $sector = Auth::user()->tenant->businessSector->name ?? '';
-                            return str_contains(strtolower($sector), 'farmacia') || str_contains(strtolower($sector), 'botica');
+                            $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                            return $features['has_recipes'] ?? false;
                         })
                         ->schema([
                             Forms\Components\TextInput::make('active_ingredient')
@@ -156,10 +156,10 @@ class ProductResource extends Resource
 
                     Forms\Components\Section::make('Configuración de Venta Fraccionada')
                         ->description('Define si este producto se puede vender por blíster o por unidad suelta.')
-                        // SOLO PARA FARMACIAS/BOTICAS
+                        // 🌟 MAGIA SAAS: Vinculamos las fracciones a los negocios que manejan lotes
                         ->visible(function () {
-                            $sector = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->name ?? '';
-                            return str_contains(strtolower($sector), 'farmacia') || str_contains(strtolower($sector), 'botica');
+                            $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                            return $features['has_lots'] ?? false;
                         })
                         ->schema([
                             Forms\Components\Toggle::make('is_fractionable')
@@ -355,9 +355,9 @@ class ProductResource extends Resource
                             return $user->isAdmin();
                         })
                         ->form(function ($record) {
-                            // Detectamos si el usuario pertenece a una Farmacia/Botica
-                            $sector = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->name ?? '';
-                            $isPharmacy = str_contains(strtolower($sector), 'farmacia') || str_contains(strtolower($sector), 'botica');
+                            // 🌟 NUEVO: Leemos la característica directamente
+                            $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                            $hasLots = $features['has_lots'] ?? false;
 
                             return [
                                 Forms\Components\Select::make('type')
@@ -381,8 +381,8 @@ class ProductResource extends Resource
                                                 return [$b->id => "Lote: {$b->batch_number} | Vence: {$vence} | Stock Actual: " . (float)$b->current_quantity];
                                             });
                                     })
-                                    ->visible(fn () => $isPharmacy)
-                                    ->required(fn () => $isPharmacy)
+                                    ->visible(fn () => $hasLots)
+                                    ->required(fn () => $hasLots)
                                     ->searchable()
                                     ->preload(),
 
@@ -393,8 +393,8 @@ class ProductResource extends Resource
                                         'box' => 'Caja Entera',
                                         'unit' => 'Unidad Suelta (Pastilla/Blíster)',
                                     ])
-                                    ->visible(fn () => $isPharmacy && $record->is_fractionable && $record->units_per_box > 0)
-                                    ->required(fn () => $isPharmacy && $record->is_fractionable && $record->units_per_box > 0)
+                                    ->visible(fn () => $hasLots && $record->is_fractionable && $record->units_per_box > 0)
+                                    ->required(fn () => $hasLots && $record->is_fractionable && $record->units_per_box > 0)
                                     ->default('box')
                                     ->live(),
 
@@ -407,14 +407,14 @@ class ProductResource extends Resource
 
                                 Forms\Components\Placeholder::make('stock_warning')
                                     ->label('')
-                                    ->content(function (Forms\Get $get, $record) use ($isPharmacy) {
+                                    ->content(function (Forms\Get $get, $record) use ($hasLots) {
                                         if ($get('type') === 'OUT' && $get('quantity')) {
                                             $stockActual = (float) $record->current_stock;
                                             $cantidadIngresada = (float) $get('quantity');
 
                                             // Matemática rápida para el aviso visual
                                             $cantidadAjuste = $cantidadIngresada;
-                                            if ($isPharmacy && $record->is_fractionable && $get('measurement_unit') === 'unit' && $record->units_per_box > 0) {
+                                            if ($hasLots && $record->is_fractionable && $get('measurement_unit') === 'unit' && $record->units_per_box > 0) {
                                                 $cantidadAjuste = $cantidadIngresada / $record->units_per_box;
                                             }
 
@@ -441,19 +441,19 @@ class ProductResource extends Resource
                             $cantidadIngresada = abs((float) $data['quantity']);
                             $tipoAjuste = $data['type'];
 
-                            // Detectamos el negocio
-                            $sector = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->name ?? '';
-                            $isPharmacy = str_contains(strtolower($sector), 'farmacia') || str_contains(strtolower($sector), 'botica');
+                            // 🌟 NUEVO
+                            $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                            $hasLots = $features['has_lots'] ?? false;
 
                             // 1. MATEMÁTICA DE FRACCIONES
                             $cantidadAjuste = $cantidadIngresada;
-                            if ($isPharmacy && $record->is_fractionable && ($data['measurement_unit'] ?? null) === 'unit' && $record->units_per_box > 0) {
+                            if ($hasLots && $record->is_fractionable && ($data['measurement_unit'] ?? null) === 'unit' && $record->units_per_box > 0) {
                                 $cantidadAjuste = $cantidadIngresada / $record->units_per_box;
                             }
 
                             // 2. BUSCAR EL LOTE AFECTADO
                             $batch = null;
-                            if ($isPharmacy && isset($data['product_batch_id'])) {
+                            if ($hasLots && isset($data['product_batch_id'])) {
                                 $batch = \Percy\Core\Models\ProductBatch::find($data['product_batch_id']);
                             }
 
@@ -540,11 +540,10 @@ class ProductResource extends Resource
     {
         $relations = [];
 
-        // MAGIA DEL SAAS: Condicionamos qué módulos se encienden según el giro del negocio.
-        // Verificamos si el negocio actual tiene el giro de "Farmacia" o "Botica".
-        $sector = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->name ?? '';
+        // MAGIA DEL SAAS: Encendemos el módulo de Lotes leyendo el JSON de características
+        $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
 
-        if (str_contains(strtolower($sector), 'farmacia') || str_contains(strtolower($sector), 'botica')) {
+        if ($features['has_lots'] ?? false) {
             $relations[] = RelationManagers\BatchesRelationManager::class;
         }
 

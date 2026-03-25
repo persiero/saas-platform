@@ -34,22 +34,34 @@ class StatsOverview extends BaseWidget
 
         // Ventas de hoy
         $todaySales = Sale::where('tenant_id', $tenantId)
-            ->whereIn('document_type', ['01', '03'])
+            ->where('status', '!=', 'canceled')
             ->whereDate('sold_at', today())
-            ->where('sunat_status', 'accepted')
+            ->where(function ($query) {
+                $query->where(function ($q) {
+                    $q->whereIn('document_type', ['01', '03'])->where('sunat_status', 'accepted');
+                })->orWhere('document_type', '00');
+            })
             ->sum('total');
 
         $todayCount = Sale::where('tenant_id', $tenantId)
-            ->whereIn('document_type', ['01', '03'])
+            ->where('status', '!=', 'canceled')
             ->whereDate('sold_at', today())
-            ->where('sunat_status', 'accepted')
-            ->count();
+            ->where(function ($query) {
+                $query->where(function ($q) {
+                    $q->whereIn('document_type', ['01', '03'])->where('sunat_status', 'accepted');
+                })->orWhere('document_type', '00');
+            })
+            ->sum('total');
 
         // Ventas de ayer para comparación
         $yesterdaySales = Sale::where('tenant_id', $tenantId)
-            ->whereIn('document_type', ['01', '03'])
-            ->whereDate('sold_at', today()->subDay())
-            ->where('sunat_status', 'accepted')
+            ->where('status', '!=', 'canceled')
+            ->whereDate('sold_at', today())
+            ->where(function ($query) {
+                $query->where(function ($q) {
+                    $q->whereIn('document_type', ['01', '03'])->where('sunat_status', 'accepted');
+                })->orWhere('document_type', '00');
+            })
             ->sum('total');
 
         // Estado de caja
@@ -112,10 +124,14 @@ class StatsOverview extends BaseWidget
         for ($i = 6; $i >= 0; $i--) {
             $date = today()->subDays($i);
             $sales[] = Sale::where('tenant_id', $tenantId)
-                ->whereIn('document_type', ['01', '03'])
-                ->whereDate('sold_at', $date)
-                ->where('sunat_status', 'accepted')
-                ->sum('total');
+            ->where('status', '!=', 'canceled')
+            ->whereDate('sold_at', today())
+            ->where(function ($query) {
+                $query->where(function ($q) {
+                    $q->whereIn('document_type', ['01', '03'])->where('sunat_status', 'accepted');
+                })->orWhere('document_type', '00');
+            })
+            ->sum('total');
         }
         return $sales;
     }

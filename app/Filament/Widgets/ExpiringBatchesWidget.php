@@ -20,8 +20,9 @@ class ExpiringBatchesWidget extends BaseWidget
     // ¡EL ESCUDO DEL SAAS! Solo las farmacias pueden ver este widget
     public static function canView(): bool
     {
-        $sector = Auth::user()->tenant->businessSector->name ?? '';
-        return str_contains(strtolower($sector), 'farmacia') || str_contains(strtolower($sector), 'botica');
+        $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+        // Mostramos el widget SOLO a los negocios que manejan fechas de vencimiento
+        return $features['has_expiry_dates'] ?? false;
     }
 
     public function table(Table $table): Table

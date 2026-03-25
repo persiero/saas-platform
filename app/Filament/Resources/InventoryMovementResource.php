@@ -133,10 +133,7 @@ class InventoryMovementResource extends Resource
                     ->badge()
                     ->color('gray')
                     ->searchable()
-                    ->visible(function () {
-                        $sector = Auth::user()->tenant->businessSector->name ?? '';
-                        return str_contains(strtolower($sector), 'farmacia') || str_contains(strtolower($sector), 'botica');
-                    }),
+                    ->visible(fn () => \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features['has_lots'] ?? false),
 
                 Tables\Columns\TextColumn::make('type')
                     ->label('Tipo')

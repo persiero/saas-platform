@@ -163,31 +163,32 @@ class PurchaseResource extends Resource
                                         })
                                         ->columnSpan(5),
 
-                                    // 🌟 NUEVO: NÚMERO DE LOTE (Solo para Farmacias)
+                                    // 🌟 DINÁMICO: NÚMERO DE LOTE (Basado en features)
                                     Forms\Components\TextInput::make('batch_number')
                                         ->label('N° de Lote')
                                         ->visible(function () {
-                                            $sector = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->name ?? '';
-                                            return str_contains(strtolower($sector), 'farmacia') || str_contains(strtolower($sector), 'botica');
+                                            $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                                            return $features['has_lots'] ?? false;
                                         })
                                         ->required(function () {
-                                            $sector = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->name ?? '';
-                                            return str_contains(strtolower($sector), 'farmacia') || str_contains(strtolower($sector), 'botica');
+                                            $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                                            return $features['has_lots'] ?? false;
                                         })
                                         ->columnSpan(2),
 
-                                    // 🌟 NUEVO: FECHA DE VENCIMIENTO
+                                    // 🌟 DINÁMICO: FECHA DE VENCIMIENTO (Basado en features)
                                     Forms\Components\DatePicker::make('expiration_date')
                                         ->label('Vencimiento')
                                         ->native(false)
                                         ->displayFormat('d/m/Y')
                                         ->visible(function () {
-                                            $sector = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->name ?? '';
-                                            return str_contains(strtolower($sector), 'farmacia') || str_contains(strtolower($sector), 'botica');
+                                            // Usamos la característica 'has_expiry_dates' definida en tu Seeder
+                                            $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                                            return $features['has_expiry_dates'] ?? false;
                                         })
                                         ->required(function () {
-                                            $sector = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->name ?? '';
-                                            return str_contains(strtolower($sector), 'farmacia') || str_contains(strtolower($sector), 'botica');
+                                            $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                                            return $features['has_expiry_dates'] ?? false;
                                         })
                                         ->columnSpan(2),
 
