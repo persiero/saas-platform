@@ -15,9 +15,6 @@ class StatsOverview extends BaseWidget
 
     protected int | string | array $columnSpan = 'full';
 
-    /**
-     * Oculta este widget estadístico para el Súper Admin
-     */
     public static function canView(): bool
     {
         return \Illuminate\Support\Facades\Auth::user()->tenant_id !== null;
@@ -27,30 +24,26 @@ class StatsOverview extends BaseWidget
     {
         return 3;
     }
+
     protected function getStats(): array
     {
         $tenantId = Auth::user()->tenant_id;
         $userId = Auth::id();
 
-        // Ventas de hoy
-        $todaySales = Sale::where('tenant_id', $tenantId)
-            ->whereIn('document_type', ['01', '03'])
-            ->whereDate('sold_at', today())
-            ->where('sunat_status', 'accepted')
-            ->sum('total');
+        // 🌟 CORRECCIÓN 1 Y 3: Creamos una consulta base.
+        // Eliminamos la restricción de SUNAT 'accepted' porque una venta es una venta aunque esté 'pending'.
+        $baseSalesQuery = Sale::where('tenant_id', $tenantId)
+            ->where('status', '!=', 'canceled')
+            ->whereIn('document_type', ['00', '01', '03']);
 
-        $todayCount = Sale::where('tenant_id', $tenantId)
-            ->whereIn('document_type', ['01', '03'])
-            ->whereDate('sold_at', today())
-            ->where('sunat_status', 'accepted')
-            ->count();
+        // Ventas de hoy (Suma de dinero)
+        $todaySales = (clone $baseSalesQuery)->whereDate('sold_at', today())->sum('total');
 
-        // Ventas de ayer para comparación
-        $yesterdaySales = Sale::where('tenant_id', $tenantId)
-            ->whereIn('document_type', ['01', '03'])
-            ->whereDate('sold_at', today()->subDay())
-            ->where('sunat_status', 'accepted')
-            ->sum('total');
+        // Ventas de hoy (Cantidad de tickets) 🌟 CORRECCIÓN 1: Usamos count()
+        $todayCount = (clone $baseSalesQuery)->whereDate('sold_at', today())->count();
+
+        // Ventas de ayer para comparación 🌟 CORRECCIÓN 2: Usamos today()->subDay()
+        $yesterdaySales = (clone $baseSalesQuery)->whereDate('sold_at', today()->subDay())->sum('total');
 
         // Estado de caja
         $openCash = CashRegister::where('tenant_id', $tenantId)
@@ -107,14 +100,14 @@ class StatsOverview extends BaseWidget
 
     protected function getSalesChart(int $tenantId): array
     {
-        // Últimos 7 días de ventas para el mini gráfico
         $sales = [];
         for ($i = 6; $i >= 0; $i--) {
             $date = today()->subDays($i);
+            // 🌟 CORRECCIÓN 2: Evaluamos la fecha de cada día del bucle, no today()
             $sales[] = Sale::where('tenant_id', $tenantId)
-                ->whereIn('document_type', ['01', '03'])
+                ->where('status', '!=', 'canceled')
+                ->whereIn('document_type', ['00', '01', '03'])
                 ->whereDate('sold_at', $date)
-                ->where('sunat_status', 'accepted')
                 ->sum('total');
         }
         return $sales;

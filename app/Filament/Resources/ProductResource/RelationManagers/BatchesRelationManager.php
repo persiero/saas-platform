@@ -24,7 +24,16 @@ class BatchesRelationManager extends RelationManager
             ->schema([
                 Forms\Components\TextInput::make('batch_number')
                     ->label('Número de Lote')
-                    ->required()
+                    // 🌟 OCULTAMOS EL CAMPO PARA MINIMARKET
+                    ->visible(function () {
+                        $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                        return $features['has_lots'] ?? false;
+                    })
+                    // 🌟 DEJA DE SER OBLIGATORIO PARA MINIMARKET
+                    ->required(function () {
+                        $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                        return $features['has_lots'] ?? false;
+                    })
                     ->maxLength(255)
                     ->extraInputAttributes(['style' => 'text-transform: uppercase']),
 
@@ -32,10 +41,15 @@ class BatchesRelationManager extends RelationManager
                     ->label('Fecha de Fabricación')
                     ->native(false)
                     ->displayFormat('d/m/Y')
-                    ->maxDate(now()), // No puede ser en el futuro
+                    ->maxDate(now())
+                    // 🌟 UX: Ocultamos esto en minimarket también para que el formulario sea súper limpio
+                    ->visible(function () {
+                        $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                        return $features['has_lots'] ?? false;
+                    }),
 
                 Forms\Components\DatePicker::make('expiration_date')
-                    ->label('Fecha de Vencimiento (DIGEMID)')
+                    ->label('Fecha de Vencimiento') // 🌟 Le quité "(DIGEMID)" para que sirva tanto para medicinas como abarrotes
                     ->required()
                     ->native(false)
                     ->displayFormat('d/m/Y')
@@ -45,13 +59,35 @@ class BatchesRelationManager extends RelationManager
                     ->label('Cantidad Ingresada')
                     ->required()
                     ->numeric()
-                    ->minValue(1)
+                    // 🌟 1. Límites y saltos dinámicos leyendo al Producto "Padre"
+                    ->step(fn (\Filament\Resources\RelationManagers\RelationManager $livewire) => $livewire->getOwnerRecord()->is_weighable ? 0.001 : 1)
+                    ->minValue(fn (\Filament\Resources\RelationManagers\RelationManager $livewire) => $livewire->getOwnerRecord()->is_weighable ? 0.001 : 1)
                     ->default(1)
-                    // MAGIA: Editable al crear, bloqueado al editar
-                    ->disabledOn('edit')
-                    ->dehydrated(), // Asegura que el valor se envíe aunque esté bloqueado
+                    // 🌟 2. UX: Añadimos el sufijo visual (Kg, Lt, Und) para guiar al usuario
+                    ->suffix(function (\Filament\Resources\RelationManagers\RelationManager $livewire) {
+                        $product = $livewire->getOwnerRecord();
+                        if (!$product->is_weighable) return 'Und';
 
-                // El stock actual inicia igual a la cantidad ingresada
+                        $code = $product->unidadSunat?->codigo ?? 'NIU';
+                        return match($code) {
+                            'KGM' => 'Kg',
+                            'LTR' => 'Lt',
+                            'GLL' => 'Gal',
+                            default => 'Und',
+                        };
+                    })
+                    // 🌟 3. BLINDAJE: Impide forzar decimales si el producto es por unidad
+                    ->rules([
+                        fn (\Filament\Resources\RelationManagers\RelationManager $livewire) => function (string $attribute, $value, \Closure $fail) use ($livewire) {
+                            $product = $livewire->getOwnerRecord();
+                            if (!$product->is_weighable && fmod((float)$value, 1) !== 0.0) {
+                                $fail('Este producto solo admite cantidades enteras.');
+                            }
+                        },
+                    ])
+                    ->disabledOn('edit')
+                    ->dehydrated(),
+
                 Forms\Components\Hidden::make('current_quantity')
                     ->default(fn (Forms\Get $get) => $get('initial_quantity')),
 
@@ -68,7 +104,9 @@ class BatchesRelationManager extends RelationManager
                 Tables\Columns\TextColumn::make('batch_number')
                     ->label('Lote')
                     ->searchable()
-                    ->weight('bold'),
+                    ->weight('bold')
+                    // 🌟 Solo visible si el negocio usa lotes (Farmacia)
+                    ->visible(fn () => \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features['has_lots'] ?? false),
 
                 Tables\Columns\TextColumn::make('expiration_date')
                     ->label('Vencimiento')
@@ -96,28 +134,29 @@ class BatchesRelationManager extends RelationManager
             ])
             ->headerActions([
                 Tables\Actions\CreateAction::make()
-                    ->label('Registrar Lote')
+                    ->label(fn () => (\Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features['has_lots'] ?? false) ? 'Registrar Lote' : 'Registrar Vencimiento')
                     ->icon('heroicon-o-plus-circle')
-                    // Mutamos los datos antes de crear para asegurar que current = initial
                     ->mutateFormDataUsing(function (array $data): array {
                         $data['current_quantity'] = $data['initial_quantity'];
                         $data['tenant_id'] = Auth::user()->tenant_id;
-                        $data['batch_number'] = strtoupper($data['batch_number']);
+
+                        // 🌟 MAGIA PARA MINIMARKET: Si el lote viene vacío (porque está oculto), generamos uno interno
+                        if (empty($data['batch_number'])) {
+                            $data['batch_number'] = 'VENC-' . now()->format('dmy-His');
+                        } else {
+                            $data['batch_number'] = strtoupper($data['batch_number']);
+                        }
+
                         return $data;
                     })
-                    // 🌟 LA MAGIA SEGURA: Actualizamos el stock global contando los lotes reales
                     ->after(function (\Illuminate\Database\Eloquent\Model $record) {
+                        // ... (Mantén toda tu lógica del Kardex intacta aquí) ...
                         $product = $record->product;
                         $qtyIngresada = $record->initial_quantity;
-
-                        // 1. CÁLCULO ABSOLUTO (A prueba de dobles sumas)
-                        // Sumamos el stock exacto de todos los lotes de este producto
                         $stockRealExacto = $product->batches()->where('is_active', true)->sum('current_quantity');
-
                         $product->current_stock = $stockRealExacto;
                         $product->save();
 
-                        // 2. Dejamos la huella en el Kardex Universal
                         \Percy\Core\Models\InventoryMovement::create([
                             'tenant_id'        => $record->tenant_id,
                             'product_id'       => $record->product_id,
@@ -125,13 +164,68 @@ class BatchesRelationManager extends RelationManager
                             'user_id'          => \Illuminate\Support\Facades\Auth::id(),
                             'type'             => 'IN',
                             'quantity'         => $qtyIngresada,
-                            'balance_after'    => $product->current_stock, // Ahora el Kardex reflejará el número exacto
-                            'reason'           => 'Registro Manual de Lote',
+                            'balance_after'    => $product->current_stock,
+                            'reason'           => 'Registro Manual de Stock/Vencimiento',
                         ]);
                     }),
             ])
             ->actions([
-                //Tables\Actions\EditAction::make(),
+                // 🌟 NUEVA ACCIÓN DE EDITAR (Restringida y Segura)
+                Tables\Actions\EditAction::make()
+                    ->label('Editar')
+                    ->color('warning')
+                    // 🚀 Sobrescribimos el formulario solo para la edición
+                    ->form([
+                        Forms\Components\TextInput::make('batch_number')
+                            ->label('Número de Lote')
+                            ->maxLength(255)
+                            ->extraInputAttributes(['style' => 'text-transform: uppercase'])
+                            ->visible(function () {
+                                $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                                return $features['has_lots'] ?? false;
+                            })
+                            ->required(function () {
+                                $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                                return $features['has_lots'] ?? false;
+                            }),
+
+                        Forms\Components\DatePicker::make('manufacturing_date')
+                            ->label('Fecha de Fabricación')
+                            ->native(false)
+                            ->displayFormat('d/m/Y')
+                            ->maxDate(now()),
+
+                        Forms\Components\DatePicker::make('expiration_date')
+                            ->label('Fecha de Vencimiento')
+                            ->native(false)
+                            ->displayFormat('d/m/Y')
+                            // Ojo: Aquí quité el minDate(now()) porque si se equivocaron
+                            // y el producto ya venció ayer, necesitan poder registrar la fecha real.
+                            ->visible(function () {
+                                $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                                return $features['has_expiry_dates'] ?? false;
+                            })
+                            ->required(function () {
+                                $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                                return $features['has_expiry_dates'] ?? false;
+                            }),
+
+                        // 🌟 BLINDAJE DE KARDEX: Mostramos el stock, pero BLOQUEADO
+                        Forms\Components\TextInput::make('current_quantity')
+                            ->label('Stock Actual')
+                            ->numeric()
+                            ->disabled() // El usuario no puede hacer clic ni escribir aquí
+                            ->dehydrated(false) // Le dice a Filament: "Ignora este campo al guardar en BD"
+                            ->helperText('El stock no se puede modificar manualmente por seguridad del Kardex.'),
+                    ])
+                    ->mutateFormDataUsing(function (array $data): array {
+                        // Aseguramos que si editan el lote, se guarde en mayúsculas
+                        if (isset($data['batch_number'])) {
+                            $data['batch_number'] = strtoupper($data['batch_number']);
+                        }
+                        return $data;
+                    }),
+
                 Tables\Actions\DeleteAction::make()
                     ->before(function (\Illuminate\Database\Eloquent\Model $record) {
                         // $record es el Lote que estamos a punto de borrar

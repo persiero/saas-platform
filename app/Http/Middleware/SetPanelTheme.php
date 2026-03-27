@@ -16,15 +16,17 @@ class SetPanelTheme
         // Solo actuamos si el usuario está autenticado y tiene un tenant
         if (Auth::check() && Auth::user()->tenant) {
 
-            $sectorId = Auth::user()->tenant->business_sector_id;
+            // 🌟 MAGIA SAAS: Usamos el SLUG en lugar del ID, ¡es mucho más seguro!
+                $sectorSlug = Auth::user()->tenant->businessSector->slug ?? 'general';
 
-            // Registramos el color primario dinámicamente
+            // Registramos el color primario dinámicamente según el giro de negocio
             FilamentColor::register([
-                'primary' => match ($sectorId) {
-                    1 => Color::Blue,    // General
-                    2 => Color::Amber,   // Restaurante (Caldos y Combinados Mary's)
-                    3 => Color::Teal,    // Farmacia (Farmacia Ana)
-                    default => Color::Indigo,
+                'primary' => match ($sectorSlug) {
+                    'pharmacy'   => Color::Teal,     // 🟢 Verde azulado (Salud, Farmacias)
+                    'minimarket' => Color::Amber,    // 🟠 Ámbar/Naranja (Retail, Bodegas, Minimarkets)
+                    'restaurant' => Color::Rose,     // 🔴 Rosa/Rojo (Apetito, Restaurantes, Cafeterías)
+                    'general'    => Color::Blue,     // 🔵 Azul (Tecnología, Ropa, Comercio General)
+                    default      => Color::Indigo,   // 🟣 Color por defecto de Filament
                 },
             ]);
         }
