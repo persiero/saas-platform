@@ -63,41 +63,38 @@ class PurchaseResource extends Resource
     {
         return $form
             ->schema([
-                Forms\Components\Group::make()->schema([
-                    Forms\Components\Section::make('Datos del Proveedor')
-                        ->icon('heroicon-o-building-office-2')
-                        ->schema([
-                            Forms\Components\Select::make('supplier_id')
-                                ->relationship('supplier', 'name', fn (Builder $query) => $query->where('active', true))
-                                ->label('Proveedor')
-                                ->required()
-                                ->searchable()
-                                ->preload()
-                                ->native(false)
-                                ->helperText('Selecciona el proveedor de esta compra')
-                                ->createOptionForm([
-                                    Forms\Components\TextInput::make('name')
-                                        ->label('Nombre / Razón Social')
-                                        ->required(),
-                                    Forms\Components\TextInput::make('ruc')
-                                        ->label('RUC')
-                                        ->length(11),
-                                    Forms\Components\Toggle::make('active')
-                                        ->label('Activo')
-                                        ->default(true),
-                                ])
-                                ->createOptionModalHeading('Registrar Nuevo Proveedor')
-                                ->columnSpanFull(),
-                        ]),
+                // =========================================================
+                // 🌟 CABECERA (Top): Proveedor, Documento y Resumen
+                // =========================================================
+                Forms\Components\Grid::make(4)->schema([
+                    Forms\Components\Group::make()->schema([
+                        Forms\Components\Section::make('Datos del Proveedor')
+                            ->icon('heroicon-o-building-office-2')
+                            ->schema([
+                                Forms\Components\Select::make('supplier_id')
+                                    ->relationship('supplier', 'name', fn (Builder $query) => $query->where('active', true))
+                                    ->label('Proveedor')
+                                    ->required()
+                                    ->searchable()
+                                    ->preload()
+                                    ->native(false)
+                                    ->helperText('Selecciona el proveedor de esta compra')
+                                    ->createOptionForm([
+                                        Forms\Components\TextInput::make('name')->label('Nombre / Razón Social')->required(),
+                                        Forms\Components\TextInput::make('ruc')->label('RUC')->length(11),
+                                        Forms\Components\Toggle::make('active')->label('Activo')->default(true),
+                                    ])
+                                    ->createOptionModalHeading('Registrar Nuevo Proveedor')
+                                    ->columnSpanFull(),
+                            ]),
 
                         Forms\Components\Section::make('Detalles del Documento')
                             ->icon('heroicon-o-document-text')
-                            ->columns(3) // Dividir en 3 columnas iguales
+                            ->columns(3)
                             ->schema([
                                 Forms\Components\TextInput::make('document_number')
                                     ->label('N° de Documento')
                                     ->placeholder('Ej: F001-00123')
-                                    ->helperText('Número de factura o comprobante')
                                     ->prefixIcon('heroicon-o-hashtag')
                                     ->columnSpan(1),
 
@@ -108,7 +105,6 @@ class PurchaseResource extends Resource
                                     ->native(false)
                                     ->displayFormat('d/m/Y')
                                     ->maxDate(now())
-                                    ->helperText('Fecha de emisión del documento')
                                     ->prefixIcon('heroicon-o-calendar')
                                     ->columnSpan(1),
 
@@ -122,153 +118,176 @@ class PurchaseResource extends Resource
                                     ->default('completed')
                                     ->required()
                                     ->native(false)
-                                    ->helperText('Estado actual de la compra')
                                     ->columnSpan(1),
                             ]),
+                    ])->columnSpan(['lg' => 3]),
 
-                    Forms\Components\Section::make('Detalle de Productos')
-                        ->description('Agrega los productos comprados')
-                        ->icon('heroicon-o-cube')
-                        ->schema([
-                            Forms\Components\Repeater::make('items')
-                                ->relationship()
-                                ->label('')
-                                ->live()
-                                ->afterStateUpdated(fn (Get $get, Set $set) => self::updateTotals($get, $set))
-                                ->deleteAction(
-                                    fn (Forms\Components\Actions\Action $action) => $action
-                                        ->after(fn(Get $get, Set $set) => self::updateTotals($get, $set))
-                                        ->requiresConfirmation()
-                                        ->modalHeading('Eliminar Producto')
-                                        ->modalDescription('¿Estás seguro de eliminar este producto?')
-                                )
-                                ->schema([
-                                    Forms\Components\Select::make('product_id')
-                                        ->relationship('product', 'name')
-                                        ->label('Producto')
-                                        ->required()
-                                        ->searchable()
-                                        ->preload()
-                                        ->native(false)
-                                        ->live()
-                                        ->afterStateUpdated(function ($state, Set $set, Get $get) {
-                                            if ($state) {
-                                                $product = Product::find($state);
-                                                $set('unit_cost', $product->cost ?? 0);
-                                                // Magia secreta: detectamos si es fraccionable para saber si pedimos lote
-                                                $set('_is_fractionable', $product->is_fractionable);
+                    Forms\Components\Group::make()->schema([
+                        Forms\Components\Section::make('Resumen Financiero')
+                            ->icon('heroicon-o-calculator')
+                            ->schema([
+                                Forms\Components\Placeholder::make('subtotal_label')
+                                    ->label('Subtotal (Op. Gravadas)')
+                                    ->content(fn (\Filament\Forms\Get $get): string => 'S/ ' . number_format((float)($get('subtotal') ?? 0), 2))
+                                    ->extraAttributes(['class' => 'flex justify-between border-b pb-2']),
+
+                                Forms\Components\Placeholder::make('igv_label')
+                                    ->label('IGV (18%)')
+                                    ->content(fn (\Filament\Forms\Get $get): string => 'S/ ' . number_format((float)($get('igv') ?? 0), 2))
+                                    ->extraAttributes(['class' => 'flex justify-between border-b pb-2']),
+
+                                Forms\Components\Placeholder::make('total_label')
+                                    ->label('TOTAL A PAGAR')
+                                    ->content(fn (\Filament\Forms\Get $get): string => 'S/ ' . number_format((float)($get('total') ?? 0), 2))
+                                    ->extraAttributes(['class' => 'flex justify-between text-2xl font-black text-primary-600 pt-2']),
+
+                                Forms\Components\Hidden::make('subtotal'),
+                                Forms\Components\Hidden::make('igv'),
+                                Forms\Components\Hidden::make('total'),
+                            ]),
+                    ])->columnSpan(['lg' => 1]),
+                ]), // Fin del Grid Principal
+
+                // =========================================================
+                // 🌟 CUERPO (Medio): Tabla de Productos a 100% de Ancho
+                // =========================================================
+                Forms\Components\Section::make('Detalle de Productos')
+                    ->description('Agrega los productos comprados')
+                    ->icon('heroicon-o-cube')
+                    ->columnSpanFull() // 🚀 TRUCO DE DISEÑO: Esto le da el 100% del ancho de la pantalla
+                    ->schema([
+                        Forms\Components\Repeater::make('items')
+                            ->relationship()
+                            ->label('')
+                            ->live()
+                            ->afterStateUpdated(fn (\Filament\Forms\Get $get, \Filament\Forms\Set $set) => self::updateTotals($get, $set))
+                            ->deleteAction(
+                                fn (Forms\Components\Actions\Action $action) => $action
+                                    ->after(fn(\Filament\Forms\Get $get, \Filament\Forms\Set $set) => self::updateTotals($get, $set))
+                                    ->requiresConfirmation()
+                                    ->modalHeading('Eliminar Producto')
+                            )
+                            ->schema([
+                                Forms\Components\Select::make('product_id')
+                                    ->relationship('product', 'name')
+                                    ->label('Producto')
+                                    ->required()
+                                    ->searchable()
+                                    ->preload()
+                                    ->native(false)
+                                    ->live()
+                                    ->afterStateUpdated(function ($state, \Filament\Forms\Set $set, \Filament\Forms\Get $get) {
+                                        if ($state) {
+                                            $product = \Percy\Core\Models\Product::with('unidadSunat')->find($state);
+                                            $set('unit_cost', $product->cost ?? 0);
+
+                                            $set('_is_fractionable', $product->is_fractionable);
+                                            $set('_is_weighable', $product->is_weighable ?? false);
+                                            $set('unit_code', $product->unidadSunat ? $product->unidadSunat->codigo : 'NIU');
+                                        }
+                                        self::updateRow($get, $set);
+                                        self::updateTotals($get, $set);
+                                    })
+                                    // 🚀 COLUMNAS INTELIGENTES SEGÚN EL NEGOCIO
+                                    ->columnSpan(function () {
+                                        $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                                        $hasLots = $features['has_lots'] ?? false;
+                                        $hasExpiry = $features['has_expiry_dates'] ?? false;
+
+                                        if ($hasLots && $hasExpiry) return 2; // Farmacia (Más pequeño para dejar espacio)
+                                        if (!$hasLots && $hasExpiry) return 4; // Minimarket
+                                        return 6; // Tienda General
+                                    }),
+
+                                Forms\Components\TextInput::make('batch_number')
+                                    ->label('N° de Lote')
+                                    ->visible(function () {
+                                        $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                                        return $features['has_lots'] ?? false;
+                                    })
+                                    ->required(fn () => \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features['has_lots'] ?? false)
+                                    ->columnSpan(2),
+
+                                Forms\Components\DatePicker::make('expiration_date')
+                                    ->label('Vencimiento')
+                                    ->native(false)
+                                    ->displayFormat('d/m/Y')
+                                    ->visible(function () {
+                                        $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                                        return $features['has_expiry_dates'] ?? false;
+                                    })
+                                    ->required(fn () => \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features['has_expiry_dates'] ?? false)
+                                    // 🚀 Si es Farmacia ocupa 1 columna, si es Minimarket ocupa 2 para verse mejor
+                                    ->columnSpan(2),
+
+                                Forms\Components\TextInput::make('quantity')
+                                    ->label('Cantidad')
+                                    ->numeric()
+                                    ->default(1)
+                                    ->minValue(fn (\Filament\Forms\Get $get) => $get('_is_weighable') ? 0.001 : 1)
+                                    ->step(fn (\Filament\Forms\Get $get) => $get('_is_weighable') ? 0.001 : 1)
+                                    ->suffix(function (\Filament\Forms\Get $get) {
+                                        if (!$get('_is_weighable')) return 'Und';
+                                        return match($get('unit_code')) { 'KGM' => 'Kg', 'LTR' => 'Lt', 'GLL' => 'Gal', default => $get('unit_code') ?? 'Und' };
+                                    })
+                                    ->rules([
+                                        fn (\Filament\Forms\Get $get) => function (string $attribute, $value, \Closure $fail) use ($get) {
+                                            if (!$get('_is_weighable') && fmod((float)$value, 1) !== 0.0) {
+                                                $fail('Este producto solo admite cantidades enteras.');
                                             }
-                                            self::updateRow($get, $set);
-                                            self::updateTotals($get, $set);
-                                        })
-                                        ->columnSpan(5),
+                                        },
+                                    ])
+                                    ->required()
+                                    ->live(onBlur: true)
+                                    ->afterStateUpdated(fn(\Filament\Forms\Get $get, \Filament\Forms\Set $set) => [self::updateRow($get, $set), self::updateTotals($get, $set)])
+                                    ->columnSpan(2),
 
-                                    // 🌟 DINÁMICO: NÚMERO DE LOTE (Basado en features)
-                                    Forms\Components\TextInput::make('batch_number')
-                                        ->label('N° de Lote')
-                                        ->visible(function () {
-                                            $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
-                                            return $features['has_lots'] ?? false;
-                                        })
-                                        ->required(function () {
-                                            $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
-                                            return $features['has_lots'] ?? false;
-                                        })
-                                        ->columnSpan(2),
+                                // 🚀 SACAMOS EL GRID Y LOS PONEMOS DIRECTOS CON TAMAÑO 2
+                                Forms\Components\TextInput::make('unit_cost')
+                                    ->label('Costo Inc. IGV')
+                                    ->numeric()
+                                    ->required()
+                                    ->prefix('S/')
+                                    ->step(0.01)
+                                    ->minValue(0)
+                                    ->live(onBlur: true)
+                                    ->afterStateUpdated(fn(\Filament\Forms\Get $get, \Filament\Forms\Set $set) => [self::updateRow($get, $set), self::updateTotals($get, $set)])
+                                    ->columnSpan(2),
 
-                                    // 🌟 DINÁMICO: FECHA DE VENCIMIENTO (Basado en features)
-                                    Forms\Components\DatePicker::make('expiration_date')
-                                        ->label('Vencimiento')
-                                        ->native(false)
-                                        ->displayFormat('d/m/Y')
-                                        ->visible(function () {
-                                            // Usamos la característica 'has_expiry_dates' definida en tu Seeder
-                                            $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
-                                            return $features['has_expiry_dates'] ?? false;
-                                        })
-                                        ->required(function () {
-                                            $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
-                                            return $features['has_expiry_dates'] ?? false;
-                                        })
-                                        ->columnSpan(2),
+                                Forms\Components\TextInput::make('subtotal')
+                                    ->label('Subtotal')
+                                    ->numeric()
+                                    ->readonly()
+                                    ->prefix('S/')
+                                    ->dehydrated()
+                                    ->columnSpan(2),
 
-                                    Forms\Components\TextInput::make('quantity')
-                                        ->label('Cantidad')
-                                        ->numeric()
-                                        ->default(1)
-                                        ->minValue(1)
-                                        ->required()
-                                        ->live(onBlur: true)
-                                        ->afterStateUpdated(fn(Get $get, Set $set) => [self::updateRow($get, $set), self::updateTotals($get, $set)])
-                                        ->columnSpan(2),
+                                // CAMPOS OCULTOS
+                                Forms\Components\Hidden::make('_is_fractionable'),
+                                Forms\Components\Hidden::make('_is_weighable')->default(false),
+                                Forms\Components\Hidden::make('unit_code')->default('NIU'),
+                            ])
+                            ->columns(12)
+                            ->defaultItems(1)
+                            ->addActionLabel('+ Agregar Producto')
+                            ->reorderableWithButtons()
+                            ->collapsible()
+                            ->itemLabel(fn (array $state): ?string => $state['product_id'] ? \Percy\Core\Models\Product::find($state['product_id'])?->name : 'Nuevo producto'),
+                    ]),
 
-                                    Forms\Components\TextInput::make('unit_cost')
-                                        ->label('Costo Unitario')
-                                        ->numeric()
-                                        ->required()
-                                        ->prefix('S/')
-                                        ->step(0.01)
-                                        ->minValue(0)
-                                        ->live(onBlur: true)
-                                        ->afterStateUpdated(fn(Get $get, Set $set) => [self::updateRow($get, $set), self::updateTotals($get, $set)])
-                                        ->columnSpan(2),
-
-                                    Forms\Components\TextInput::make('subtotal')
-                                        ->label('Subtotal')
-                                        ->numeric()
-                                        ->readonly()
-                                        ->prefix('S/')
-                                        ->dehydrated()
-                                        ->columnSpan(3),
-                                ])
-                                ->columns(12)
-                                ->defaultItems(1)
-                                ->addActionLabel('+ Agregar Producto')
-                                ->reorderableWithButtons()
-                                ->collapsible()
-                                ->itemLabel(fn (array $state): ?string =>
-                                    $state['product_id'] ? Product::find($state['product_id'])?->name : 'Nuevo producto'
-                                ),
-                        ]),
-                ])->columnSpan(['lg' => 3]),
-
-                Forms\Components\Group::make()->schema([
-                    Forms\Components\Section::make('Resumen Financiero')
-                        ->icon('heroicon-o-calculator')
-                        ->schema([
-                            Forms\Components\Placeholder::make('subtotal_label')
-                                ->label('Subtotal (Op. Gravadas)')
-                                ->content(fn (Get $get): string => 'S/ ' . number_format((float)($get('subtotal') ?? 0), 2))
-                                ->extraAttributes(['class' => 'flex justify-between border-b pb-2']),
-
-                            Forms\Components\Placeholder::make('igv_label')
-                                ->label('IGV (18%)')
-                                ->content(fn (Get $get): string => 'S/ ' . number_format((float)($get('igv') ?? 0), 2))
-                                ->extraAttributes(['class' => 'flex justify-between border-b pb-2']),
-
-                            Forms\Components\Placeholder::make('total_label')
-                                ->label('TOTAL A PAGAR')
-                                ->content(fn (Get $get): string => 'S/ ' . number_format((float)($get('total') ?? 0), 2))
-                                // Estilo destacado para el total
-                                ->extraAttributes(['class' => 'flex justify-between text-2xl font-black text-primary-600 pt-2']),
-
-                            Forms\Components\Hidden::make('subtotal'),
-                            Forms\Components\Hidden::make('igv'),
-                            Forms\Components\Hidden::make('total'),
-                        ]),
-
-                    Forms\Components\Section::make('Notas Adicionales')
-                        ->icon('heroicon-o-document-text')
-                        ->schema([
-                            Forms\Components\Textarea::make('notes')
-                                ->label('Observaciones')
-                                ->rows(4)
-                                ->placeholder('Agrega notas o comentarios sobre esta compra...')
-                                ->helperText('Información adicional relevante'),
-                        ])->collapsible(),
-                ])->columnSpan(['lg' => 1]),
-            ])
-            ->columns(4);
+                // =========================================================
+                // 🌟 PIE (Bottom): Notas Adicionales
+                // =========================================================
+                Forms\Components\Section::make('Notas Adicionales')
+                    ->icon('heroicon-o-document-text')
+                    ->columnSpanFull()
+                    ->schema([
+                        Forms\Components\Textarea::make('notes')
+                            ->label('Observaciones')
+                            ->rows(3)
+                            ->placeholder('Agrega notas o comentarios sobre esta compra...')
+                    ])->collapsible(),
+            ]);
     }
 
     public static function table(Table $table): Table
@@ -423,10 +442,12 @@ class PurchaseResource extends Resource
     public static function updateRow(Get $get, Set $set): void
     {
         $quantity = (float) ($get('quantity') ?? 1);
-        $unitCost = (float) ($get('unit_cost') ?? 0);
-        $subtotal = $quantity * $unitCost;
+        $unitCost = (float) ($get('unit_cost') ?? 0); // Asumimos que este costo YA INCLUYE IGV
 
-        $set('subtotal', round($subtotal, 2));
+        // El subtotal de la fila ahora representa el Monto Total de esa fila
+        $totalFila = $quantity * $unitCost;
+
+        $set('subtotal', round($totalFila, 2));
     }
 
     public static function updateTotals(Get $get, Set $set): void
@@ -439,19 +460,26 @@ class PurchaseResource extends Resource
             $prefix = '';
         }
 
-        $subtotal = 0;
+        $totalGeneral = 0; // Sumaremos el total final de todas las filas
+
         foreach ($items as $item) {
             $qty = (float) ($item['quantity'] ?? 1);
-            $cost = (float) ($item['unit_cost'] ?? 0);
-            $subtotal += $qty * $cost;
+            $cost = (float) ($item['unit_cost'] ?? 0); // Costo con IGV incluido
+
+            $totalGeneral += ($qty * $cost);
         }
 
-        $igv = $subtotal * 0.18;
-        $total = $subtotal + $igv;
+        // 🌟 MATEMÁTICA INVERSA
+        // 1. Calculamos la base (Subtotal sin IGV) dividiendo entre 1.18
+        $subtotal = $totalGeneral / 1.18;
 
-        $set($prefix . 'subtotal', round($subtotal, 2));
-        $set($prefix . 'igv', round($igv, 2));
-        $set($prefix . 'total', round($total, 2));
+        // 2. El IGV es la diferencia entre el Total y la Base (así evitamos descuadres de céntimos)
+        $igv = $totalGeneral - $subtotal;
+
+        // Guardamos los valores redondeados
+        $set($prefix . 'subtotal', round($subtotal, 2)); // Op. Gravadas
+        $set($prefix . 'igv', round($igv, 2));           // IGV (18%)
+        $set($prefix . 'total', round($totalGeneral, 2)); // Total a Pagar
     }
 
     public static function getRelations(): array

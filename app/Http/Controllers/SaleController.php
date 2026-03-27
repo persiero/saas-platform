@@ -16,10 +16,12 @@ class SaleController extends Controller
      */
     public function printTicket(Sale $sale)
     {
+        // 🌟 LA CURA AL LAZY LOADING: Cargamos todas las relaciones necesarias para el ticket
+        $sale->load(['items.product.unidadSunat', 'tenant', 'customer', 'user']);
 
         // Si el PDF ya fue guardado en la nube, lo mostramos directamente
         if ($sale->sunat_pdf_path && Storage::disk('sunat')->exists($sale->sunat_pdf_path)) {
-            // 🌟 Usamos ->response() para mostrar el archivo de Cloudflare en el navegador
+            // Usamos ->response() para mostrar el archivo de Cloudflare en el navegador
             return Storage::disk('sunat')->response($sale->sunat_pdf_path);
         }
 

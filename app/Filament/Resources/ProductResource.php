@@ -115,7 +115,28 @@ class ProductResource extends Resource
                             ->required()
                             ->default(1) // Por defecto NIU (Id 1)
                             ->searchable()
-                            ->preload(),
+                            ->preload()
+                            ->live() // 🌟 IMPORTANTE: Permite que el sistema sepa al instante qué unidad eligió
+                            ->rules([ // 🌟 VALIDACIÓN DE DOBLE VÍA
+                                fn (\Filament\Forms\Get $get) => function (string $attribute, $value, \Closure $fail) use ($get) {
+                                    $unidad = \Percy\Core\Models\UnidadSunat::find($value);
+                                    if (!$unidad) return;
+
+                                    $isWeighable = $get('is_weighable');
+                                    // Definimos qué códigos consideramos "Granel"
+                                    $isWeightOrVolume = in_array($unidad->codigo, ['KGM', 'LTR', 'GLL', 'GRM']);
+
+                                    // Escenario 1: Encendió granel pero dejó Unidad
+                                    if ($isWeighable && $unidad->codigo === 'NIU') {
+                                        $fail('Si vendes a granel, debes elegir Kilos, Litros o similar.');
+                                    }
+
+                                    // Escenario 2: Eligió Kilos/Litros pero olvidó encender el interruptor
+                                    if (!$isWeighable && $isWeightOrVolume) {
+                                        $fail('Para vender por peso o volumen, debes encender el interruptor de "Venta a Granel" abajo.');
+                                    }
+                                },
+                            ]),
 
                         Forms\Components\Select::make('type')
                             ->label('Tipo de Ítem')
@@ -189,6 +210,25 @@ class ProductResource extends Resource
                                         ->required()
                                         ->helperText('Precio de venta al menudeo.'),
                                 ]),
+                        ]),
+
+                    // =========================================================
+                    // 🌟 SECCIÓN: CONFIGURACIÓN DE VENTA A GRANEL (Minimarkets)
+                    // =========================================================
+                    Forms\Components\Section::make('Configuración de Venta a Granel (Peso / Volumen)')
+                        ->description('Define si este producto se pesa en balanza o se mide en litros, en lugar de venderse por unidades enteras.')
+                        ->icon('heroicon-o-scale')
+                        ->visible(function () {
+                            $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                            return $features['sells_by_weight'] ?? false;
+                        })
+                        ->schema([
+                            Forms\Components\Toggle::make('is_weighable')
+                                ->label('¿Este producto se vende a granel (Kilos / Litros / Gramos)?')
+                                ->helperText('Actívalo para verduras, frutas, carnes, pollo, aceite suelto, detergente líquido, etc.')
+                                ->live()
+                                // 🌟 ELIMINAMOS la autoselección. Ahora solo interactúa con la validación de arriba.
+                                ->columnSpanFull(),
                         ]),
 
                 ])->columnSpan(['lg' => 2]),
@@ -344,7 +384,7 @@ class ProductResource extends Resource
                         ->modalHeading('Restaurar Producto')
                         ->modalDescription('¿Deseas rescatar este producto de la papelera? Volverá a estar visible y activo en el sistema.'),
 
-                    // 3. BOTÓN AJUSTE DE INVENTARIO: Protegido solo para el Admin y optimizado para Farmacias
+                    // 3. BOTÓN AJUSTE DE INVENTARIO: Protegido solo para el Admin
                     Tables\Actions\Action::make('manual_adjustment')
                         ->label('Ajuste de Inventario')
                         ->icon('heroicon-o-scale')
@@ -355,9 +395,12 @@ class ProductResource extends Resource
                             return $user->isAdmin();
                         })
                         ->form(function ($record) {
-                            // 🌟 NUEVO: Leemos la característica directamente
                             $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
                             $hasLots = $features['has_lots'] ?? false;
+                            $hasExpiry = $features['has_expiry_dates'] ?? false;
+
+                            // 🌟 LA CLAVE: ¿El negocio usa la tabla de lotes/vencimientos?
+                            $usesBatches = $hasLots || $hasExpiry;
 
                             return [
                                 Forms\Components\Select::make('type')
@@ -370,23 +413,30 @@ class ProductResource extends Resource
                                     ->default('OUT')
                                     ->live(),
 
-                                // 🌟 NUEVO: Selección de Lote (Solo visible para Farmacias)
+                                // 🌟 NUEVO: Selección de Lote o Vencimiento (Visible para Farmacias Y Minimarkets)
                                 Forms\Components\Select::make('product_batch_id')
-                                    ->label('Lote a afectar')
-                                    ->options(function () use ($record) {
+                                    ->label($hasLots ? 'Lote a afectar' : 'Fecha de Vencimiento a afectar')
+                                    ->options(function () use ($record, $hasLots) {
                                         return \Percy\Core\Models\ProductBatch::where('product_id', $record->id)
+                                            ->where('is_active', true)
                                             ->get()
-                                            ->mapWithKeys(function ($b) {
+                                            ->mapWithKeys(function ($b) use ($hasLots) {
                                                 $vence = $b->expiration_date ? \Carbon\Carbon::parse($b->expiration_date)->format('d/m/Y') : 'N/D';
-                                                return [$b->id => "Lote: {$b->batch_number} | Vence: {$vence} | Stock Actual: " . (float)$b->current_quantity];
+
+                                                // Texto dinámico según el negocio
+                                                $texto = $hasLots
+                                                    ? "Lote: {$b->batch_number} | Vence: {$vence} | Stock: " . (float)$b->current_quantity
+                                                    : "Vence: {$vence} | Stock Actual: " . (float)$b->current_quantity;
+
+                                                return [$b->id => $texto];
                                             });
                                     })
-                                    ->visible(fn () => $hasLots)
-                                    ->required(fn () => $hasLots)
+                                    ->visible(fn () => $usesBatches)
+                                    ->required(fn () => $usesBatches)
                                     ->searchable()
                                     ->preload(),
 
-                                // 🌟 NUEVO: Unidad de Ajuste (Solo si es farmacia Y el producto es fraccionable)
+                                // Unidad de Ajuste (Mantenemos la lógica solo para Farmacia)
                                 Forms\Components\Select::make('measurement_unit')
                                     ->label('Unidad de Ajuste')
                                     ->options([
@@ -401,7 +451,7 @@ class ProductResource extends Resource
                                 Forms\Components\TextInput::make('quantity')
                                     ->label('Cantidad')
                                     ->numeric()
-                                    ->minValue(0.01)
+                                    ->minValue(0.001) // 🌟 Permitimos decimales para ajustes de Minimarket
                                     ->required()
                                     ->live(),
 
@@ -412,7 +462,6 @@ class ProductResource extends Resource
                                             $stockActual = (float) $record->current_stock;
                                             $cantidadIngresada = (float) $get('quantity');
 
-                                            // Matemática rápida para el aviso visual
                                             $cantidadAjuste = $cantidadIngresada;
                                             if ($hasLots && $record->is_fractionable && $get('measurement_unit') === 'unit' && $record->units_per_box > 0) {
                                                 $cantidadAjuste = $cantidadIngresada / $record->units_per_box;
@@ -433,7 +482,7 @@ class ProductResource extends Resource
                                     ->label('Detalle / Observación')
                                     ->required()
                                     ->maxLength(255)
-                                    ->placeholder('Ej: 3 pastillas vencidas, 1 caja rota...'),
+                                    ->placeholder('Ej: 3 tomates podridos, 1 caja rota...'),
                             ];
                         })
                         ->action(function (array $data, $record) {
@@ -441,9 +490,10 @@ class ProductResource extends Resource
                             $cantidadIngresada = abs((float) $data['quantity']);
                             $tipoAjuste = $data['type'];
 
-                            // 🌟 NUEVO
                             $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
                             $hasLots = $features['has_lots'] ?? false;
+                            $hasExpiry = $features['has_expiry_dates'] ?? false;
+                            $usesBatches = $hasLots || $hasExpiry;
 
                             // 1. MATEMÁTICA DE FRACCIONES
                             $cantidadAjuste = $cantidadIngresada;
@@ -451,13 +501,13 @@ class ProductResource extends Resource
                                 $cantidadAjuste = $cantidadIngresada / $record->units_per_box;
                             }
 
-                            // 2. BUSCAR EL LOTE AFECTADO
+                            // 2. BUSCAR EL LOTE O VENCIMIENTO AFECTADO 🌟
                             $batch = null;
-                            if ($hasLots && isset($data['product_batch_id'])) {
+                            if ($usesBatches && isset($data['product_batch_id'])) {
                                 $batch = \Percy\Core\Models\ProductBatch::find($data['product_batch_id']);
                             }
 
-                            // 3. VALIDACIONES DE STOCK NEGATIVO (Global y Lote)
+                            // 3. VALIDACIONES DE STOCK NEGATIVO
                             if ($tipoAjuste === 'OUT') {
                                 if ($stockActual < $cantidadAjuste) {
                                     \Filament\Notifications\Notification::make()
@@ -468,8 +518,8 @@ class ProductResource extends Resource
                                 }
                                 if ($batch && $batch->current_quantity < $cantidadAjuste) {
                                     \Filament\Notifications\Notification::make()
-                                        ->title('Stock de Lote Insuficiente')
-                                        ->body("El lote seleccionado solo tiene {$batch->current_quantity} disponible.")
+                                        ->title('Stock de Vencimiento Insuficiente')
+                                        ->body("El registro seleccionado solo tiene {$batch->current_quantity} disponible.")
                                         ->danger()->send();
                                     return;
                                 }
@@ -483,23 +533,23 @@ class ProductResource extends Resource
                                 $batch->current_quantity = $tipoAjuste === 'OUT'
                                     ? $batch->current_quantity - $cantidadAjuste
                                     : $batch->current_quantity + $cantidadAjuste;
-                                $batch->save();
+                                $batch->save(); // El ProductBatchObserver actualizará el stock principal automáticamente
+                            } else {
+                                // Si no hay lotes (Tienda General), actualizamos el stock principal directo
+                                $record->update(['current_stock' => $saldoFinal]);
                             }
 
-                            // 6. CREAR REGISTRO EN KARDEX (Inyectando el Lote)
+                            // 6. CREAR REGISTRO EN KARDEX
                             \Percy\Core\Models\InventoryMovement::create([
                                 'tenant_id' => \Illuminate\Support\Facades\Auth::user()->tenant_id,
                                 'product_id' => $record->id,
-                                'product_batch_id' => $batch ? $batch->id : null, // 🌟 GUARDAMOS EL LOTE
+                                'product_batch_id' => $batch ? $batch->id : null,
                                 'user_id' => \Illuminate\Support\Facades\Auth::id(),
                                 'type' => $tipoAjuste,
                                 'quantity' => $cantidadAjuste,
-                                'reason' => $data['reason'],
+                                'reason' => 'Ajuste Manual: ' . $data['reason'],
                                 'balance_after' => $saldoFinal,
                             ]);
-
-                            // 7. ACTUALIZAR PRODUCTO PRINCIPAL
-                            $record->update(['current_stock' => $saldoFinal]);
 
                             \Filament\Notifications\Notification::make()
                                 ->title('Inventario Ajustado')
@@ -508,9 +558,7 @@ class ProductResource extends Resource
                                 ->send();
                         })
                         ->requiresConfirmation()
-                        // 🌟 Título dinámico con el nombre del producto
                         ->modalHeading(fn ($record) => 'Ajuste de Inventario: ' . $record->name)
-                        // 🌟 Descripción extra para darle más seguridad al usuario
                         ->modalDescription(fn ($record) => new \Illuminate\Support\HtmlString(
                             'Estás a punto de modificar el stock de <strong>' . $record->name . '</strong>. <br>Stock global actual: <strong>' . (float)$record->current_stock . '</strong>'
                         ))
@@ -540,10 +588,14 @@ class ProductResource extends Resource
     {
         $relations = [];
 
-        // MAGIA DEL SAAS: Encendemos el módulo de Lotes leyendo el JSON de características
+        // MAGIA DEL SAAS: Encendemos el módulo leyendo el JSON de características
         $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
 
-        if ($features['has_lots'] ?? false) {
+        $hasLots = $features['has_lots'] ?? false;
+        $hasExpiry = $features['has_expiry_dates'] ?? false;
+
+        // 🌟 EL CAMBIO CLAVE: Si el negocio usa lotes (Farmacia) O usa fechas de vencimiento (Minimarket)
+        if ($hasLots || $hasExpiry) {
             $relations[] = RelationManagers\BatchesRelationManager::class;
         }
 

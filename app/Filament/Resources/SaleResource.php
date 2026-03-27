@@ -37,7 +37,10 @@ class SaleResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()->where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id);
+        return parent::getEloquentQuery()
+            ->where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id)
+            // 🌟 LA CURA: Agregamos el 'with' encadenado al final
+            ->with(['items.product', 'items.product.unidadSunat']);
     }
 
     // 1.Nadie edita una venta ya hecha.
@@ -90,26 +93,26 @@ class SaleResource extends Resource
         return $form
             ->schema([
                 Forms\Components\Group::make()->schema([
+                    // 🌟 1. INFORMACIÓN DE VENTA (Responsivo)
                     Forms\Components\Section::make('Información de Venta')->schema([
                         Forms\Components\Select::make('document_type')
                             ->label('Tipo de Comprobante')
                             ->options([
                                 '03' => 'Boleta Electrónica',
                                 '01' => 'Factura Electrónica',
-                                '00' => 'Nota de Venta (Interno)', // 🌟 NUEVA OPCIÓN
+                                '00' => 'Nota de Venta (Interno)',
                             ])
                             ->required()
                             ->default('03')
                             ->live()
                             ->afterStateUpdated(function (Set $set, $state) {
-                                // Buscamos la serie, pero ESTRICTAMENTE de esta farmacia
                                 $serieAuto = \Percy\Core\Models\Serie::where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id)
                                     ->where('document_type', $state)
                                     ->where('active', true)
                                     ->value('serie');
-
                                 $set('series', $serieAuto);
-                            }),
+                            })
+                            ->columnSpan(['default' => 1, 'md' => 1]),
 
                         Forms\Components\Select::make('series')
                             ->label('Serie')
@@ -117,8 +120,6 @@ class SaleResource extends Resource
                             ->options(function (Get $get) {
                                 $docType = $get('document_type');
                                 if (!$docType) return [];
-
-                                // Traemos las opciones, ESTRICTAMENTE de esta farmacia
                                 return \Percy\Core\Models\Serie::where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id)
                                     ->where('document_type', $docType)
                                     ->where('active', true)
@@ -130,7 +131,8 @@ class SaleResource extends Resource
                                     ->where('active', true)
                                     ->value('serie');
                             })
-                            ->selectablePlaceholder(false), // Oculta la opción "Select an option" si ya hay datos
+                            ->selectablePlaceholder(false)
+                            ->columnSpan(['default' => 1, 'md' => 1]),
 
                         Forms\Components\Hidden::make('correlative'),
 
@@ -138,10 +140,9 @@ class SaleResource extends Resource
                             ->label('Cliente')
                             ->relationship('customer', 'name', function (Builder $query, \Filament\Forms\Get $get) {
                                 $docType = $get('document_type');
-
                                 return $query->when($docType === '01', function ($q) {
                                     return $q->whereIn('document_type', ['RUC', '6']);
-                                })->when(in_array($docType, ['03', '00']), function ($q) { // 🌟 Acepta '00' aquí
+                                })->when(in_array($docType, ['03', '00']), function ($q) {
                                     return $q->whereIn('document_type', ['DNI', '1', 'CE', '0', '7', '4']);
                                 });
                             })
@@ -150,13 +151,12 @@ class SaleResource extends Resource
                             ->live()
                             ->required(fn (\Filament\Forms\Get $get) => $get('document_type') === '01')
                             ->helperText(fn (\Filament\Forms\Get $get) => $get('document_type') === '01' ? 'Obligatorio para Facturas' : 'Opcional. Déjalo en blanco para Consumidor Final.')
-                            ->columnSpan(2)
-
-                            // 🌟 MEJORA UX/UI: Usamos el color corporativo del tenant
+                            // 🌟 Ocupará 2 columnas en PC, pero 1 en móvil
+                            ->columnSpan(['default' => 1, 'md' => 2])
                             ->createOptionAction(
                                 fn (\Filament\Forms\Components\Actions\Action $action) => $action
                                     ->icon('heroicon-s-user-plus')
-                                    ->color('primary') // 🔥 EL CAMBIO ESTÁ AQUÍ
+                                    ->color('primary')
                                     ->tooltip('Registrar Nuevo Cliente')
                                     ->mutateFormDataUsing(function (array $data) {
                                         $data['tenant_id'] = \Illuminate\Support\Facades\Auth::user()->tenant_id;
@@ -178,29 +178,21 @@ class SaleResource extends Resource
                                             ->default('DNI')
                                             ->required()
                                             ->native(false)
-                                            ->live() // 🌟 IMPORTANTE: Activa la reactividad para ocultar/mostrar la lupa
+                                            ->live()
                                             ->columnSpan(1),
 
                                         Forms\Components\TextInput::make('document_number')
                                             ->label('Número')
-                                            // 🌟 Validación Dinámica: Longitud máxima
                                             ->maxLength(fn (\Filament\Forms\Get $get) => match ($get('document_type')) {
-                                                'DNI' => 8,
-                                                'RUC' => 11,
-                                                default => 15, // Para Carné de Extranjería u otros
+                                                'DNI' => 8, 'RUC' => 11, default => 15,
                                             })
-                                            // 🌟 Validación Dinámica: Longitud mínima estricta
                                             ->minLength(fn (\Filament\Forms\Get $get) => match ($get('document_type')) {
-                                                'DNI' => 8,
-                                                'RUC' => 11,
-                                                default => null,
+                                                'DNI' => 8, 'RUC' => 11, default => null,
                                             })
-                                            // 🌟 Forzar teclado numérico solo para DNI y RUC
                                             ->numeric(fn (\Filament\Forms\Get $get) => in_array($get('document_type'), ['DNI', 'RUC']))
                                             ->placeholder(fn (\Filament\Forms\Get $get) => $get('document_type') === 'RUC' ? 'Ej: 20... (11 dígitos)' : 'Ej: 12345678')
                                             ->required()
                                             ->columnSpan(1)
-                                            // 🌟 MAGIA: Botón de Decolecta (Solo visible en RUC)
                                             ->suffixAction(
                                                 \Filament\Forms\Components\Actions\Action::make('searchDecolecta')
                                                     ->icon('heroicon-m-magnifying-glass')
@@ -209,65 +201,32 @@ class SaleResource extends Resource
                                                     ->visible(fn (\Filament\Forms\Get $get) => $get('document_type') === 'RUC')
                                                     ->action(function ($state, \Filament\Forms\Set $set) {
                                                         if (blank($state) || strlen($state) !== 11) {
-                                                            \Filament\Notifications\Notification::make()
-                                                                ->danger()
-                                                                ->title('Error')
-                                                                ->body('Ingrese un RUC válido de 11 dígitos.')
-                                                                ->send();
+                                                            \Filament\Notifications\Notification::make()->danger()->title('Error')->body('Ingrese un RUC válido de 11 dígitos.')->send();
                                                             return;
                                                         }
-
                                                         $token = config('services.decolecta.token');
-
                                                         try {
-                                                            $response = \Illuminate\Support\Facades\Http::withToken($token)
-                                                                ->timeout(10)
-                                                                ->get("https://api.decolecta.com/v1/sunat/ruc?numero={$state}");
-
+                                                            $response = \Illuminate\Support\Facades\Http::withToken($token)->timeout(10)->get("https://api.decolecta.com/v1/sunat/ruc?numero={$state}");
                                                             if ($response->successful()) {
                                                                 $data = $response->json();
-
                                                                 if (($data['estado'] ?? '') !== 'ACTIVO') {
-                                                                    \Filament\Notifications\Notification::make()
-                                                                        ->warning()
-                                                                        ->title('Cuidado')
-                                                                        ->body('Este RUC figura como ' . ($data['estado'] ?? 'INACTIVO') . ' en SUNAT.')
-                                                                        ->send();
+                                                                    \Filament\Notifications\Notification::make()->warning()->title('Cuidado')->body('Este RUC figura como ' . ($data['estado'] ?? 'INACTIVO') . ' en SUNAT.')->send();
                                                                 } else {
                                                                     \Filament\Notifications\Notification::make()->success()->title('RUC Encontrado')->send();
                                                                 }
-
-                                                                // Seteamos la Razón Social
                                                                 $set('name', $data['razon_social'] ?? '');
-
-                                                                // 🌟 CONSTRUCCIÓN DE DIRECCIÓN COMPLETA
-                                                                // Extraemos las partes asegurándonos de que no vengan como null
                                                                 $dir = trim($data['direccion'] ?? '');
                                                                 $dep = trim($data['departamento'] ?? '');
                                                                 $prov = trim($data['provincia'] ?? '');
                                                                 $dist = trim($data['distrito'] ?? '');
-
-                                                                // Unimos todo: "DIRECCION LIMA - LIMA - SAN ISIDRO"
                                                                 $fullAddress = trim("$dir $dep - $prov - $dist", " -");
-
-                                                                // Limpiamos los espacios dobles feos que a veces manda la SUNAT
                                                                 $fullAddress = preg_replace('/\s+/', ' ', $fullAddress);
-
                                                                 $set('address', $fullAddress);
-
                                                             } else {
-                                                                \Filament\Notifications\Notification::make()
-                                                                    ->danger()
-                                                                    ->title('No encontrado')
-                                                                    ->body('El RUC no existe en SUNAT o superó el límite.')
-                                                                    ->send();
+                                                                \Filament\Notifications\Notification::make()->danger()->title('No encontrado')->body('El RUC no existe en SUNAT o superó el límite.')->send();
                                                             }
                                                         } catch (\Exception $e) {
-                                                            \Filament\Notifications\Notification::make()
-                                                                ->danger()
-                                                                ->title('Error de conexión')
-                                                                ->body('No se pudo conectar con la API de Decolecta.')
-                                                                ->send();
+                                                            \Filament\Notifications\Notification::make()->danger()->title('Error de conexión')->body('No se pudo conectar con la API de Decolecta.')->send();
                                                         }
                                                     })
                                             ),
@@ -277,7 +236,7 @@ class SaleResource extends Resource
                                             ->required()
                                             ->maxLength(150)
                                             ->columnSpanFull(),
-                                    ])->columns(2),
+                                    ])->columns(['default' => 1, 'sm' => 2]),
 
                                 Forms\Components\Section::make('Datos de Contacto')
                                     ->schema([
@@ -300,22 +259,24 @@ class SaleResource extends Resource
                                             ->maxLength(255)
                                             ->rows(2)
                                             ->columnSpanFull(),
-                                    ])->columns(2)->collapsible(),
+                                    ])->columns(['default' => 1, 'sm' => 2])->collapsible(),
                             ]),
 
                         Forms\Components\Select::make('payment_method')
                             ->label('Método de Pago')
-                            ->options(Sale::PAYMENT_METHODS)
+                            ->options(\Percy\Core\Models\Sale::PAYMENT_METHODS)
                             ->default('Efectivo')
                             ->live()
                             ->required()
-                            ->afterStateUpdated(fn (Forms\Set $set) => $set('payment_reference', null)),
+                            ->afterStateUpdated(fn (Forms\Set $set) => $set('payment_reference', null))
+                            ->columnSpan(['default' => 1, 'md' => 1]),
 
                         Forms\Components\TextInput::make('payment_reference')
                             ->label('N° de Operación / Referencia')
                             ->placeholder('Ej: 123456')
-                            ->visible(fn (\Filament\Forms\Get $get) => Sale::requiresReference($get('payment_method') ?? ''))
-                            ->required(fn (\Filament\Forms\Get $get) => Sale::requiresReference($get('payment_method') ?? '')),
+                            ->visible(fn (\Filament\Forms\Get $get) => \Percy\Core\Models\Sale::requiresReference($get('payment_method') ?? ''))
+                            ->required(fn (\Filament\Forms\Get $get) => \Percy\Core\Models\Sale::requiresReference($get('payment_method') ?? ''))
+                            ->columnSpan(['default' => 1, 'md' => 1]),
 
                         Forms\Components\DateTimePicker::make('sold_at')
                             ->label('Fecha de Emisión')
@@ -323,43 +284,63 @@ class SaleResource extends Resource
                             ->minDate(now()->subDays(7))
                             ->maxDate(now())
                             ->helperText('SUNAT solo acepta documentos de los últimos 7 días')
-                            ->required(),
+                            ->required()
+                            ->columnSpan(['default' => 1, 'md' => 1]),
+
+                        Forms\Components\TextInput::make('prescription_code')
+                            ->label('N° de Receta Médica / CMP')
+                            ->placeholder('Ej: CMP 12345')
+                            ->maxLength(255)
+                            ->visible(function (Forms\Get $get) {
+                                $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                                if (!($features['has_lots'] ?? false)) return false;
+                                $items = $get('items') ?? [];
+                                foreach ($items as $item) {
+                                    if (!empty($item['product_id'])) {
+                                        $product = \Percy\Core\Models\Product::find($item['product_id']);
+                                        if ($product && $product->requires_prescription) return true;
+                                    }
+                                }
+                                return false;
+                            })
+                            ->required(function (Forms\Get $get) {
+                                $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                                if (!($features['has_lots'] ?? false)) return false;
+                                $items = $get('items') ?? [];
+                                foreach ($items as $item) {
+                                    if (!empty($item['product_id'])) {
+                                        $product = \Percy\Core\Models\Product::find($item['product_id']);
+                                        if ($product && $product->requires_prescription) return true;
+                                    }
+                                }
+                                return false;
+                            })
+                            ->columnSpan(['default' => 1, 'md' => 1]),
 
                         Forms\Components\Select::make('status')
                             ->label('Estado')
-                            ->options([
-                                'completed' => 'Completado',
-                                'pending' => 'Pendiente',
-                                'canceled' => 'Anulado',
-                            ])
+                            ->options(['completed' => 'Completado', 'pending' => 'Pendiente', 'canceled' => 'Anulado'])
                             ->default('completed')
-                            ->hidden(), // Lo ocultamos de la vista del cajero para no confundir
-                    ])->columns(4),
+                            ->hidden(),
+                    ])->columns(['default' => 1, 'md' => 4]), // 🌟 El contenedor usa 1 col en móvil, 4 en PC
 
+                    // 🌟 2. DETALLE DE PRODUCTOS
                     Forms\Components\Section::make('Detalle de Productos')->schema([
 
-                        // 🔫 LECTOR DE CÓDIGO DE BARRAS
                         Forms\Components\TextInput::make('scanner')
                             ->label('Lector de Código de Barras')
                             ->placeholder('Dispare la pistola aquí...')
                             ->prefixIcon('heroicon-o-qr-code')
-                            ->autofocus() // El cursor siempre estará aquí al abrir la venta
-                            // Evitamos que el "Enter" de la pistola guarde la venta accidentalmente
+                            ->autofocus()
                             ->extraInputAttributes(['x-on:keydown.enter.prevent' => '$wire.$refresh()'])
-                            ->live(debounce: 250) // Espera un cuarto de segundo a que la pistola termine de escribir
+                            ->live(debounce: 250)
                             ->afterStateUpdated(function ($state, Set $set, Get $get) {
                                 if (empty($state)) return;
-
-                                // Buscamos el producto por su código de barras
                                 $product = \Percy\Core\Models\Product::where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id)
-                                    ->where('barcode', $state)
-                                    ->first();
+                                    ->where('barcode', $state)->first();
 
                                 if ($product) {
-                                    // Traemos los items actuales del carrito
                                     $items = $get('items') ?? [];
-
-                                    // 🌟 OPTIMIZACIÓN SAAS: Solo busca lotes si el negocio los maneja
                                     $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
                                     $batch = null;
 
@@ -371,13 +352,11 @@ class SaleResource extends Resource
                                             ->first();
                                     }
 
-                                    // CALCULAMOS LOS IMPUESTOS FALTANTES PARA QUE LA BD NO EXPLOTE
                                     $afectacion = \Percy\Core\Models\AfectacionIgv::find($product->afectacion_igv_id ?? 1);
                                     $porcentaje = ($afectacion && $afectacion->gravado) ? ($afectacion->porcentaje / 100) : 0;
                                     $unitValue = $product->price / (1 + $porcentaje);
                                     $igvAmount = $product->price - $unitValue;
 
-                                    // INYECTAMOS EL PRODUCTO CON TODOS SUS DATOS COMPLETOS
                                     $items[(string) \Illuminate\Support\Str::uuid()] = [
                                         'product_id' => $product->id,
                                         'product_batch_id' => $batch ? $batch->id : null,
@@ -391,32 +370,26 @@ class SaleResource extends Resource
                                         '_is_fractionable' => $product->is_fractionable,
                                         '_box_price' => $product->price,
                                         '_fraction_price' => $product->unit_price,
-                                        // 🌟 LOS CAMPOS FALTANTES QUE CAUSARON EL ERROR:
+                                        '_is_weighable' => $product->is_weighable,
                                         'item_name' => $product->name,
                                         'unit_value' => round($unitValue, 2),
                                         'igv_amount' => round($igvAmount, 2),
                                     ];
 
-                                    // Guardamos el carrito actualizado
                                     $set('items', $items);
-
-                                    // Forzamos la actualización de los totales globales
                                     self::updateTotals($get, $set);
-
                                     \Filament\Notifications\Notification::make()->title('Agregado: ' . $product->name)->success()->send();
                                 } else {
                                     \Filament\Notifications\Notification::make()->title('Código no encontrado')->danger()->send();
                                 }
-
-                                // Limpiamos la caja para el siguiente disparo láser
                                 $set('scanner', null);
                             })
-                            ->columnSpanFull(), // Ocupa todo el ancho
+                            ->columnSpanFull(),
 
                         Forms\Components\Repeater::make('items')
                             ->relationship()
                             ->label('')
-                            ->live() // Escucha cambios globales en el repetidor (como eliminar filas)
+                            ->live()
                             ->afterStateUpdated(function (Get $get, Set $set) {
                                 self::updateTotals($get, $set);
                             })
@@ -430,80 +403,66 @@ class SaleResource extends Resource
                                     ->searchable()
                                     ->preload()
                                     ->required()
-                                    ->columnSpan(3)
+                                    // 🌟 REPEATER RESPONSIVO: Ocupa 1 col en móvil y 4 en PC
+                                    ->columnSpan(['default' => 1, 'md' => 3])
                                     ->live(onBlur: true)
                                     ->afterStateUpdated(function ($state, Set $set, Get $get) {
                                         if ($state) {
-                                            $product = Product::find($state);
+                                            $product = \Percy\Core\Models\Product::find($state);
                                             $set('unit_price', $product->price);
                                             $set('afectacion_igv_id', $product->afectacion_igv_id);
                                             $set('unit_code', $product->unidadSunat ? $product->unidadSunat->codigo : 'NIU');
                                             $set('item_name', $product->name);
                                             $set('_stock_disponible', $product->current_stock);
-
-                                            // MAGIA FARMACIA: Guardamos en secreto los datos de fracción
                                             $set('_is_fractionable', $product->is_fractionable);
                                             $set('_box_price', $product->price);
                                             $set('_fraction_price', $product->unit_price);
-                                            $set('measurement_unit', 'box'); // Por defecto se vende la caja
+                                            $set('measurement_unit', 'box');
+                                            $set('_is_weighable', $product->is_weighable);
 
-                                            // 🌟 OPTIMIZACIÓN SAAS: Auto-seleccionar lote SOLO si maneja lotes
                                             $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
                                             $loteProximo = null;
-
                                             if ($features['has_lots'] ?? false) {
                                                 $loteProximo = \Percy\Core\Models\ProductBatch::where('product_id', $state)
                                                     ->where('current_quantity', '>', 0)
                                                     ->whereDate('expiration_date', '>=', now())
-                                                    ->orderBy('expiration_date', 'asc') // Del más viejo al más nuevo
+                                                    ->orderBy('expiration_date', 'asc')
                                                     ->where('is_active', true)
                                                     ->first();
                                             }
-
-                                            // Si encontró un lote (y si el negocio maneja lotes), lo asigna
                                             $set('product_batch_id', $loteProximo ? $loteProximo->id : null);
                                         }
                                         self::updateRow($get, $set);
                                         self::updateTotals($get, $set);
                                     }),
 
-                                // ¡NUEVO CAMPO! Solo aparece si el producto es fraccionable
                                 Forms\Components\Select::make('measurement_unit')
                                     ->label('Present.')
-                                    ->options([
-                                        'box' => 'Caja',
-                                        'unit' => 'Unidad',
-                                    ])
+                                    ->options(['box' => 'Caja', 'unit' => 'Unidad'])
                                     ->visible(fn (Get $get) => $get('_is_fractionable'))
                                     ->required(fn (Get $get) => $get('_is_fractionable'))
-                                    ->columnSpan(1)
+                                    ->columnSpan(['default' => 1, 'md' => 2])
                                     ->live()
                                     ->afterStateUpdated(function ($state, Set $set, Get $get) {
-                                        // Si cambia de Caja a Unidad, cambiamos el precio automáticamente
                                         if ($state === 'unit') {
                                             $set('unit_price', $get('_fraction_price'));
                                         } else {
                                             $set('unit_price', $get('_box_price'));
                                         }
-                                        // Recalculamos la fila y los totales globales
                                         self::updateRow($get, $set);
                                         self::updateTotals($get, $set);
                                     }),
 
-                                // 🌟 3. ¡NUEVO CAMPO! EL SELECTOR DE LOTE (Solo para Farmacias)
                                 Forms\Components\Select::make('product_batch_id')
                                     ->label('Lote')
                                     ->options(function (Get $get) {
                                         $productId = $get('product_id');
                                         if (!$productId) return [];
-
-                                        // Solo traemos los lotes de este producto que tengan stock > 0
                                         return \Percy\Core\Models\ProductBatch::where('product_id', $productId)
                                             ->where('current_quantity', '>', 0)
-                                            ->whereDate('expiration_date', '>=', now()) // No muestra lotes vencidos
-                                            ->orderBy('expiration_date', 'asc') // FEFO
+                                            ->whereDate('expiration_date', '>=', now())
+                                            ->orderBy('expiration_date', 'asc')
                                             ->where('is_active', true)
-                                            // Formateamos para que el cajero vea el Lote y su fecha de vencimiento
                                             ->get()
                                             ->mapWithKeys(function ($batch) {
                                                 $vence = $batch->expiration_date ? $batch->expiration_date->format('d/m/Y') : 'N/A';
@@ -511,26 +470,31 @@ class SaleResource extends Resource
                                             });
                                     })
                                     ->visible(fn () => \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features['has_lots'] ?? false)
-                                    // Es requerido SOLO si el negocio es una farmacia
                                     ->required(fn () => \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features['has_lots'] ?? false)
                                     ->searchable()
                                     ->preload()
-                                    ->columnSpan(3), // Ajusta los columnSpan de los demás campos para que sumen 12
-
-                                //Forms\Components\Hidden::make('afectacion_igv_id')
-                                  //  ->relationship('afectacionIgv', 'descripcion')
-                                  //  ->label('IGV')
-                                   // ->required()
-                                    //->columnSpan(1)
-                                    //->live()
-                                    //->afterStateUpdated(fn(Get $get, Set $set) => [self::updateRow($get, $set), self::updateTotals($get, $set)]),
+                                    ->columnSpan(['default' => 1, 'md' => 2]),
 
                                 Forms\Components\TextInput::make('quantity')
                                     ->label('Cant.')
                                     ->numeric()
                                     ->default(1)
-                                    ->minValue(0.01)
-                                    ->maxValue(function (Get $get) {
+                                    ->minValue(fn (\Filament\Forms\Get $get) => $get('_is_weighable') ? 0.001 : 1)
+                                    ->step(fn (\Filament\Forms\Get $get) => $get('_is_weighable') ? 0.001 : 1)
+                                    ->suffix(function (\Filament\Forms\Get $get) {
+                                        if (!$get('_is_weighable')) return 'Und';
+                                        return match($get('unit_code')) {
+                                            'KGM' => 'Kg', 'LTR' => 'Lt', 'GLL' => 'Gal', default => $get('unit_code') ?? 'Und',
+                                        };
+                                    })
+                                    ->rules([
+                                        fn (\Filament\Forms\Get $get) => function (string $attribute, $value, \Closure $fail) use ($get) {
+                                            if (!$get('_is_weighable') && fmod((float)$value, 1) !== 0.0) {
+                                                $fail('Este producto solo admite cantidades enteras.');
+                                            }
+                                        },
+                                    ])
+                                    ->maxValue(function (\Filament\Forms\Get $get) {
                                         $stock = null;
                                         if ($batchId = $get('product_batch_id')) {
                                             $batch = \Percy\Core\Models\ProductBatch::find($batchId);
@@ -539,75 +503,64 @@ class SaleResource extends Resource
                                             $product = \Percy\Core\Models\Product::find($productId);
                                             $stock = $product ? $product->current_stock : null;
                                         }
-
                                         if ($stock === null) return null;
-
-                                        // Si está vendiendo por UNIDAD, quitamos el límite estricto para que pueda poner 20, 50 o 100 pastillas.
-                                        if ($get('measurement_unit') === 'unit') {
-                                            return 99999;
-                                        }
-
-                                        // Si vende por CAJA, respeta el stock exacto del lote (Ej: 9)
+                                        if ($get('measurement_unit') === 'unit') return 99999;
                                         return $stock;
                                     })
                                     ->required()
-                                    ->columnSpan(1)
+                                    ->columnSpan(['default' => 1, 'md' => 2])
                                     ->live(onBlur: true)
-                                    ->afterStateUpdated(fn(Get $get, Set $set) => [self::updateRow($get, $set), self::updateTotals($get, $set)])
-                                    // MEJORA UX: Le mostramos a la cajera el stock del lote vs el total
-                                    ->helperText(function (Get $get) {
+                                    ->afterStateUpdated(fn(\Filament\Forms\Get $get, \Filament\Forms\Set $set) => [self::updateRow($get, $set), self::updateTotals($get, $set)])
+                                    ->helperText(function (\Filament\Forms\Get $get) {
                                         if (!$get('product_id')) return null;
-
                                         $totalStock = $get('_stock_disponible') ?? 0;
-
+                                        $tipo = 'Und';
+                                        if ($get('_is_weighable')) {
+                                            $tipo = match($get('unit_code')) { 'KGM' => 'Kg', 'LTR' => 'Lt', default => $get('unit_code') };
+                                        }
                                         if ($batchId = $get('product_batch_id')) {
                                             $batch = \Percy\Core\Models\ProductBatch::find($batchId);
                                             $loteStock = $batch ? $batch->current_quantity : 0;
-                                            return "Lote: {$loteStock} | Total: {$totalStock}";
+                                            return "Lote: {$loteStock} | Total: {$totalStock} {$tipo}";
                                         }
+                                        return "Stock Total: {$totalStock} {$tipo}";
+                                    }),
 
-                                        return "Stock Total: {$totalStock}";
-                                    })
-                                    ->required()
-                                    ->columnSpan(1)
-                                    ->live(onBlur: true)
-                                    ->afterStateUpdated(fn(Get $get, Set $set) => [self::updateRow($get, $set), self::updateTotals($get, $set)])
-                                    // Magia UX: Mostrar el stock como texto de ayuda para no gastar columnas
-                                    ->helperText(fn (Get $get) => $get('product_id') ? "Stock: " . ($get('_stock_disponible') ?? 0) : null),
+                                Forms\Components\Grid::make(['default' => 2])
+                                    ->schema([
+                                        Forms\Components\TextInput::make('unit_price')
+                                            ->label('Precio Unit.')
+                                            ->numeric()
+                                            ->required()
+                                            ->columnSpan(1)
+                                            ->live(onBlur: true)
+                                            ->afterStateUpdated(fn(Get $get, Set $set) => [self::updateRow($get, $set), self::updateTotals($get, $set)]),
 
-                                Forms\Components\TextInput::make('unit_price')
-                                    ->label('Precio Unit.')
-                                    ->numeric()
-                                    ->required()
-                                    ->columnSpan(2)
-                                    ->live(onBlur: true)
-                                    ->afterStateUpdated(fn(Get $get, Set $set) => [self::updateRow($get, $set), self::updateTotals($get, $set)]),
+                                        Forms\Components\TextInput::make('total')
+                                            ->label('Subtotal')
+                                            ->numeric()
+                                            ->required()
+                                            ->readonly()
+                                            ->columnSpan(1),
+                                    ])
+                                    ->columnSpan(['default' => 1, 'md' => 3]), // 🌟 El Grid de precio ocupará las últimas 2 columnas
 
-                                Forms\Components\TextInput::make('total')
-                                    ->label('Subtotal')
-                                    ->numeric()
-                                    ->required()
-                                    ->readonly()
-                                    ->columnSpan(2),
-
-                                // CAMPOS OCULTOS: Se calculan solos y van a la BD para SUNAT, pero no ensucian la pantalla
                                 Forms\Components\Hidden::make('_stock_disponible'),
                                 Forms\Components\Hidden::make('item_name'),
                                 Forms\Components\Hidden::make('unit_value'),
                                 Forms\Components\Hidden::make('afectacion_igv_id'),
                                 Forms\Components\Hidden::make('igv_amount'),
                                 Forms\Components\Hidden::make('unit_code')->default('NIU'),
-
-                                // Memoria temporal para la magia de la farmacia
                                 Forms\Components\Hidden::make('_is_fractionable'),
                                 Forms\Components\Hidden::make('_box_price'),
                                 Forms\Components\Hidden::make('_fraction_price'),
+                                Forms\Components\Hidden::make('_is_weighable')->default(false),
                             ])
-                            ->columns(12) // Pasamos de 16 a 12 columnas. ¡Diseño perfecto!
+                            ->columns(['default' => 1, 'md' => 12]) // 🌟 REPEATER DE 12 COLUMNAS EN PC, 1 EN MÓVIL
                             ->defaultItems(0)
                             ->addActionLabel('Agregar otro producto'),
                     ]),
-                ])->columnSpan(['lg' => 3]),
+                ])->columnSpan(['default' => 1, 'lg' => 3]), // 🌟 GRUPO IZQUIERDO
 
                 Forms\Components\Group::make()->schema([
                     Forms\Components\Section::make('Resumen Financiero')->schema([
@@ -626,7 +579,6 @@ class SaleResource extends Resource
                             ->content(fn (Get $get): string => 'S/ ' . number_format((float)($get('op_inafectas') ?? 0), 2))
                             ->extraAttributes(['class' => 'flex justify-between border-b pb-1 text-gray-500']),
 
-                        // EL NUEVO SUBTOTAL (Suma de todas las bases antes de impuestos)
                         Forms\Components\Placeholder::make('subtotal_lbl')
                             ->label('SUBTOTAL')
                             ->content(function (Get $get) {
@@ -645,16 +597,15 @@ class SaleResource extends Resource
                             ->content(fn (Get $get): string => 'S/ ' . number_format((float)($get('total') ?? 0), 2))
                             ->extraAttributes(['class' => 'flex justify-between text-2xl font-black text-primary-600 pt-2']),
 
-                        // Mantenemos los Hidden para que la BD reciba los datos correctamente
                         Forms\Components\Hidden::make('op_gravadas'),
                         Forms\Components\Hidden::make('op_exoneradas'),
                         Forms\Components\Hidden::make('op_inafectas'),
                         Forms\Components\Hidden::make('igv'),
                         Forms\Components\Hidden::make('total'),
                     ]),
-                ])->columnSpan(['lg' => 1]),
+                ])->columnSpan(['default' => 1, 'lg' => 1]), // 🌟 GRUPO DERECHO
             ])
-            ->columns(4);
+            ->columns(['default' => 1, 'lg' => 4]); // 🌟 CONTENEDOR PRINCIPAL
     }
 
     public static function infolist(Infolist $infolist): Infolist
