@@ -95,6 +95,18 @@ class CreateSale extends CreateRecord
         ];
     }
 
+    // 🌟 1. MAGIA: Disparamos el PDF en una pestaña nueva
+    protected function afterCreate(): void
+    {
+        $sale = $this->record;
+        $ticketUrl = url('/print/ticket/' . $sale->id);
+
+        $this->js("
+            window.open('{$ticketUrl}', '_blank');
+        ");
+    }
+
+    // 🌟 2. Redirección nativa de Filament hacia la lista
     protected function getRedirectUrl(): string
     {
         return $this->getResource()::getUrl('index');

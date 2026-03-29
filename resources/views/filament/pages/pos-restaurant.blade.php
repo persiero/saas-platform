@@ -1,0 +1,70 @@
+<x-filament-panels::page>
+    {{-- 🌟 FORZAMOS LOS COLORES CON CSS PARA EVITAR QUE TAILWIND LOS BORRE --}}
+    <style>
+        .mesa-available { background-color: #dcfce7; color: #166534; border-color: #86efac; }
+        .mesa-occupied { background-color: #ffe4e6; color: #9f1239; border-color: #fda4af; }
+        .mesa-cleaning { background-color: #fef3c7; color: #92400e; border-color: #fcd34d; }
+
+        /* Compatibilidad con Modo Oscuro de Filament */
+        .dark .mesa-available { background-color: rgba(22, 101, 52, 0.4); color: #86efac; border-color: #14532d; }
+        .dark .mesa-occupied { background-color: rgba(159, 18, 57, 0.4); color: #fda4af; border-color: #881337; }
+        .dark .mesa-cleaning { background-color: rgba(146, 64, 14, 0.4); color: #fcd34d; border-color: #78350f; }
+    </style>
+
+    <div class="space-y-8">
+        @forelse($zones as $zone)
+            <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+                <h2 class="text-xl font-black mb-4 text-gray-800 dark:text-gray-200 uppercase tracking-wider">
+                    {{ $zone->name }}
+                </h2>
+
+                <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                    @forelse($zone->tables as $table)
+                        @php
+                            // 🌟 ASIGNAMOS LA CLASE CSS SEGÚN EL ESTADO
+                            $statusClass = match($table->status) {
+                                'available' => 'mesa-available',
+                                'occupied' => 'mesa-occupied',
+                                'cleaning' => 'mesa-cleaning',
+                                default => 'bg-gray-100 text-gray-800 border-gray-300',
+                            };
+
+                            $icon = match($table->status) {
+                                'available' => 'heroicon-o-check-circle',
+                                'occupied' => 'heroicon-o-user-group',
+                                'cleaning' => 'heroicon-o-sparkles',
+                                default => 'heroicon-o-information-circle',
+                            };
+                        @endphp
+
+                        <button
+                            wire:click="openTable({{ $table->id }})"
+                            class="relative flex flex-col items-center justify-center p-4 rounded-xl border-2 transition-all hover:-translate-y-1 h-32 cursor-pointer shadow-sm group {{ $statusClass }}"
+                        >
+                            <x-icon name="{{ $icon }}" class="w-8 h-8 mb-2 opacity-70 group-hover:opacity-100 transition-opacity" />
+                            <span class="font-bold text-lg text-center leading-tight">{{ $table->name }}</span>
+                            <span class="text-xs mt-1 opacity-70 font-medium">{{ $table->capacity }} Sillas</span>
+
+                            @if($table->status === 'occupied')
+                                <div class="absolute top-3 right-3 flex h-3 w-3">
+                                  <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                                  <span class="relative inline-flex rounded-full h-3 w-3 bg-rose-500"></span>
+                                </div>
+                            @endif
+                        </button>
+                    @empty
+                        <div class="col-span-full text-center text-gray-500 py-4 font-medium">
+                            No hay mesas configuradas en esta zona.
+                        </div>
+                    @endforelse
+                </div>
+            </div>
+        @empty
+            <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-8 text-center">
+                <x-heroicon-o-exclamation-circle class="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100">No hay zonas configuradas</h3>
+                <p class="mt-1 text-sm text-gray-500">Ve a Configuración > Zonas y Mesas para crear tu primera zona.</p>
+            </div>
+        @endforelse
+    </div>
+</x-filament-panels::page>

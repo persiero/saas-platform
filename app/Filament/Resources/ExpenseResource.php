@@ -14,12 +14,12 @@ use Illuminate\Database\Eloquent\Builder;
 class ExpenseResource extends Resource
 {
     protected static ?string $model = Expense::class;
+
     protected static ?string $navigationIcon = 'heroicon-o-banknotes';
-    protected static ?string $navigationLabel = 'Gastos';
+    protected static ?string $navigationGroup = 'Finanzas';
     protected static ?string $modelLabel = 'Gasto';
     protected static ?string $pluralModelLabel = 'Gastos';
-    protected static ?string $navigationGroup = 'Finanzas';
-    protected static ?int $navigationSort = 32;
+    protected static ?int $navigationSort = 2;
 
     /**
      * Oculta el módulo de Reportes para el Súper Admin

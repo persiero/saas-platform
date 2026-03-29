@@ -37,25 +37,41 @@ class ListSales extends ListRecords
 
     protected function getHeaderActions(): array
     {
-        // 1. Verificamos si el usuario logueado tiene una caja abierta en este momento
+        // 1. Verificamos si el negocio es un Restaurante
+        $features = Auth::user()->tenant->businessSector->features ?? [];
+        $isRestaurant = $features['has_tables'] ?? false;
+
+        // 2. Verificamos si el usuario logueado tiene una caja abierta en este momento
         $hasOpenRegister = \Percy\Core\Models\CashRegister::where('tenant_id', Auth::user()->tenant_id)
             ->where('user_id', Auth::id())
             ->where('status', 'open')
             ->exists();
 
-        // 2. Si NO tiene caja abierta, cambiamos el botón
+        // 3. Si NO tiene caja abierta, bloqueamos la venta para TODOS (Farmacias y Restaurantes)
         if (!$hasOpenRegister) {
             return [
                 \Filament\Actions\Action::make('abrirCaja')
                     ->label('Abrir Caja para Vender')
-                    ->color('warning') // Color naranja/amarillo para llamar la atención
+                    ->color('warning')
                     ->icon('heroicon-o-lock-closed')
-                    // Lo redirigimos mágicamente al módulo de Cajas
                     ->url(\App\Filament\Resources\CashRegisterResource::getUrl('index')),
             ];
         }
 
-        // 3. Si SÍ tiene caja abierta, mostramos el botón normal de Nueva Venta
+        // 4. Si TIENE caja abierta, pero ES RESTAURANTE: Lo mandamos al Mapa de Mesas
+        if ($isRestaurant) {
+            return [
+                \Filament\Actions\Action::make('irMapaMesas')
+                    ->label('Ir a Atención de Mesas')
+                    ->color('primary')
+                    ->icon('heroicon-o-squares-2x2')
+                    ->url(\App\Filament\Pages\PosRestaurant::getUrl()),
+            ];
+            // Nota: Si prefieres que simplemente no haya NINGÚN botón,
+            // borra la acción de arriba y deja solo: return [];
+        }
+
+        // 5. Si TIENE caja abierta y NO es restaurante (Ej: Farmacia): Mostramos el botón normal
         return [
             \Filament\Actions\CreateAction::make()
                 ->label('Nueva Venta')

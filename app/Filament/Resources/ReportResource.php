@@ -8,11 +8,10 @@ use Filament\Resources\Resource;
 class ReportResource extends Resource
 {
     protected static ?string $navigationIcon = 'heroicon-o-chart-bar';
-    protected static ?string $navigationLabel = 'Reportes';
+    protected static ?string $navigationGroup = 'Finanzas';
     protected static ?string $modelLabel = 'Reporte';
     protected static ?string $pluralModelLabel = 'Reportes';
-    protected static ?string $navigationGroup = 'Finanzas';
-    protected static ?int $navigationSort = 33;
+    protected static ?int $navigationSort = 3;
 
     public static function canViewAny(): bool
     {

@@ -30,10 +30,9 @@ class SaleResource extends Resource
     protected static ?string $model = Sale::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-shopping-cart';
-    protected static ?string $navigationLabel = 'Ventas';
     protected static ?string $modelLabel = 'Venta';
     protected static ?string $pluralModelLabel = 'Ventas';
-    protected static ?int $navigationSort = 10;
+    protected static ?int $navigationSort = 2;
 
     public static function getEloquentQuery(): Builder
     {
@@ -1026,6 +1025,10 @@ class SaleResource extends Resource
                         ->requiresConfirmation()
                         ->action(function (Sale $record) {
                             try {
+
+                                // 🌟 SOLUCIÓN AL LAZY LOADING: Precargamos las relaciones que SUNAT necesita
+                                $record->loadMissing('items.afectacionIgv', 'customer');
+
                                 $service = new \Percy\Core\Services\SunatService();
                                 $result = $service->processAndSend($record);
 
