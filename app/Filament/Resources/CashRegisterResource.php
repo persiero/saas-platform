@@ -21,12 +21,12 @@ use Illuminate\Support\Facades\Auth;
 class CashRegisterResource extends Resource
 {
     protected static ?string $model = CashRegister::class;
+
     protected static ?string $navigationIcon = 'heroicon-o-calculator';
-    protected static ?string $navigationLabel = 'Caja';
+    protected static ?string $navigationGroup = 'Finanzas';
     protected static ?string $modelLabel = 'Caja';
     protected static ?string $pluralModelLabel = 'Cajas';
-    protected static ?string $navigationGroup = 'Finanzas';
-    protected static ?int $navigationSort = 30;
+    protected static ?int $navigationSort = 1;
 
     /**
      * Oculta el módulo de Reportes para el Súper Admin

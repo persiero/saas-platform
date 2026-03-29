@@ -19,11 +19,10 @@ class CategoryResource extends Resource
     protected static ?string $model = Category::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-tag';
-    protected static ?string $navigationLabel = 'Categorías';
+    protected static ?string $navigationGroup = 'Catálogos';
     protected static ?string $modelLabel = 'Categoría';
     protected static ?string $pluralModelLabel = 'Categorías';
-    protected static ?string $navigationGroup = 'Catálogos';
-    protected static ?int $navigationSort = 21;
+    protected static ?int $navigationSort = 2;
 
     public static function getEloquentQuery(): Builder
     {

@@ -27,11 +27,10 @@ class ProductResource extends Resource
     protected static ?string $model = Product::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-cube';
-    protected static ?string $navigationLabel = 'Productos';
+    protected static ?string $navigationGroup = 'Catálogos';
     protected static ?string $modelLabel = 'Producto';
     protected static ?string $pluralModelLabel = 'Productos';
-    protected static ?string $navigationGroup = 'Catálogos';
-    protected static ?int $navigationSort = 22;
+    protected static ?int $navigationSort = 3;
 
     // Filtro global para asegurar que solo se vean productos del tenant actual
     public static function getEloquentQuery(): Builder
@@ -107,7 +106,13 @@ class ProductResource extends Resource
                             ->label('Código de Barras')
                             ->prefixIcon('heroicon-o-qr-code')
                             ->placeholder('Escanea o digita el código')
-                            ->unique(ignoreRecord: true), // Evita que dos productos tengan el mismo código
+                            ->unique(ignoreRecord: true) // Evita que dos productos tengan el mismo código
+                            // 🌟 OCULTAR SEGÚN EL SEEDER
+                            ->hidden(function () {
+                                $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                                // Oculta el campo si 'has_barcode_scanner' es false. (Si no existe, asume true por defecto).
+                                return !($features['has_barcode_scanner'] ?? true);
+                            }),
 
                         Forms\Components\Select::make('unidad_sunat_id')
                             ->relationship('unidadSunat', 'descripcion')
@@ -278,6 +283,11 @@ class ProductResource extends Resource
                     ->label('Cód. Barras')
                     ->icon('heroicon-o-qr-code')
                     ->searchable() // ¡Esto automáticamente agrega la búsqueda general por código!
+                    // 🌟 OCULTAR LA COLUMNA SEGÚN EL SEEDER DEL NEGOCIO
+                    ->hidden(function () {
+                        $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                        return !($features['has_barcode_scanner'] ?? true);
+                    })
                     ->sortable()
                     ->copyable() // UX Extra: Permite copiar el código con un clic
                     ->copyMessage('Código copiado')
@@ -294,21 +304,46 @@ class ProductResource extends Resource
 
                 Tables\Columns\TextColumn::make('current_stock')
                     ->label('Stock')
-                    ->numeric()
+                    //->numeric()
                     ->badge()
                     ->state(function (Product $record): float {
                         $record->refresh();
                         return $record->current_stock;
                     })
-                    ->icon(fn (float $state): string => match (true) {
-                        $state <= 5 => 'heroicon-o-exclamation-triangle',
-                        $state <= 15 => 'heroicon-o-exclamation-circle',
-                        default => 'heroicon-o-check-circle',
+                    // 🌟 1. FORMATEAMOS EL TEXTO (Rayitas para servicios, número para productos)
+                    ->formatStateUsing(function (float $state, \Percy\Core\Models\Product $record): string {
+                        if ($record->type === 'service') {
+                            return '---';
+                        }
+                        return (string) $state;
                     })
-                    ->color(fn (float $state): string => match (true) {
-                        $state <= 5 => 'danger',
-                        $state <= 15 => 'warning',
-                        default => 'success',
+                    // 🌟 2. CONTROLAMOS EL ÍCONO
+                    ->icon(function (float $state, \Percy\Core\Models\Product $record): ?string {
+                        // Si es servicio, no mostramos ningún ícono de alerta
+                        if ($record->type === 'service') {
+                            return null; // O puedes poner 'heroicon-m-minus' si quieres un guion
+                        }
+
+                        // Si es producto, aplicamos tu lógica original
+                        return match (true) {
+                            $state <= 5 => 'heroicon-o-exclamation-triangle',
+                            $state <= 15 => 'heroicon-o-exclamation-circle',
+                            default => 'heroicon-o-check-circle',
+                        };
+                    })
+                    // 🌟 3. CONTROLAMOS EL COLOR
+                    ->color(function (float $state, \Percy\Core\Models\Product $record): string {
+                        // Si es servicio, siempre será gris (neutral)
+                        if ($record->type === 'service') {
+                            return 'gray';
+                        }
+
+                        // Si es producto, aplicamos tu lógica original
+                        return match (true) {
+                            $state <= 5 => 'danger',
+                            $state <= 15 => 'warning',
+                            default => 'success',
+                        };
                     })
                     ->sortable(),
 

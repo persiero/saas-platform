@@ -68,6 +68,15 @@ class AdminPanelProvider extends PanelProvider
             ->authMiddleware([
                 \App\Http\Middleware\SetPanelTheme::class,
             ])
+
+            // 🌟 MAGIA: Forzamos el orden global de los grupos del menú
+            ->navigationGroups([
+                'Catálogos',
+                'Inventario',
+                'Finanzas',
+                'Configuración',
+            ])
+
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')
             ->pages([

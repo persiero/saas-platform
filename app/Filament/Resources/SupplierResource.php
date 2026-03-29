@@ -16,12 +16,12 @@ use Illuminate\Database\Eloquent\SoftDeletingScope;
 class SupplierResource extends Resource
 {
     protected static ?string $model = Supplier::class;
+
     protected static ?string $navigationIcon = 'heroicon-o-building-office-2';
-    protected static ?string $navigationLabel = 'Proveedores';
+    protected static ?string $navigationGroup = 'Inventario';
     protected static ?string $modelLabel = 'Proveedor';
     protected static ?string $pluralModelLabel = 'Proveedores';
-    protected static ?string $navigationGroup = 'Inventario';
-    protected static ?int $navigationSort = 50;
+    protected static ?int $navigationSort = 2;
 
     /**
      * Oculta el módulo de Reportes para el Súper Admin y para los Cajeros/Vendedores

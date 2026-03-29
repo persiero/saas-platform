@@ -17,12 +17,12 @@ use Illuminate\Database\Eloquent\Builder;
 class PurchaseResource extends Resource
 {
     protected static ?string $model = Purchase::class;
+
     protected static ?string $navigationIcon = 'heroicon-o-shopping-bag';
-    protected static ?string $navigationLabel = 'Compras';
+    protected static ?string $navigationGroup = 'Inventario';
     protected static ?string $modelLabel = 'Compra';
     protected static ?string $pluralModelLabel = 'Compras';
-    protected static ?string $navigationGroup = 'Inventario';
-    protected static ?int $navigationSort = 51;
+    protected static ?int $navigationSort = 1;
 
     public static function canViewAny(): bool
     {

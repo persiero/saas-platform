@@ -21,9 +21,10 @@ class SerieResource extends Resource
     protected static ?string $model = Serie::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-document-duplicate';
-    protected static ?string $navigationLabel = 'Series Comprobantes';
     protected static ?string $navigationGroup = 'Configuración';
-    protected static ?int $navigationSort = 62;
+    protected static ?string $modelLabel = 'Serie de Comprobante';
+    protected static ?string $pluralModelLabel = 'Series de Comprobantes';
+    protected static ?int $navigationSort = 2;
 
     public static function canViewAny(): bool
     {

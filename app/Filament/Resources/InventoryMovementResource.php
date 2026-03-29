@@ -19,11 +19,11 @@ class InventoryMovementResource extends Resource
     protected static ?string $model = InventoryMovement::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-clipboard-document-list';
+    protected static ?string $navigationGroup = 'Inventario';
     protected static ?string $navigationLabel = 'Kardex (Movimientos)';
     protected static ?string $modelLabel = 'Movimiento';
     protected static ?string $pluralModelLabel = 'Movimientos de Inventario';
-    protected static ?string $navigationGroup = 'Inventario';
-    protected static ?int $navigationSort = 30;
+    protected static ?int $navigationSort = 3;
 
     /**
      * Oculta el módulo de Reportes para el Súper Admin y para los Cajeros/Vendedores
