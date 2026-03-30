@@ -46,7 +46,7 @@ class AdminPanelProvider extends PanelProvider
             ->brandName('Virtual TI SaaS')
 
             // El Favicon (icono pequeño de la pestaña del navegador)
-            ->favicon(asset('images/favicon.png?v=3')) // Asegúrate de tener un favicon.ico en public
+            ->favicon(asset('images/favicon.png').'?v=2') // Asegúrate de tener un favicon.ico en public
 
             // 🌈 COLOR FIJO (El color del "SaaS" antes de entrar)
             ->colors([
