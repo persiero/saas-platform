@@ -1,6 +1,7 @@
 <x-filament-panels::page>
     {{-- 🌟 FORZAMOS LOS COLORES CON CSS PARA EVITAR QUE TAILWIND LOS BORRE --}}
     <style>
+        /* Colores de estado */
         .mesa-available { background-color: #dcfce7; color: #166534; border-color: #86efac; }
         .mesa-occupied { background-color: #ffe4e6; color: #9f1239; border-color: #fda4af; }
         .mesa-cleaning { background-color: #fef3c7; color: #92400e; border-color: #fcd34d; }
@@ -9,6 +10,30 @@
         .dark .mesa-available { background-color: rgba(22, 101, 52, 0.4); color: #86efac; border-color: #14532d; }
         .dark .mesa-occupied { background-color: rgba(159, 18, 57, 0.4); color: #fda4af; border-color: #881337; }
         .dark .mesa-cleaning { background-color: rgba(146, 64, 14, 0.4); color: #fcd34d; border-color: #78350f; }
+
+        /* 🌟 MAGIA CSS RESPONSIVE (AMPLIADO) 🌟 */
+        .mesas-grid {
+            display: grid;
+            gap: 1.5rem; /* Aumentamos la separación entre mesas */
+            /* 🌟 CORRECCIÓN: Subimos el mínimo a 170px para que las mesas sean más GRANDES */
+            grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+        }
+
+        .mesa-btn {
+            aspect-ratio: 1 / 1; /* Cuadrado perfecto siempre */
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            /* 🌟 CORRECCIÓN: Aumentamos el padding interno a 1.25rem (20px) para dar AIRE */
+            padding: 1.25rem;
+            transition: all 0.2s ease-in-out;
+        }
+
+        .mesa-btn:hover {
+            transform: scale(1.05); /* Efecto de enfoque elegante */
+        }
     </style>
 
     <div class="space-y-8">
@@ -18,7 +43,8 @@
                     {{ $zone->name }}
                 </h2>
 
-                <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                {{-- 🌟 Usamos nuestra nueva clase mesas-grid en lugar de las de Tailwind --}}
+                <div class="mesas-grid">
                     @forelse($zone->tables as $table)
                         @php
                             // 🌟 ASIGNAMOS LA CLASE CSS SEGÚN EL ESTADO
@@ -37,17 +63,23 @@
                             };
                         @endphp
 
+                        {{-- 🌟 Usamos nuestra clase mesa-btn y quitamos las de tamaño de Tailwind --}}
                         <button
                             wire:click="openTable({{ $table->id }})"
-                            class="relative flex flex-col items-center justify-center p-4 rounded-xl border-2 transition-all hover:-translate-y-1 h-32 cursor-pointer shadow-sm group {{ $statusClass }}"
+                            class="relative rounded-2xl border-2 cursor-pointer shadow-sm group mesa-btn {{ $statusClass }}"
                         >
-                            <x-icon name="{{ $icon }}" class="w-8 h-8 mb-2 opacity-70 group-hover:opacity-100 transition-opacity" />
-                            <span class="font-bold text-lg text-center leading-tight">{{ $table->name }}</span>
-                            <span class="text-xs mt-1 opacity-70 font-medium">{{ $table->capacity }} Sillas</span>
+                            {{-- 🌟 Ícono más grande (w-8 h-8) --}}
+                            <x-icon name="{{ $icon }}" class="w-8 h-8 mb-3 opacity-70 group-hover:opacity-100 transition-opacity" />
 
-                            {{-- 🌟 MAGIA UX: Mostrar nombre del mozo si la mesa está ocupada --}}
+                            {{-- 🌟 Nombre de Mesa Dominante (text-2xl, 24px) --}}
+                            <span class="font-bold text-2xl text-center leading-tight">{{ $table->name }}</span>
+
+                            {{-- 🌟 Capacidad clara (text-sm, 14px) --}}
+                            <span class="text-sm mt-1 opacity-70 font-medium">{{ $table->capacity }} Sillas</span>
+
+                            {{-- 🌟 MAGIA UX: Mostrar nombre del mozo si la mesa está ocupada (Badge balanceado) --}}
                             @if($table->status === 'occupied' && $table->activeSale)
-                                <div class="mt-2 text-[10px] font-bold uppercase tracking-wider bg-white/50 dark:bg-black/20 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                <div class="mt-3 text-[10px] font-bold uppercase tracking-wider bg-white/50 dark:bg-black/20 px-2.5 py-1 rounded-full flex items-center gap-1">
                                     <x-heroicon-s-user class="w-3 h-3" />
                                     {{ explode(' ', $table->activeSale->user->name)[0] ?? 'Cajero' }}
                                 </div>
