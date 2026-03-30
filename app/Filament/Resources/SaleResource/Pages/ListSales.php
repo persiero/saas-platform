@@ -21,15 +21,15 @@ class ListSales extends ListRecords
     {
         parent::mount();
 
+        // 🌟 CORRECCIÓN 1: Verificamos si hay caja abierta en el LOCAL (sin importar el usuario)
         $openCash = CashRegister::where('tenant_id', Auth::user()->tenant_id)
-            ->where('user_id', Auth::id())
             ->where('status', 'open')
             ->exists();
 
         if (!$openCash) {
             Notification::make()
                 ->title('Caja Cerrada')
-                ->body('Recuerda abrir una caja antes de realizar ventas.')
+                ->body('Recuerda que debe haber una caja abierta en el local para registrar ventas.')
                 ->warning()
                 ->send();
         }
@@ -41,9 +41,8 @@ class ListSales extends ListRecords
         $features = Auth::user()->tenant->businessSector->features ?? [];
         $isRestaurant = $features['has_tables'] ?? false;
 
-        // 2. Verificamos si el usuario logueado tiene una caja abierta en este momento
+        // 🌟 CORRECCIÓN 2: Verificamos si hay caja abierta en el LOCAL
         $hasOpenRegister = \Percy\Core\Models\CashRegister::where('tenant_id', Auth::user()->tenant_id)
-            ->where('user_id', Auth::id())
             ->where('status', 'open')
             ->exists();
 
@@ -67,8 +66,6 @@ class ListSales extends ListRecords
                     ->icon('heroicon-o-squares-2x2')
                     ->url(\App\Filament\Pages\PosRestaurant::getUrl()),
             ];
-            // Nota: Si prefieres que simplemente no haya NINGÚN botón,
-            // borra la acción de arriba y deja solo: return [];
         }
 
         // 5. Si TIENE caja abierta y NO es restaurante (Ej: Farmacia): Mostramos el botón normal

@@ -29,7 +29,8 @@ class PosRestaurant extends Page
         $zones = Zone::where('tenant_id', Auth::user()->tenant_id)
             ->where('is_active', true)
             ->with(['tables' => function ($query) {
-                $query->where('is_active', true);
+                $query->where('is_active', true)
+                      ->with(['activeSale.user']); // 🌟 MAGIA: Carga la venta activa y su usuario
             }])
             ->get();
 

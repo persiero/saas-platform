@@ -35,53 +35,52 @@ class TenantResource extends Resource
             ->schema([
                 Forms\Components\Tabs::make('Configuración del Inquilino')
                     ->tabs([
-                        // PESTAÑA 1: Sistema SaaS (Tus campos originales intactos)
+                        // PESTAÑA 1: Sistema SaaS
                         Forms\Components\Tabs\Tab::make('Sistema SaaS')
                             ->icon('heroicon-o-server')
                             ->schema([
                                 Forms\Components\TextInput::make('name')
                                     ->label('Nombre del Negocio')
                                     ->required()
-                                    ->columnSpan(2),
+                                    ->columnSpanFull(), // 🌟 Cambiado a Full para que siempre ocupe todo el ancho
 
-                                // NUEVO: Selector de Giro de Negocio vinculado a la tabla business_sectors
                                 Forms\Components\Select::make('business_sector_id')
                                     ->label('Giro del Negocio')
                                     ->relationship('businessSector', 'name')
                                     ->searchable()
                                     ->preload()
                                     ->required()
-                                    ->columnSpan(1),
+                                    ->columnSpan(['default' => 1, 'sm' => 1]), // 🌟 1 col en móvil, 1 en PC
 
                                 Forms\Components\TextInput::make('domain')
                                     ->label('Subdominio')
                                     ->unique(ignoreRecord: true)
-                                    ->prefix('https://') // UX: Le muestra cómo se verá
-                                    ->suffix('.tusaas.com') // 👈 CAMBIA ESTO por tu dominio real
-                                    ->columnSpan(1),
+                                    ->prefix('https://')
+                                    ->suffix('.tusaas.com')
+                                    ->columnSpan(['default' => 1, 'sm' => 1]), // 🌟 1 col en móvil, 1 en PC
 
                                 Forms\Components\Toggle::make('is_active')
                                     ->label('¿Está Activo?')
                                     ->helperText('Apágalo si el cliente no pagó su mensualidad.')
                                     ->default(true)
-                                    ->columnSpanFull(), // Para que ocupe todo el ancho y no descuadre
-                            ])->columns(2),
+                                    ->columnSpanFull(),
+                            ])->columns(['default' => 1, 'sm' => 2]), // 🌟 MAGIA RESPONSIVE: 1 col móvil, 2 col PC
 
-                        // PESTAÑA 2: Datos Fiscales (Para la factura)
+                        // PESTAÑA 2: Datos Fiscales
                         Forms\Components\Tabs\Tab::make('Datos Fiscales')
                             ->icon('heroicon-o-building-storefront')
                             ->schema([
                                 Forms\Components\TextInput::make('ruc')
                                     ->label('RUC')
                                     ->numeric()
-                                    ->length(11) // Obliga a que sean 11 dígitos
-                                    ->required() // El RUC debería ser obligatorio para SUNAT
-                                    ->columnSpan(1),
+                                    ->length(11)
+                                    ->required()
+                                    ->columnSpan(['default' => 1, 'sm' => 1, 'md' => 1]),
 
                                 Forms\Components\TextInput::make('business_name')
                                     ->label('Razón Social')
                                     ->required()
-                                    ->columnSpan(2),
+                                    ->columnSpan(['default' => 1, 'sm' => 2, 'md' => 2]), // Ocupa más espacio en PC
 
                                 Forms\Components\TextInput::make('address')
                                     ->label('Dirección Fiscal')
@@ -91,20 +90,20 @@ class TenantResource extends Resource
                                     ->label('Ubigeo')
                                     ->length(6)
                                     ->placeholder('Ej: 130101 (Trujillo)')
-                                    ->columnSpan(1),
+                                    ->columnSpan(['default' => 1, 'sm' => 1]),
 
                                 Forms\Components\TextInput::make('phone')
                                     ->label('Teléfono')
                                     ->tel()
-                                    ->columnSpan(1),
+                                    ->columnSpan(['default' => 1, 'sm' => 1]),
 
                                 Forms\Components\TextInput::make('email')
                                     ->label('Correo Electrónico')
                                     ->email()
-                                    ->columnSpan(1),
-                            ])->columns(3),
+                                    ->columnSpan(['default' => 1, 'sm' => 1]),
+                            ])->columns(['default' => 1, 'sm' => 2, 'md' => 3]), // 🌟 1 en móvil, 2 en tablet, 3 en monitor grande
 
-                        // PESTAÑA 3: Motor SUNAT (Credenciales)
+                        // PESTAÑA 3: Motor SUNAT
                         Forms\Components\Tabs\Tab::make('Facturación Electrónica')
                             ->icon('heroicon-o-document-check')
                             ->schema([
@@ -119,26 +118,30 @@ class TenantResource extends Resource
                                     ->columnSpanFull(),
 
                                 Forms\Components\TextInput::make('sunat_sol_user')
-                                    ->label('Usuario SOL'),
+                                    ->label('Usuario SOL')
+                                    ->columnSpan(['default' => 1, 'sm' => 1]),
+
                                 Forms\Components\TextInput::make('sunat_sol_pass')
                                     ->label('Clave SOL')
                                     ->password()
-                                    ->revealable(),
+                                    ->revealable()
+                                    ->columnSpan(['default' => 1, 'sm' => 1]),
 
                                 Forms\Components\FileUpload::make('sunat_certificate')
                                     ->label('Certificado Digital (.pem / .pfx)')
-                                    ->disk('sunat') // <-- OBLIGATORIO: Indica que use storage/app
-                                    ->directory('certificates') // Se guardará en storage/app/private/certificates
+                                    ->disk('sunat')
+                                    ->directory('certificates')
                                     ->visibility('private')
-                                    //->acceptedFileTypes(['application/x-x509-ca-cert', 'application/x-pkcs12', 'text/plain'])
                                     ->nullable()
-                                    ->helperText('Puedes subir el certificado más adelante.'),
+                                    ->helperText('Puedes subir el certificado más adelante.')
+                                    ->columnSpan(['default' => 1, 'sm' => 1]),
 
                                 Forms\Components\TextInput::make('sunat_certificate_password')
                                     ->label('Contraseña del Certificado')
                                     ->password()
-                                    ->revealable(),
-                            ])->columns(2),
+                                    ->revealable()
+                                    ->columnSpan(['default' => 1, 'sm' => 1]),
+                            ])->columns(['default' => 1, 'sm' => 2]), // 🌟 1 col móvil, 2 col PC
 
                         // PESTAÑA 4: Preferencias de Venta
                         Forms\Components\Tabs\Tab::make('Preferencias')
@@ -147,19 +150,21 @@ class TenantResource extends Resource
                                 Forms\Components\TextInput::make('igv_percentage')
                                     ->label('Porcentaje de IGV (%)')
                                     ->numeric()
-                                    ->default(18),
+                                    ->default(18)
+                                    ->columnSpanFull(), // Mejor full para que no quede huérfano
 
                                 Forms\Components\Toggle::make('prices_include_igv')
                                     ->label('Los precios del catálogo ya incluyen IGV')
-                                    ->default(true),
+                                    ->default(true)
+                                    ->columnSpanFull(),
 
                                 Forms\Components\Toggle::make('auto_send_sunat')
                                     ->label('Enviar a SUNAT automáticamente')
-                                    ->default(true),
-                            ])->columns(2),
+                                    ->default(true)
+                                    ->columnSpanFull(),
+                            ])->columns(['default' => 1, 'sm' => 2]),
                     ])
                     ->columnSpanFull()
-                    // Evitamos que las pestañas se vean comprimidas en pantallas grandes
                     ->contained(false),
             ]);
     }

@@ -25,19 +25,23 @@ class ZoneResource extends Resource
     protected static ?string $pluralModelLabel = 'Zonas y Mesas';
     protected static ?int $navigationSort = 3;
 
-    // 🌟 MAGIA SAAS: Solo se muestra si el negocio es Restaurante (has_tables = true)
-    public static function canViewAny(): bool
-    {
-        $features = Auth::user()->tenant->businessSector->features ?? [];
-        return $features['has_tables'] ?? false;
-    }
-
     // 🌟 SEGURIDAD SAAS: Solo trae las zonas de ESTE inquilino
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()
             ->where('tenant_id', Auth::user()->tenant_id)
             ->withCount('tables'); // Trae el conteo de mesas para mostrar en la tabla
+    }
+
+    // 🌟 MAGIA SAAS: Solo se muestra si el negocio es Restaurante (has_tables = true)
+    public static function canViewAny(): bool
+    {
+        /** @var \Percy\Core\Models\User $user */
+        $user = Auth::user();
+        $features = $user->tenant->businessSector->features ?? [];
+
+        // 🌟 COMBINADO: Debe ser restaurante Y NO ser Vendedor
+        return ($features['has_tables'] ?? false) && !$user->hasRole('Vendedor');
     }
 
     public static function form(Form $form): Form

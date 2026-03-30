@@ -45,6 +45,15 @@
                             <span class="font-bold text-lg text-center leading-tight">{{ $table->name }}</span>
                             <span class="text-xs mt-1 opacity-70 font-medium">{{ $table->capacity }} Sillas</span>
 
+                            {{-- 🌟 MAGIA UX: Mostrar nombre del mozo si la mesa está ocupada --}}
+                            @if($table->status === 'occupied' && $table->activeSale)
+                                <div class="mt-2 text-[10px] font-bold uppercase tracking-wider bg-white/50 dark:bg-black/20 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                    <x-heroicon-s-user class="w-3 h-3" />
+                                    {{ explode(' ', $table->activeSale->user->name)[0] ?? 'Cajero' }}
+                                </div>
+                            @endif
+
+                            {{-- El puntito rojo parpadeante --}}
                             @if($table->status === 'occupied')
                                 <div class="absolute top-3 right-3 flex h-3 w-3">
                                   <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>

@@ -28,16 +28,29 @@ class PosOrder extends Page
     // Categoría seleccionada actualmente (null = Todas)
     public $selectedCategoryId = null;
 
+    // 🌟 Agrega esto a tus propiedades
+    public $activeCashRegister;
+
     // 🌟 MAGIA UX: Cambia el título grande de la página dinámicamente
     public function getHeading(): string
     {
-        return 'Atendiendo: ' . ($this->sale->table->name ?? 'Mesa');
+        $nombreMesa = $this->sale->table->name ?? 'Mesa';
+
+        // Obtenemos el nombre del mozo dueño de la cuenta (solo su primer nombre para no saturar)
+        $nombreMozo = $this->sale->user ? explode(' ', $this->sale->user->name)[0] : 'Cajero';
+
+        return "Atendiendo: {$nombreMesa} (Mozo: {$nombreMozo})";
     }
 
     public function mount(Sale $sale)
     {
         abort_unless($sale->tenant_id === Auth::user()->tenant_id, 403);
         $this->sale = $sale;
+
+        // 🌟 Buscamos la caja abierta de este local
+        $this->activeCashRegister = \Percy\Core\Models\CashRegister::where('tenant_id', Auth::user()->tenant_id)
+            ->where('status', 'open') // Asumo que usas 'open' o 'abierta', ajusta si es necesario
+            ->first();
     }
 
     // 🌟 TRAEMOS LAS CATEGORÍAS
@@ -72,6 +85,16 @@ class PosOrder extends Page
    // 🌟 ACCIÓN PRINCIPAL: Agregar plato a la comanda
     public function addProduct($productId)
     {
+        // 🌟 EL CANDADO DE CAJA: Si no hay caja abierta, bloqueamos todo
+        if (!$this->activeCashRegister) {
+            \Filament\Notifications\Notification::make()
+                ->danger()
+                ->title('Caja Cerrada')
+                ->body('Debe haber una caja abierta en el local para registrar pedidos.')
+                ->send();
+            return;
+        }
+
         $product = \Percy\Core\Models\Product::where('tenant_id', Auth::user()->tenant_id)->find($productId);
         if (!$product) return;
 
@@ -247,6 +270,8 @@ class PosOrder extends Page
             ->label('Cobrar')
             ->color('success')
             ->icon('heroicon-m-banknotes')
+            // 🌟 BLOQUEO DE MOZO: Oculta el botón si es Vendedor
+            ->visible(fn () => !Auth::user()->hasRole('Vendedor'))
             ->extraAttributes(['class' => 'w-full [&>button]:w-full [&>button]:justify-center'])
             ->modalHeading('Finalizar Venta')
             ->modalDescription('Por favor, selecciona cómo desea pagar el cliente.')
@@ -430,6 +455,8 @@ class PosOrder extends Page
                     'payment_reference' => $data['payment_reference'] ?? null,
                     'status' => 'completed',
                     'legend_text' => $legendText, // AQUÍ GUARDAMOS LAS LETRAS MAGÍCAMENTE
+                    // 🌟 MAGIA FINANCIERA: El dinero se va a la caja abierta, pero el user_id (Mozo) sigue intacto
+                    'cash_register_id' => $this->activeCashRegister->id,
                 ]);
 
                 // 3. Liberamos la Mesa

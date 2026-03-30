@@ -18,16 +18,16 @@ class CreateCashRegister extends CreateRecord
     {
         parent::mount();
 
+        // 🌟 CORRECCIÓN: Buscamos si el LOCAL (Tenant) tiene alguna caja abierta, sin importar qué usuario la abrió.
         $hasOpenCash = CashRegister::where('tenant_id', Auth::user()->tenant_id)
-            ->where('user_id', Auth::id())
             ->where('status', 'open')
             ->exists();
 
         if ($hasOpenCash) {
             Notification::make()
                 ->title('Caja Ya Abierta')
-                ->body('Ya tienes una caja abierta. Debes cerrarla antes de abrir una nueva.')
-                ->warning()
+                ->body('Ya existe una caja abierta en este local. Debes cerrarla (Arqueo) antes de abrir un nuevo turno.')
+                ->danger() // Cambié warning() a danger() para que sea rojo y más evidente
                 ->persistent()
                 ->send();
 
@@ -41,7 +41,7 @@ class CreateCashRegister extends CreateRecord
         $data['user_id'] = Auth::id();
         $data['opened_at'] = now();
         $data['status'] = 'open';
-        
+
         return $data;
     }
 

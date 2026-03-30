@@ -15,7 +15,7 @@
                     <p class="text-xs text-gray-500">Comanda: {{ $sale->series }}-{{ $sale->correlative }}</p>
                 </div>
                 <x-filament::button href="{{ route('filament.admin.pages.pos-restaurant') }}" tag="a" color="gray" icon="heroicon-m-arrow-left">
-                    Volver al Mapa
+                    Volver a mesas
                 </x-filament::button>
             </div>
 
