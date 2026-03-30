@@ -611,7 +611,9 @@ class SaleResource extends Resource
     {
         return $infolist
             ->schema([
+                // 🌟 CABECERA: Información General y de Restaurante
                 Section::make('Información del Comprobante')
+                    ->icon('heroicon-o-receipt-percent') // Iconito para que se vea mejor
                     ->schema([
                         TextEntry::make('document_type')
                             ->label('Comprobante')
@@ -620,7 +622,7 @@ class SaleResource extends Resource
                                 '03' => 'Boleta',
                                 '07' => 'Nota de Crédito',
                                 '08' => 'Nota de Débito',
-                                default => $state,
+                                default => 'Nota de Venta', // Es más elegante que mostrar '00'
                             })
                             ->badge()
                             ->color('info'),
@@ -629,39 +631,51 @@ class SaleResource extends Resource
                             ->label('Serie')
                             ->weight('bold'),
 
-                        // Si tienes un campo de correlativo en tu BD, ponlo aquí. Si no, bórralo.
                         TextEntry::make('correlative')
                             ->label('Correlativo')
                             ->weight('bold'),
 
+                        // 🌟 NUEVO: Mostramos la Mesa (Si es venta mostrador dirá "Para Llevar / Mostrador")
+                        TextEntry::make('table.name')
+                            ->label('Ubicación (Mesa)')
+                            ->icon('heroicon-o-squares-2x2')
+                            ->placeholder('Mostrador / Para llevar')
+                            ->badge()
+                            ->color('warning'),
+
                         TextEntry::make('customer.name')
                             ->label('Cliente')
+                            ->placeholder('Público en General') // Por si no hay cliente registrado
                             ->icon('heroicon-o-user'),
 
-                        // AGREGA ESTE NUEVO CAMPO:
                         TextEntry::make('user.name')
-                            ->label('Atendido por (Cajero)')
+                            ->label('Atendido por (Mozo/Cajero)')
                             ->icon('heroicon-o-identification')
                             ->weight('bold'),
 
                         TextEntry::make('sold_at')
                             ->label('Fecha de Emisión')
-                            ->dateTime('d/m/Y h:i A'),
-                    ])->columns(5),
+                            ->dateTime('d/m/Y h:i A')
+                            ->icon('heroicon-o-calendar'),
+                    ])->columns(4), // Cambiado a 4 columnas para que no se vea tan apretado
 
+                // 🌟 DETALLE: La Comanda / Ticket
                 Section::make('Detalle de Productos')
+                    ->icon('heroicon-o-shopping-bag')
                     ->schema([
-                        RepeatableEntry::make('items') // Asegúrate que tu relación de ítems se llame 'items'
+                        RepeatableEntry::make('items')
                             ->label('')
                             ->schema([
-                                TextEntry::make('product.name')
-                                    ->label('Producto')
-                                    ->weight('bold'),
-
                                 TextEntry::make('quantity')
                                     ->label('Cant.')
                                     ->badge()
                                     ->color('gray'),
+
+                                // 🌟 CAMBIO: Usamos 'item_name' en lugar de 'product.name'
+                                // Esto es vital contablemente: muestra el nombre exacto que tenía el producto en el momento de la venta
+                                TextEntry::make('item_name')
+                                    ->label('Producto')
+                                    ->weight('bold'),
 
                                 TextEntry::make('unit_price')
                                     ->label('Precio Unit.')
@@ -674,10 +688,14 @@ class SaleResource extends Resource
                                     ->weight('bold'),
                             ])
                             ->columns(4)
+                            ->grid(1) // 🌟 IMPORTANTE: Forza a que cada producto ocupe una fila entera, como un recibo
                     ]),
 
+                // 🌟 PIE: Resumen Financiero y Pagos
                 Section::make('Resumen Financiero')
+                    ->icon('heroicon-o-banknotes')
                     ->schema([
+                        // Parte superior: Impuestos
                         TextEntry::make('op_gravadas')
                             ->label('Op. Gravadas')
                             ->money('PEN'),
@@ -686,13 +704,27 @@ class SaleResource extends Resource
                             ->label('IGV (18%)')
                             ->money('PEN'),
 
-                        TextEntry::make('total')
-                            ->label('IMPORTE TOTAL')
-                            ->money('PEN')
-                            ->size(TextEntry\TextEntrySize::Large) // Letra más grande para el total
-                            ->weight('bold')
-                            ->color('primary'),
-                    ])->columns(3),
+                        // Parte inferior: Totales y Método de Pago
+                        \Filament\Infolists\Components\Grid::make(3)->schema([
+                            TextEntry::make('payment_method')
+                                ->label('Método de Pago')
+                                ->badge()
+                                ->color('primary'),
+
+                            TextEntry::make('payment_reference')
+                                ->label('N° Referencia / Operación')
+                                ->placeholder('No aplica')
+                                ->visible(fn ($record) => in_array($record->payment_method, ['Yape', 'Plin', 'Tarjeta', 'Transferencia'])),
+
+                            TextEntry::make('total')
+                                ->label('IMPORTE TOTAL PAGADO')
+                                ->money('PEN')
+                                ->size(TextEntry\TextEntrySize::Large)
+                                ->weight('black')
+                                ->color('success')
+                                ->columnSpan(fn ($record) => in_array($record->payment_method, ['Efectivo']) ? 2 : 1),
+                        ]),
+                    ])->columns(2),
             ]);
     }
 

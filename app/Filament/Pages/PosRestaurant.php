@@ -15,6 +15,8 @@ class PosRestaurant extends Page
     protected static string $view = 'filament.pages.pos-restaurant';
     protected static ?int $navigationSort = 1; // 👈 Va primero
 
+    // 🌟 MAGIA FILAMENT: Le decimos que use el 100% de la pantalla (Full)
+    protected ?string $maxContentWidth = 'full';
 
     // 🌟 MAGIA SAAS: Solo visible para restaurantes
     public static function canAccess(): bool
