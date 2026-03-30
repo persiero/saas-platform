@@ -101,10 +101,18 @@
                 </div>
             </div>
         @empty
-            <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-8 text-center">
-                <x-heroicon-o-exclamation-circle class="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100">No hay zonas configuradas</h3>
-                <p class="mt-1 text-sm text-gray-500">Ve a Configuración > Zonas y Mesas para crear tu primera zona.</p>
+            <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-12 flex flex-col items-center justify-center text-center">
+
+                {{-- 🌟 Contenedor circular elegante para el ícono --}}
+                <div class="p-4 rounded-full bg-gray-50 dark:bg-gray-900 mb-4 inline-flex">
+                    {{-- 🌟 CANDADO: width y height fijos para evitar que el SVG explote --}}
+                    <x-heroicon-o-exclamation-circle class="text-gray-400" style="width: 48px; height: 48px;" />
+                </div>
+
+                <h3 class="text-xl font-bold text-gray-900 dark:text-gray-100">No hay zonas configuradas</h3>
+                <p class="mt-2 text-sm text-gray-500 max-w-sm mx-auto">
+                    Aún no has dibujado el mapa de tu restaurante. Ve a <strong>Configuración > Zonas y Mesas</strong> para crear tu primer salón.
+                </p>
             </div>
         @endforelse
     </div>
