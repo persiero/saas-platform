@@ -123,10 +123,17 @@ class PosOrder extends Page
 
         // Si pasó el candado de stock (o es un servicio), procedemos a agregarlo
         if ($existingItem) {
+
+            // 🌟 CORRECCIÓN ERROR 3103 SUNAT: Recalculamos Totales e IGV por la nueva cantidad
+            $nuevoTotal = $cantidadDeseada * $existingItem->unit_price;
+            $nuevoIgvLinea = $cantidadDeseada * ($existingItem->unit_price - $existingItem->unit_value);
+
             $existingItem->update([
                 'quantity' => $cantidadDeseada,
-                'total' => $cantidadDeseada * $existingItem->unit_price,
+                'total' => $nuevoTotal,
+                'igv_amount' => round($nuevoIgvLinea, 2), // <- Ahora SUNAT recibirá el IGV correcto de la fila
             ]);
+
         } else {
             // Si es nuevo, lo agregamos a la comanda
             $afectacion = \Percy\Core\Models\AfectacionIgv::find($product->afectacion_igv_id ?? 1);

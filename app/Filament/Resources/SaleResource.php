@@ -37,8 +37,15 @@ class SaleResource extends Resource
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()
+            // 1. Filtro por local (Tenant)
             ->where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id)
-            // 🌟 LA CURA: Agregamos el 'with' encadenado al final
+
+            // 🌟 2. NUEVO: Ocultamos los borradores de mesas vacías
+            ->where(function ($query) {
+                $query->where('total', '>', 0)->orWhere('status', '!=', 'pending');
+            })
+
+            // 3. Tu precarga de relaciones intacta (Para que cargue rápido)
             ->with(['items.product', 'items.product.unidadSunat']);
     }
 
@@ -756,12 +763,15 @@ class SaleResource extends Resource
                     $record->document_type === '03' => 'success',
                     default => 'gray',
                 })
-                // 🌟 CAMBIO: Etiqueta "Anulado" debajo del número
+                // 🌟 MAGIA VISUAL AQUÍ: Agregamos la validación para Facturas y Boletas
                 ->description(fn (Sale $record): ?string => match (true) {
                     $record->status === 'canceled' => 'Anulado',
                     in_array($record->document_type, ['07', '08']) => "Ref: {$record->affected_document_series}-{$record->affected_document_correlative}",
-                    $record->document_type === '01' => 'Factura',
-                    $record->document_type === '03' => 'Boleta',
+
+                    // Si es Factura o Boleta Y tiene un documento afectado (la nota original), lo mostramos:
+                    $record->document_type === '01' => $record->affected_document_series ? "Factura (Ex {$record->affected_document_series}-{$record->affected_document_correlative})" : 'Factura',
+                    $record->document_type === '03' => $record->affected_document_series ? "Boleta (Ex {$record->affected_document_series}-{$record->affected_document_correlative})" : 'Boleta',
+
                     $record->document_type === '00' => 'Nota de Venta',
                     default => null,
                 }),
@@ -972,16 +982,20 @@ class SaleResource extends Resource
                                 'correlative' => $nuevoCorrelativo,
                                 'sold_at' => now(),
                                 'sunat_status' => 'pending',
+                                // 👇 Guardamos la huella de la Nota de Venta original
+                                'affected_document_type' => $originalDocType,
+                                'affected_document_series' => $originalSeries,
+                                'affected_document_correlative' => $record->correlative,
                             ]);
 
-                            $originalSerieConfig = \Percy\Core\Models\Serie::where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id)
+                            /*$originalSerieConfig = \Percy\Core\Models\Serie::where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id)
                                 ->where('document_type', $originalDocType)
                                 ->where('serie', $originalSeries)
                                 ->first();
 
                             if ($originalSerieConfig) {
                                 $originalSerieConfig->decrement('correlative');
-                            }
+                            }*/
 
                             \Filament\Notifications\Notification::make()
                                 ->success()
