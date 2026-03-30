@@ -24,34 +24,31 @@ class ListCashRegisters extends ListRecords
                 ->modalHeading('Apertura de Turno')
                 ->modalWidth('sm') // Modal pequeño y elegante
 
-                // 🌟 MAGIA VISUAL: Bloquea el botón si ya hay una caja abierta
+                // 🌟 MAGIA VISUAL: Bloquea el botón si ya hay una caja abierta en TODO el local
                 ->disabled(function () {
                     return CashRegister::where('tenant_id', Auth::user()->tenant_id)
-                        ->where('user_id', Auth::id())
                         ->where('status', 'open')
                         ->exists();
                 })
                 // 🌟 TOOLTIP: Le explica al usuario por qué el botón está bloqueado
                 ->tooltip(function () {
                     $hasOpenCash = CashRegister::where('tenant_id', Auth::user()->tenant_id)
-                        ->where('user_id', Auth::id())
                         ->where('status', 'open')
                         ->exists();
 
-                    return $hasOpenCash ? 'Debes cerrar tu caja actual para abrir una nueva.' : '';
+                    return $hasOpenCash ? 'Ya existe una caja abierta en el local. Ciérrala primero.' : '';
                 })
 
                 // ESTE ES TU CANDADO BACKEND (Lo dejamos como doble seguridad):
                 ->action(function (array $data) {
                     $hasOpenCash = CashRegister::where('tenant_id', Auth::user()->tenant_id)
-                        ->where('user_id', Auth::id())
                         ->where('status', 'open')
                         ->exists();
 
                     if ($hasOpenCash) {
                         Notification::make()
                             ->title('Acción Denegada')
-                            ->body('Ya tienes una caja abierta. Ciérrala primero.')
+                            ->body('Ya hay una caja abierta en este local. Ciérrala primero.')
                             ->warning()
                             ->send();
                         return; // Detiene la creación
@@ -70,5 +67,4 @@ class ListCashRegisters extends ListRecords
                 }),
         ];
     }
-
 }

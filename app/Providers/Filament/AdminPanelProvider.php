@@ -27,6 +27,16 @@ class AdminPanelProvider extends PanelProvider
             ->id('admin')
             ->path('admin')
             ->login()
+            // 🌟 REDIRECCIÓN INTELIGENTE
+            ->homeUrl(function () {
+                $user = \Illuminate\Support\Facades\Auth::user();
+                // Si es mozo/vendedor, apenas entra se va a las mesas
+                if ($user && $user->hasRole('Vendedor')) {
+                    return \App\Filament\Pages\PosRestaurant::getUrl();
+                }
+                // Si es cajero o admin, se va al Escritorio normal
+                return url('/admin');
+            })
             // 🚀 CONFIGURACIÓN DE BRANDING CON LOGOS PARA MODO CLARO Y OSCURO
             ->brandLogo(asset('images/logo.png')) // Logo para modo claro
             ->darkModeBrandLogo(asset('images/logo-dark.png')) // Logo para modo oscuro
@@ -80,7 +90,7 @@ class AdminPanelProvider extends PanelProvider
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')
             ->pages([
-                Pages\Dashboard::class,
+                \App\Filament\Pages\Dashboard::class,
             ])
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
             ->widgets([

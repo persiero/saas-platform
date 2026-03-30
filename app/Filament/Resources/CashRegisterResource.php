@@ -28,18 +28,21 @@ class CashRegisterResource extends Resource
     protected static ?string $pluralModelLabel = 'Cajas';
     protected static ?int $navigationSort = 1;
 
+    public static function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()->where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id);
+    }
+
     /**
      * Oculta el módulo de Reportes para el Súper Admin
      */
     public static function canViewAny(): bool
     {
-        // Retorna TRUE (lo muestra) solo si el usuario pertenece a una empresa
-        return \Illuminate\Support\Facades\Auth::user()->tenant_id !== null;
-    }
+        /** @var \Percy\Core\Models\User $user */
+        $user = \Illuminate\Support\Facades\Auth::user();
 
-    public static function getEloquentQuery(): Builder
-    {
-        return parent::getEloquentQuery()->where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id);
+        // 🌟 COMBINADO: Debe pertenecer a una empresa Y NO ser Vendedor
+        return $user->tenant_id !== null && !$user->hasRole('Vendedor');
     }
 
     public static function form(Form $form): Form
@@ -142,16 +145,13 @@ class CashRegisterResource extends Resource
                         Forms\Components\Placeholder::make('resumen')
                             ->label('Resumen del Turno')
                             ->content(function (CashRegister $record) {
-                                // Buscamos todas las ventas desde que se abrió esta caja
-                                $sales = \Percy\Core\Models\Sale::where('tenant_id', $record->tenant_id)
-                                    ->where('user_id', $record->user_id)
-                                    ->where('sold_at', '>=', $record->opened_at)
-                                    ->get();
+                                // 🌟 1. VENTAS: Traemos TODO lo que se haya registrado bajo el ID de esta caja (Adiós a los filtros de fecha y usuario)
+                                $sales = \Percy\Core\Models\Sale::where('cash_register_id', $record->id)->get();
 
-                                // Buscamos todos los gastos registrados en este turno
+                                // 🌟 2. GASTOS: Los gastos sí los buscamos por fecha en el local, sin importar qué usuario lo registró
+                                $endDate = $record->closed_at ?? now();
                                 $expenses = \Percy\Core\Models\Expense::where('tenant_id', $record->tenant_id)
-                                    ->where('user_id', $record->user_id)
-                                    ->where('created_at', '>=', $record->opened_at)
+                                    ->whereBetween('created_at', [$record->opened_at, $endDate])
                                     ->sum('amount');
 
                                 // Desglosamos por método de pago usando tu catálogo de opciones
@@ -265,10 +265,8 @@ class CashRegisterResource extends Resource
                                     ->money('PEN')
                                     ->color('success')
                                     ->state(function (CashRegister $record) {
-                                        $endDate = $record->closed_at ?? now();
-                                        return \Percy\Core\Models\Sale::where('tenant_id', $record->tenant_id)
-                                            ->where('user_id', $record->user_id)
-                                            ->whereBetween('sold_at', [$record->opened_at, $endDate])
+                                        // 🌟 MAGIA: Filtro directo a la caja
+                                        return \Percy\Core\Models\Sale::where('cash_register_id', $record->id)
                                             ->where('payment_method', 'Efectivo')
                                             ->sum('total');
                                     }),
@@ -280,7 +278,6 @@ class CashRegisterResource extends Resource
                                     ->state(function (CashRegister $record) {
                                         $endDate = $record->closed_at ?? now();
                                         return \Percy\Core\Models\Expense::where('tenant_id', $record->tenant_id)
-                                            ->where('user_id', $record->user_id)
                                             ->whereBetween('created_at', [$record->opened_at, $endDate])
                                             ->sum('amount');
                                     }),
@@ -292,11 +289,7 @@ class CashRegisterResource extends Resource
                                     ->size(TextEntry\TextEntrySize::Large)
                                     ->state(function (CashRegister $record) {
                                         $endDate = $record->closed_at ?? now();
-                                        $cashSales = \Percy\Core\Models\Sale::where('tenant_id', $record->tenant_id)
-                                            ->where('user_id', $record->user_id)
-                                            ->whereBetween('sold_at', [$record->opened_at, $endDate])
-                                            ->where('payment_method', 'Efectivo')
-                                            ->sum('total');
+                                        $cashSales = \Percy\Core\Models\Sale::where('cash_register_id', $record->id)->where('payment_method', 'Efectivo')->sum('total');
 
                                         $expenses = \Percy\Core\Models\Expense::where('tenant_id', $record->tenant_id)
                                             ->where('user_id', $record->user_id)
@@ -320,11 +313,7 @@ class CashRegisterResource extends Resource
                                     ->state(function (CashRegister $record) {
                                         if ($record->status === 'open') return 0;
 
-                                        $cashSales = \Percy\Core\Models\Sale::where('tenant_id', $record->tenant_id)
-                                            ->where('user_id', $record->user_id)
-                                            ->whereBetween('sold_at', [$record->opened_at, $record->closed_at])
-                                            ->where('payment_method', 'Efectivo')
-                                            ->sum('total');
+                                        $cashSales = \Percy\Core\Models\Sale::where('cash_register_id', $record->id)->where('payment_method', 'Efectivo')->sum('total');
 
                                         $expenses = \Percy\Core\Models\Expense::where('tenant_id', $record->tenant_id)
                                             ->where('user_id', $record->user_id)
@@ -347,10 +336,8 @@ class CashRegisterResource extends Resource
                                         ->label($method)
                                         ->money('PEN')
                                         ->state(function (CashRegister $record) use ($method) {
-                                            $endDate = $record->closed_at ?? now();
-                                            return \Percy\Core\Models\Sale::where('tenant_id', $record->tenant_id)
-                                                ->where('user_id', $record->user_id)
-                                                ->whereBetween('sold_at', [$record->opened_at, $endDate])
+                                            // 🌟 MAGIA DIRECTA
+                                            return \Percy\Core\Models\Sale::where('cash_register_id', $record->id)
                                                 ->where('payment_method', $method)
                                                 ->sum('total');
                                         });

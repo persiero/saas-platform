@@ -21,18 +21,21 @@ class ExpenseResource extends Resource
     protected static ?string $pluralModelLabel = 'Gastos';
     protected static ?int $navigationSort = 2;
 
+    public static function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()->where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id);
+    }
+
     /**
      * Oculta el módulo de Reportes para el Súper Admin
      */
     public static function canViewAny(): bool
     {
-        // Retorna TRUE (lo muestra) solo si el usuario pertenece a una empresa
-        return \Illuminate\Support\Facades\Auth::user()->tenant_id !== null;
-    }
+        /** @var \Percy\Core\Models\User $user */
+        $user = \Illuminate\Support\Facades\Auth::user();
 
-    public static function getEloquentQuery(): Builder
-    {
-        return parent::getEloquentQuery()->where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id);
+        // 🌟 COMBINADO: Debe pertenecer a una empresa Y NO ser Vendedor
+        return $user->tenant_id !== null && !$user->hasRole('Vendedor');
     }
 
     // 🔒 1. Solo el Admin puede editar un gasto registrado

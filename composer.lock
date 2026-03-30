@@ -4986,7 +4986,7 @@
             "dist": {
                 "type": "path",
                 "url": "../core-business",
-                "reference": "ef8de60087ff71b8f215cebeed38fc4d844d93eb"
+                "reference": "fcc7cb2793f2d188b28c8e47929e79e416cc01c6"
             },
             "require": {
                 "barryvdh/laravel-dompdf": "^3.1",

@@ -901,7 +901,11 @@ class SaleResource extends Resource
                         ->label('Convertir a Boleta')
                         ->icon('heroicon-o-arrow-path-rounded-square')
                         ->color('success')
-                        ->visible(fn (Sale $record) => $record->document_type === '00' && $record->status !== 'canceled')
+                        ->visible(fn (Sale $record) =>
+                            $record->document_type === '00' &&
+                            $record->status !== 'canceled' &&
+                            !\Illuminate\Support\Facades\Auth::user()->hasRole('Vendedor')
+                        )
                         ->form([
                             Forms\Components\Select::make('serie_boleta')
                                 ->label('Seleccione la Serie de Boleta')
@@ -961,7 +965,11 @@ class SaleResource extends Resource
                         ->label('Anular Ticket')
                         ->icon('heroicon-o-x-circle')
                         ->color('danger')
-                        ->visible(fn (Sale $record) => $record->document_type === '00' && $record->status !== 'canceled')
+                        ->visible(fn (Sale $record) =>
+                            $record->document_type === '00' &&
+                            $record->status !== 'canceled' &&
+                            !\Illuminate\Support\Facades\Auth::user()->hasRole('Vendedor')
+                        )
                         ->form([
                             Forms\Components\TextInput::make('reason')
                                 ->label('Motivo de anulación')

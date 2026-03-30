@@ -43,6 +43,16 @@ class ProductResource extends Resource
             ]);
     }
 
+    // 🌟 MAGIA SAAS: Ocultar este menú a los Mozos (Vendedores)
+    public static function canViewAny(): bool
+    {
+        /** @var \Percy\Core\Models\User $user */
+        $user = \Illuminate\Support\Facades\Auth::user();
+
+        // Si el usuario NO tiene el rol de Vendedor, puede ver el menú
+        return !$user->hasRole('Vendedor');
+    }
+
     public static function canCreate(): bool
     {
         /** @var \Percy\Core\Models\User $user */
