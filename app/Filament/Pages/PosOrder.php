@@ -270,7 +270,7 @@ class PosOrder extends Page
         }
     }
 
-    // 🌟 ACCIÓN: Modal de Cobrar y Liberar Mesa (Con validación y Decolecta)
+    // 🌟 ACCIÓN: Modal de Cobrar y Liberar Mesa
     public function checkoutAction(): \Filament\Actions\Action
     {
         return \Filament\Actions\Action::make('checkout')
@@ -293,12 +293,31 @@ class PosOrder extends Page
                     ])
                     ->default('03')
                     ->required()
-                    ->live() // 🌟 IMPORTANTE: Refresca el modal al cambiar
-                    ->afterStateUpdated(fn (\Filament\Forms\Set $set) => $set('customer_id', null)), // Limpiamos el cliente si cambia el tipo de doc
+                    ->live()
+                    // 🌟 Limpiamos cliente y serie al cambiar de comprobante
+                    ->afterStateUpdated(function (\Filament\Forms\Set $set) {
+                        $set('customer_id', null);
+                        $set('serie_documento', null);
+                    }),
+
+                // 🌟 NUEVO CAMPO: Selector de Serie Dinámico
+                \Filament\Forms\Components\Select::make('serie_documento')
+                    ->label('Serie del Comprobante')
+                    ->options(function (\Filament\Forms\Get $get) {
+                        $docType = $get('document_type');
+                        return \Percy\Core\Models\Serie::where('tenant_id', Auth::user()->tenant_id)
+                            ->where('document_type', $docType)
+                            ->where('active', true)
+                            ->pluck('serie', 'serie');
+                    })
+                    ->required()
+                    ->validationMessages([
+                        'required' => '⚠️ Debes seleccionar una serie. Si no hay opciones, créala en Configuración > Series.',
+                    ])
+                    ->helperText('Selecciona la serie a utilizar.'),
 
                 \Filament\Forms\Components\Select::make('customer_id')
                     ->label('Cliente')
-                    // 🌟 1. FILTRADO DINÁMICO (DNI para Boleta, RUC para Factura)
                     ->options(function (\Filament\Forms\Get $get) {
                         $docType = $get('document_type');
                         $query = \Percy\Core\Models\Customer::where('tenant_id', Auth::user()->tenant_id);
@@ -315,16 +334,12 @@ class PosOrder extends Page
                     ->preload()
                     ->required(fn (\Filament\Forms\Get $get) => $get('document_type') === '01')
                     ->helperText(fn (\Filament\Forms\Get $get) => $get('document_type') === '01' ? 'Obligatorio para Facturas' : 'Opcional. Déjalo en blanco para Consumidor Final.')
-
-                    // 🌟 2. MAGIA UX: Modificamos el aspecto del botón [+]
                     ->manageOptionActions(function (\Filament\Forms\Components\Actions\Action $action) {
                         return $action
                             ->icon('heroicon-o-user-plus')
                             ->color('success')
                             ->tooltip('Agregar Cliente Nuevo');
                     })
-
-                    // 🌟 3. CREACIÓN DE NUEVO CLIENTE (Extraído de tu SaleResource)
                     ->createOptionModalHeading('Registrar Nuevo Cliente')
                     ->createOptionForm([
                         \Filament\Forms\Components\Section::make('Identidad del Cliente')->schema([
@@ -395,7 +410,6 @@ class PosOrder extends Page
                             \Filament\Forms\Components\Textarea::make('address')->label('Dirección Fija')->maxLength(255)->rows(2)->columnSpanFull(),
                         ])->columns(['default' => 1, 'sm' => 2])->collapsible(),
                     ])
-                    // 🌟 4. GUARDAMOS EL CLIENTE Y LO AUTOSELECCIONAMOS
                     ->createOptionUsing(function (array $data) {
                         $data['tenant_id'] = Auth::user()->tenant_id;
                         $customer = \Percy\Core\Models\Customer::create($data);
@@ -406,14 +420,13 @@ class PosOrder extends Page
                     ->label('Método de Pago')
                     ->options(\Percy\Core\Models\Sale::PAYMENT_METHODS)
                     ->default('Efectivo')
-                    ->live() // 🌟 IMPORTANTE: Refresca el modal para mostrar/ocultar el siguiente campo
+                    ->live()
                     ->required()
                     ->afterStateUpdated(fn (\Filament\Forms\Set $set) => $set('payment_reference', null)),
 
                 \Filament\Forms\Components\TextInput::make('payment_reference')
                     ->label('N° de Operación / Referencia')
                     ->placeholder('Ej: 123456')
-                    // 🌟 MAGIA: Solo se muestra y es requerido si el método NO es Efectivo
                     ->visible(fn (\Filament\Forms\Get $get) => \Percy\Core\Models\Sale::requiresReference($get('payment_method') ?? ''))
                     ->required(fn (\Filament\Forms\Get $get) => \Percy\Core\Models\Sale::requiresReference($get('payment_method') ?? '')),
             ])
@@ -430,16 +443,15 @@ class PosOrder extends Page
                 $finalSerie = $this->sale->series;
                 $finalCorrelative = $this->sale->correlative;
 
-                // 2. 🌟 MAGIA: Solo gastamos un NUEVO correlativo si cambian de comprobante
-                // (Ej: Pasan de la '00' original a una Boleta '03' o Factura '01')
+                // 2. 🌟 MAGIA ACTUALIZADA: Usamos la serie que el cliente seleccionó en el formulario
                 if ($newDocType !== $currentDocType) {
                     $serieRecord = \Percy\Core\Models\Serie::where('tenant_id', Auth::user()->tenant_id)
                         ->where('document_type', $newDocType)
-                        ->where('active', true)
+                        ->where('serie', $data['serie_documento']) // 👈 Usamos la selección del formulario
                         ->first();
 
                     if (!$serieRecord) {
-                        \Filament\Notifications\Notification::make()->danger()->title('Falta Serie')->body('Configura una serie activa para este comprobante.')->send();
+                        \Filament\Notifications\Notification::make()->danger()->title('Falta Serie')->body('La serie seleccionada no existe o no está activa.')->send();
                         return;
                     }
 
@@ -448,11 +460,11 @@ class PosOrder extends Page
                     $finalCorrelative = $serieRecord->correlative;
                 }
 
-                // 🌟 1. NUEVO: Calculamos el monto en letras usando tu librería
+                // 3. Calculamos el monto en letras
                 $formatter = new \Luecano\NumeroALetras\NumeroALetras();
                 $legendText = $formatter->toInvoice($this->sale->total, 2, 'SOLES');
 
-                // 🌟 2. Cerramos la cuenta y guardamos el legend_text
+                // 4. Cerramos la cuenta
                 $this->sale->update([
                     'document_type' => $newDocType,
                     'series' => $finalSerie,
@@ -461,21 +473,20 @@ class PosOrder extends Page
                     'payment_method' => $data['payment_method'],
                     'payment_reference' => $data['payment_reference'] ?? null,
                     'status' => 'completed',
-                    'legend_text' => $legendText, // AQUÍ GUARDAMOS LAS LETRAS MAGÍCAMENTE
-                    // 🌟 MAGIA FINANCIERA: El dinero se va a la caja abierta, pero el user_id (Mozo) sigue intacto
+                    'legend_text' => $legendText,
                     'cash_register_id' => $this->activeCashRegister->id,
                 ]);
 
-                // 3. Liberamos la Mesa
+                // 5. Liberamos la Mesa
                 $this->sale->table?->update(['status' => \Percy\Core\Models\Table::STATUS_AVAILABLE]);
 
                 \Filament\Notifications\Notification::make()->success()->title('Pago Exitoso')->body('La mesa ha sido liberada correctamente.')->send();
 
-                // 🌟 MAGIA: Construimos las URLs
+                // 6. Construimos las URLs
                 $ticketUrl = url('/print/ticket/' . $this->sale->id);
                 $mapUrl = \App\Filament\Pages\PosRestaurant::getUrl();
 
-                // Ejecutamos JavaScript directamente desde el backend para hacer ambas cosas sin errores
+                // Ejecutamos JavaScript
                 $this->js("
                     window.open('{$ticketUrl}', '_blank');
                     window.location.href = '{$mapUrl}';
