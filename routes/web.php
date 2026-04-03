@@ -3,11 +3,18 @@
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\SaleController;
 
+// 🌟 1. PRIMERO LAS RUTAS DE SUBDOMINIOS (TIENDAS SAAS)
+// Al ponerlas aquí arriba, Laravel las evalúa antes que cualquier redirección global.
+Route::domain('{tenant_domain}.' . env('APP_URL_BASE', 'saas-platform.test'))->group(function () {
+    Route::get('/', [\App\Http\Controllers\StorefrontController::class, 'index'])->name('storefront.index');
+});
+
+// 🌟 2. RUTAS GLOBALES DEL SISTEMA PRINCIPAL
+// Si alguien entra a "saas-platform.test" (sin subdominio), lo mandamos al panel admin.
 Route::redirect('/', '/admin');
 
-// Reemplazamos la función anónima por una llamada al controlador
+// 🌟 3. OTRAS RUTAS DEL SISTEMA (Tickets, PDF, Caché, etc.)
 Route::get('/sales/{sale}/ticket', [SaleController::class, 'printTicket'])->name('sales.ticket');
-
 Route::get('/sales/{sale}/download-xml', [SaleController::class, 'downloadXml'])->name('sales.download-xml');
 Route::get('/sales/{sale}/download-cdr', [SaleController::class, 'downloadCdr'])->name('sales.download-cdr');
 
@@ -23,7 +30,6 @@ Route::get('/print/kitchen/{id}', function ($id) {
     return $pdf->stream('comanda-mesa-'.$sale->id.'.pdf');
 
 })->name('print.kitchen');
-
 
 Route::get('/limpiar-cache', function () {
     try {

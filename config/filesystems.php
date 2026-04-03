@@ -50,6 +50,20 @@ return [
             'throw' => false,
         ],
 
+        // 🌟 NUEVO DISCO PARA IMÁGENES PÚBLICAS
+        'r2_public' => [
+            'driver' => 's3',
+            'key' => env('R2_ACCESS_KEY_ID'),
+            'secret' => env('R2_SECRET_ACCESS_KEY'),
+            'region' => 'us-east-1',
+            'bucket' => env('R2_BUCKET', 'saas-facturacion'),
+            'endpoint' => env('R2_ENDPOINT'),
+            'url' => env('R2_PUBLIC_URL'), // 👈 ESTO ES LO QUE HACE LA MAGIA VISUAL
+            'use_path_style_endpoint' => true,
+            'throw' => false,
+            'visibility' => 'public',
+        ],
+
         'public' => [
             'driver' => 'local',
             'root' => storage_path('app/public'),

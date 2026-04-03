@@ -39,6 +39,16 @@ class TenantResource extends Resource
                         Forms\Components\Tabs\Tab::make('Sistema SaaS')
                             ->icon('heroicon-o-server')
                             ->schema([
+                                // 🌟 AQUÍ COLOCAMOS EL LOGO (Ancho completo)
+                                Forms\Components\FileUpload::make('logo')
+                                    ->label('Logo del Negocio')
+                                    ->image()
+                                    ->disk('r2_public')
+                                    ->directory('logos')
+                                    ->visibility('public')
+                                    ->maxSize(2048)
+                                    ->columnSpanFull(),
+
                                 Forms\Components\TextInput::make('name')
                                     ->label('Nombre del Negocio')
                                     ->required()
@@ -59,11 +69,18 @@ class TenantResource extends Resource
                                     ->suffix('.tusaas.com')
                                     ->columnSpan(['default' => 1, 'sm' => 1]), // 🌟 1 col en móvil, 1 en PC
 
+                                // 🌟 AQUÍ COLOCAMOS EL COLOR (1 columna)
+                                Forms\Components\ColorPicker::make('primary_color')
+                                    ->label('Color de Marca')
+                                    ->default('#4f46e5')
+                                    ->required()
+                                    ->columnSpan(['default' => 1, 'sm' => 1]),
+
                                 Forms\Components\Toggle::make('is_active')
                                     ->label('¿Está Activo?')
                                     ->helperText('Apágalo si el cliente no pagó su mensualidad.')
                                     ->default(true)
-                                    ->columnSpanFull(),
+                                    ->columnSpan(['default' => 1, 'sm' => 1]),
                             ])->columns(['default' => 1, 'sm' => 2]), // 🌟 MAGIA RESPONSIVE: 1 col móvil, 2 col PC
 
                         // PESTAÑA 2: Datos Fiscales
@@ -173,6 +190,14 @@ class TenantResource extends Resource
     {
         return $table
             ->columns([
+                // 🌟 AQUÍ COLOCAMOS LA MINIATURA DEL LOGO
+                Tables\Columns\ImageColumn::make('logo')
+                    ->label('Logo')
+                    ->disk('r2_public')
+                    ->circular() // 🌟 Lo hacemos circular porque los logos de empresa se ven mejor así
+                    ->size(40)
+                    ->toggleable(),
+
                 Tables\Columns\TextColumn::make('name')
                     ->label('Negocio')
                     ->searchable()

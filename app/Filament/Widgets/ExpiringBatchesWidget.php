@@ -38,7 +38,7 @@ class ExpiringBatchesWidget extends BaseWidget
                     ->orderBy('expiration_date', 'asc') // Los más urgentes arriba
             )
             ->heading('🚨 Alerta de Vencimientos (Próximos 90 días)')
-            ->description('Lotes de medicamentos que requieren rotación urgente o retiro de los estantes.')
+            ->description('Productos que requieren rotación urgente o retiro de los estantes.')
 
             // --- NUEVO: TRADUCCIÓN DEL ESTADO VACÍO ---
             ->emptyStateHeading('¡Todo en orden!')
