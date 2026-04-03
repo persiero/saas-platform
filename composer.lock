@@ -4986,12 +4986,12 @@
             "source": {
                 "type": "git",
                 "url": "git@github.com:persiero/core-business.git",
-                "reference": "19e31e4296e8da8abba68fa5258e3736c2c094ce"
+                "reference": "d153b7847bc4078ecd3594c2a7648c4b7fee59b7"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/persiero/core-business/zipball/19e31e4296e8da8abba68fa5258e3736c2c094ce",
-                "reference": "19e31e4296e8da8abba68fa5258e3736c2c094ce",
+                "url": "https://api.github.com/repos/persiero/core-business/zipball/d153b7847bc4078ecd3594c2a7648c4b7fee59b7",
+                "reference": "d153b7847bc4078ecd3594c2a7648c4b7fee59b7",
                 "shasum": ""
             },
             "require": {
@@ -5032,7 +5032,7 @@
                 "source": "https://github.com/persiero/core-business/tree/develop",
                 "issues": "https://github.com/persiero/core-business/issues"
             },
-            "time": "2026-03-30T02:27:35+00:00"
+            "time": "2026-04-03T18:08:21+00:00"
         },
         {
             "name": "phpoption/phpoption",

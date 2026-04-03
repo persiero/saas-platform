@@ -107,6 +107,17 @@ class ProductResource extends Resource
             ->schema([
                 Forms\Components\Group::make()->schema([
                     Forms\Components\Section::make('Información Principal')->schema([
+                        // 🌟 AQUÍ COLOCAMOS EL SUBIDOR DE IMÁGENES
+                        Forms\Components\FileUpload::make('image')
+                            ->label('Imagen del Producto')
+                            ->image()
+                            ->disk('r2_public')
+                            ->directory('productos')
+                            ->visibility('public')
+                            ->imageEditor()
+                            ->maxSize(2048)
+                            ->columnSpanFull(), // Ocupa todo el ancho
+
                         Forms\Components\TextInput::make('name')
                             ->label('Nombre del Producto / Servicio')
                             ->required()
@@ -281,6 +292,14 @@ class ProductResource extends Resource
         return $table
             ->modifyQueryUsing(fn (\Illuminate\Database\Eloquent\Builder $query) => $query->with('category'))
             ->columns([
+                // 🌟 AQUÍ COLOCAMOS LA MINIATURA
+                Tables\Columns\ImageColumn::make('image')
+                    ->label('Foto')
+                    ->disk('r2_public')
+                    ->square()
+                    ->size(40) // Tamaño sutil para la tabla
+                    ->toggleable(), // Permite al usuario ocultarla si quiere más espacio
+
                 Tables\Columns\TextColumn::make('name')
                     ->label('Producto')
                     ->searchable()
