@@ -27,6 +27,10 @@ class ExpiringBatchesWidget extends BaseWidget
 
     public function table(Table $table): Table
     {
+        // 🌟 1. Obtenemos el sector del negocio para hacer la tabla inteligente
+        $sector = Auth::user()->tenant->businessSector->slug ?? 'general';
+        $features = Auth::user()->tenant->businessSector->features ?? [];
+
         return $table
             ->query(
                 // Buscamos los lotes del negocio actual que tengan stock y venzan en los próximos 90 días (o ya estén vencidos)
@@ -40,22 +44,28 @@ class ExpiringBatchesWidget extends BaseWidget
             ->heading('🚨 Alerta de Vencimientos (Próximos 90 días)')
             ->description('Productos que requieren rotación urgente o retiro de los estantes.')
 
-            // --- NUEVO: TRADUCCIÓN DEL ESTADO VACÍO ---
+            // 🌟 2. Hacemos el texto del estado vacío dinámico
             ->emptyStateHeading('¡Todo en orden!')
-            ->emptyStateDescription('No hay medicamentos próximos a vencer en los siguientes 90 días.')
+            ->emptyStateDescription($sector === 'farmacia'
+                ? 'No hay medicamentos próximos a vencer en los siguientes 90 días.'
+                : 'No hay productos próximos a vencer en los siguientes 90 días.')
             ->emptyStateIcon('heroicon-o-check-badge')
             // ------------------------------------------
 
             ->columns([
                 Tables\Columns\TextColumn::make('product.name')
-                    ->label('Medicamento')
+                    // 🌟 3. Etiqueta dinámica: Medicamento para farmacias, Producto para el resto
+                    ->label($sector === 'farmacia' ? 'Medicamento' : 'Producto')
                     ->weight('bold')
                     ->searchable(),
 
                 Tables\Columns\TextColumn::make('batch_number')
                     ->label('Lote')
                     ->badge()
-                    ->color('gray'),
+                    ->color('gray')
+                    // 🌟 4. LA MAGIA: Ocultamos la columna si es minimarket
+                    // (o mejor aún, si su JSON de features dice que NO usan lotes)
+                    ->hidden(fn () => !($features['has_lots'] ?? false)),
 
                 Tables\Columns\TextColumn::make('expiration_date')
                     ->label('Fecha de Vencimiento')

@@ -22,7 +22,7 @@ class SetPanelTheme
             // Registramos el color primario dinámicamente según el giro de negocio
             FilamentColor::register([
                 'primary' => match ($sectorSlug) {
-                    'pharmacy'   => Color::Teal,     // 🟢 Verde azulado (Salud, Farmacias)
+                    'farmacia'   => Color::Teal,     // 🟢 Verde azulado (Salud, Farmacias)
                     'minimarket' => Color::Amber,    // 🟠 Ámbar/Naranja (Retail, Bodegas, Minimarkets)
                     'restaurant' => Color::Rose,     // 🔴 Rosa/Rojo (Apetito, Restaurantes, Cafeterías)
                     'general'    => Color::Blue,     // 🔵 Azul (Tecnología, Ropa, Comercio General)

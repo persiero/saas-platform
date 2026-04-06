@@ -6,7 +6,7 @@
     }
 </style>
 
-<div id="cart-modal" class="fixed inset-0 bg-black/60 z-[60] hidden flex-col justify-end backdrop-blur-sm transition-all duration-300">
+<div id="cart-modal" class="fixed inset-0 bg-black/60 z-[60] hidden flex-col justify-end">
     <div class="bg-white w-full max-w-4xl mx-auto rounded-t-3xl h-[90vh] flex flex-col shadow-2xl">
 
         <div class="p-4 border-b flex justify-between items-center">
@@ -100,8 +100,15 @@
 </div>
 
 <script>
-    let cart = [];
+    // 🌟 1. En lugar de iniciar vacío, intentamos leer la memoria primero.
+    // Usamos el ID del tenant por si tuvieras varias tiendas, no se mezclen los carritos.
+    let cart = JSON.parse(localStorage.getItem('carrito_{{ $tenant->id }}')) || [];
     const baseDeliveryFee = parseFloat("{{ $tenant->delivery_fee ?? 0 }}");
+
+    // 🌟 2. Creamos esta mini-función que guarda el carrito en la memoria
+    function saveCart() {
+        localStorage.setItem('carrito_{{ $tenant->id }}', JSON.stringify(cart));
+    }
 
     function decreaseQuantity(name) {
         let itemIndex = cart.findIndex(i => i.name === name);
@@ -111,6 +118,7 @@
             } else {
                 cart.splice(itemIndex, 1);
             }
+            saveCart(); // 🌟 3. Guardamos después de restar
             updateCartUI();
         }
     }
@@ -123,6 +131,7 @@
             // Guardamos la unidad en la memoria del carrito
             cart.push({ name: name, price: price, quantity: 1, unit: unit });
         }
+        saveCart(); // 🌟 3. Guardamos después de agregar
         updateCartUI();
     }
 
@@ -257,5 +266,69 @@
         const encodedText = encodeURIComponent(text);
 
         window.open(`https://wa.me/${waPhone}?text=${encodedText}`, '_blank');
+
+        // 🌟 NUEVO: Vaciamos el carrito después de enviar el pedido
+        cart = [];          // 1. Vaciamos la memoria temporal
+        saveCart();         // 2. Borramos el localStorage del navegador
+        updateCartUI();     // 3. Actualizamos la vista (para que la bolita roja vuelva a 0)
+        toggleCart();       // 4. Cerramos el modal del carrito
     }
+
+
+    // 🌟 LÓGICA DE FILTROS Y BÚSQUEDA
+    let currentCategory = 'all';
+
+    // Función para filtrar por los botones de categoría
+    function filterCategory(category, btn) {
+        currentCategory = category.toLowerCase();
+
+        // 1. Quitar el estilo activo de todos los botones
+        let allButtons = document.querySelectorAll('.category-btn');
+        allButtons.forEach(button => {
+            button.classList.remove('active-category');
+            button.classList.add('bg-gray-100', 'text-gray-600');
+        });
+
+        // 2. Ponerle el estilo activo al botón que se hizo clic
+        btn.classList.remove('bg-gray-100', 'text-gray-600');
+        btn.classList.add('active-category');
+
+        // 3. Aplicar el filtro visual a los productos
+        applyFilters();
+    }
+
+    // Función que se dispara cuando escribes en el buscador
+    function filterProducts() {
+        applyFilters();
+    }
+
+    // Función central que combina el texto del buscador y la categoría seleccionada
+    function applyFilters() {
+        let searchTerm = document.getElementById('searchInput').value.toLowerCase();
+        let products = document.querySelectorAll('.product-card');
+
+        products.forEach(card => {
+            // Leer los data-attributes que pusiste en index.blade.php
+            let productName = card.getAttribute('data-name');
+            let productCategory = card.getAttribute('data-category');
+
+            // Verificar si cumple las condiciones
+            let matchesSearch = productName.includes(searchTerm);
+            let matchesCategory = (currentCategory === 'all' || productCategory === currentCategory);
+
+            // Mostrar u ocultar (Usamos 'flex' porque tus cards tienen 'flex-col')
+            if (matchesSearch && matchesCategory) {
+                card.style.display = 'flex';
+            } else {
+                card.style.display = 'none';
+            }
+        });
+    }
+
+    // 🌟 4. Agregamos esto al final del todo para que la bolita roja del carrito
+    // se actualice apenas cargue la página si es que el cliente ya tenía productos guardados.
+    document.addEventListener('DOMContentLoaded', () => {
+        updateCartUI();
+    });
+
 </script>

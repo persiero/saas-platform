@@ -227,6 +227,63 @@
             </div>
         </x-filament::section>
 
+        {{-- Métodos de Pago --}}
+        <x-filament::section>
+            <x-slot name="heading">
+                <div class="flex items-center gap-2">
+                    <x-heroicon-o-credit-card class="w-5 h-5 text-indigo-500" />
+                    <span class="text-lg font-semibold">Ingresos por Método de Pago</span>
+                </div>
+            </x-slot>
+            <x-slot name="description">
+                Distribución del dinero recaudado según el medio de pago
+            </x-slot>
+
+            <div class="space-y-5 mt-2">
+                @php
+                    // Sumamos el total de todos los métodos para calcular los porcentajes
+                    $totalMetodos = array_sum(array_column($paymentMethodsData, 'total_amount'));
+                @endphp
+
+                @forelse($paymentMethodsData as $metodo)
+                    @php
+                        $porcentaje = $totalMetodos > 0 ? ($metodo['total_amount'] / $totalMetodos) * 100 : 0;
+                        $nombreMetodo = $metodo['payment_method'] ?: 'No especificado';
+
+                        // 🌟 COLORES DINÁMICOS: Morado para Yape/Plin, Azul para tarjeta, Verde para efectivo
+                        $colorClass = match($nombreMetodo) {
+                            'Yape', 'Plin' => 'bg-purple-500 dark:bg-purple-400',
+                            'Tarjeta' => 'bg-blue-500 dark:bg-blue-400',
+                            'Transferencia' => 'bg-orange-500 dark:bg-orange-400',
+                            default => 'bg-emerald-500 dark:bg-emerald-400',
+                        };
+                    @endphp
+                    <div>
+                        <div class="flex justify-between text-sm font-medium mb-1.5 text-gray-700 dark:text-gray-300">
+                            <span class="flex items-center gap-2">
+                                {{ $nombreMetodo }}
+                                <span class="text-xs text-gray-400 font-normal bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded-full">
+                                    {{ $metodo['transaction_count'] }} operaciones
+                                </span>
+                            </span>
+                            <span class="font-black text-gray-900 dark:text-white">
+                                S/ {{ number_format($metodo['total_amount'], 2) }}
+                                <span class="text-gray-400 font-normal ml-1">({{ number_format($porcentaje, 1) }}%)</span>
+                            </span>
+                        </div>
+                        <div class="w-full bg-gray-100 dark:bg-gray-800 rounded-full h-2.5 shadow-inner">
+                            <div class="{{ $colorClass }} h-2.5 rounded-full transition-all duration-500" style="width: {{ $porcentaje }}%"></div>
+                        </div>
+                    </div>
+                @empty
+                    <div class="text-center py-8">
+                        <x-heroicon-o-credit-card class="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
+                        <p class="text-gray-500 dark:text-gray-400 font-medium">No hay registros de pago en este período.</p>
+                    </div>
+                @endforelse
+            </div>
+        </x-filament::section>
+
         {{-- Estado de Caja --}}
         <x-filament::section>
             <x-slot name="heading">
