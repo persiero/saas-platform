@@ -276,8 +276,9 @@
                         </div>
                     </div>
                 @empty
-                    <div class="text-center py-8">
-                        <x-heroicon-o-credit-card class="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
+                    <div class="flex flex-col items-center justify-center py-10 text-center">
+                        {{-- Le ponemos un style fijo para obligarlo a quedarse pequeño --}}
+                        <x-heroicon-o-credit-card style="width: 4rem; height: 4rem;" class="text-gray-300 dark:text-gray-600 mb-4" />
                         <p class="text-gray-500 dark:text-gray-400 font-medium">No hay registros de pago en este período.</p>
                     </div>
                 @endforelse

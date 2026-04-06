@@ -66,7 +66,7 @@ class TenantResource extends Resource
                                     ->label('Subdominio')
                                     ->unique(ignoreRecord: true)
                                     ->prefix('https://')
-                                    ->suffix('.tusaas.com')
+                                    ->suffix('.virtualperu.online')
                                     ->columnSpan(['default' => 1, 'sm' => 1]), // 🌟 1 col en móvil, 1 en PC
 
                                 // 🌟 AQUÍ COLOCAMOS EL COLOR (1 columna)
