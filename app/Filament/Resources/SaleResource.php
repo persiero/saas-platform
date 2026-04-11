@@ -358,24 +358,47 @@ class SaleResource extends Resource
                                             ->first();
                                     }
 
+                                    // 🌟 1. Obtenemos la configuración completa del Tenant
+                                    $tenant = \Illuminate\Support\Facades\Auth::user()->tenant;
+                                    $tenantIgv = $tenant->igv_percentage ?? 18;
+                                    $includesIgv = $tenant->prices_include_igv ?? true; // <-- Leemos el interruptor
+
                                     $afectacion = \Percy\Core\Models\AfectacionIgv::find($product->afectacion_igv_id ?? 1);
-                                    $porcentaje = ($afectacion && $afectacion->gravado) ? ($afectacion->porcentaje / 100) : 0;
-                                    $unitValue = $product->price / (1 + $porcentaje);
-                                    $igvAmount = $product->price - $unitValue;
+
+                                    //Si el producto está gravado, usamos el IGV del Tenant, no el de la tabla general
+                                    $porcentaje = ($afectacion && $afectacion->gravado) ? ($tenantIgv / 100) : 0;
+
+                                    // 🌟 2. LÓGICA DEL INTERRUPTOR
+                                    $precioCatalogo = $product->price;
+                                    $precioFraccionCatalogo = $product->unit_price ?? 0;
+
+                                    if ($includesIgv) {
+                                        // El catálogo ya es el precio final
+                                        $precioVentaFinal = $precioCatalogo;
+                                        $precioFraccionFinal = $precioFraccionCatalogo;
+                                        $unitValue = $precioCatalogo / (1 + $porcentaje);
+                                    } else {
+                                        // El catálogo es la base, debemos SUMARLE el IGV para el cliente
+                                        $unitValue = $precioCatalogo;
+                                        $precioVentaFinal = $precioCatalogo * (1 + $porcentaje);
+                                        $precioFraccionFinal = $precioFraccionCatalogo * (1 + $porcentaje);
+                                    }
+
+                                    $igvAmount = $precioVentaFinal - $unitValue;
 
                                     $items[(string) \Illuminate\Support\Str::uuid()] = [
                                         'product_id' => $product->id,
                                         'product_batch_id' => $batch ? $batch->id : null,
                                         'measurement_unit' => 'box',
                                         'quantity' => 1,
-                                        'unit_price' => $product->price,
-                                        'total' => $product->price,
+                                        'unit_price' => round($precioVentaFinal, 2), // 🌟 Ahora va el precio final calculado
+                                        'total' => round($precioVentaFinal, 2),
                                         'afectacion_igv_id' => $product->afectacion_igv_id,
                                         'unit_code' => $product->unidadSunat ? $product->unidadSunat->codigo : 'NIU',
                                         '_stock_disponible' => $product->current_stock,
                                         '_is_fractionable' => $product->is_fractionable,
-                                        '_box_price' => $product->price,
-                                        '_fraction_price' => $product->unit_price,
+                                        '_box_price' => round($precioVentaFinal, 2),
+                                        '_fraction_price' => round($precioFraccionFinal, 2), // 🌟 Fracción también protegida
                                         '_is_weighable' => $product->is_weighable,
                                         'item_name' => $product->name,
                                         'unit_value' => round($unitValue, 2),
@@ -415,14 +438,30 @@ class SaleResource extends Resource
                                     ->afterStateUpdated(function ($state, Set $set, Get $get) {
                                         if ($state) {
                                             $product = \Percy\Core\Models\Product::find($state);
-                                            $set('unit_price', $product->price);
+
+                                            // 🌟 1. Leemos el interruptor y la tasa
+                                            $tenant = \Illuminate\Support\Facades\Auth::user()->tenant;
+                                            $tenantIgv = $tenant->igv_percentage ?? 18;
+                                            $includesIgv = $tenant->prices_include_igv ?? true;
+
+                                            $afectacion = \Percy\Core\Models\AfectacionIgv::find($product->afectacion_igv_id ?? 1);
+                                            $porcentaje = ($afectacion && $afectacion->gravado) ? ($tenantIgv / 100) : 0;
+
+                                            // 🌟 2. Matemáticas según el interruptor
+                                            $precioVentaFinal = $includesIgv ? $product->price : ($product->price * (1 + $porcentaje));
+                                            $precioFraccionFinal = $includesIgv ? ($product->unit_price ?? 0) : (($product->unit_price ?? 0) * (1 + $porcentaje));
+
+                                            // 🌟 3. Asignamos los precios calculados
+                                            $set('unit_price', round($precioVentaFinal, 2));
+                                            $set('_box_price', round($precioVentaFinal, 2));
+                                            $set('_fraction_price', round($precioFraccionFinal, 2));
+
+                                            // Estos quedan igual
                                             $set('afectacion_igv_id', $product->afectacion_igv_id);
                                             $set('unit_code', $product->unidadSunat ? $product->unidadSunat->codigo : 'NIU');
                                             $set('item_name', $product->name);
                                             $set('_stock_disponible', $product->current_stock);
                                             $set('_is_fractionable', $product->is_fractionable);
-                                            $set('_box_price', $product->price);
-                                            $set('_fraction_price', $product->unit_price);
                                             $set('measurement_unit', 'box');
                                             $set('_is_weighable', $product->is_weighable);
 
@@ -594,7 +633,11 @@ class SaleResource extends Resource
                             ->extraAttributes(['class' => 'flex justify-between border-b pb-1 font-semibold text-gray-700 dark:text-gray-300']),
 
                         Forms\Components\Placeholder::make('igv_lbl')
-                            ->label('IGV (18%)')
+                            ->label(function () {
+                                // 🌟 Leemos el IGV del negocio logueado dinámicamente
+                                $igv = \Illuminate\Support\Facades\Auth::user()->tenant->igv_percentage ?? 18;
+                                return "IGV ({$igv}%)";
+                            })
                             ->content(fn (Get $get): string => 'S/ ' . number_format((float)($get('igv') ?? 0), 2))
                             ->extraAttributes(['class' => 'flex justify-between border-b pb-1']),
 
@@ -1410,8 +1453,13 @@ class SaleResource extends Resource
         $unitPrice = (float) ($get('unit_price') ?? 0);
         $afectacionId = $get('afectacion_igv_id') ?? 1;
 
-        $afectacion = AfectacionIgv::find($afectacionId);
-        $porcentaje = ($afectacion && $afectacion->gravado) ? ($afectacion->porcentaje / 100) : 0;
+        // 🌟 1. Obtenemos el IGV dinámico del Tenant
+        $tenantIgv = \Illuminate\Support\Facades\Auth::user()->tenant->igv_percentage ?? 18;
+
+        $afectacion = \Percy\Core\Models\AfectacionIgv::find($afectacionId);
+
+        // 🌟 2. Si es gravado, usamos el IGV del negocio (18% o 10.5%)
+        $porcentaje = ($afectacion && $afectacion->gravado) ? ($tenantIgv / 100) : 0;
 
         $rowTotal = $quantity * $unitPrice;
         $unitValue = $unitPrice / (1 + $porcentaje);
@@ -1445,14 +1493,20 @@ class SaleResource extends Resource
         $igv = 0;
         $totalGeneral = 0;
 
+        // 🌟 1. Obtenemos el IGV dinámico UNA SOLA VEZ antes del bucle
+        // (Hacerlo afuera hace que el sistema sea mucho más rápido)
+        $tenantIgv = \Illuminate\Support\Facades\Auth::user()->tenant->igv_percentage ?? 18;
+
         foreach ($items as $item) {
             // Recalculamos al vuelo para tener la matemática 100% fresca
             $qty = (float) ($item['quantity'] ?? 1);
             $price = (float) ($item['unit_price'] ?? 0);
             $afecId = $item['afectacion_igv_id'] ?? 1;
 
-            $afectacion = AfectacionIgv::find($afecId);
-            $porcentaje = ($afectacion && $afectacion->gravado) ? ($afectacion->porcentaje / 100) : 0;
+            $afectacion = \Percy\Core\Models\AfectacionIgv::find($afecId);
+
+            // 🌟 2. Aplicamos el IGV dinámico
+            $porcentaje = ($afectacion && $afectacion->gravado) ? ($tenantIgv / 100) : 0;
 
             $rowTotal = $qty * $price;
 

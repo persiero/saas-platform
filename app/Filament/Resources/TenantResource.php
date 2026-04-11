@@ -164,10 +164,16 @@ class TenantResource extends Resource
                         Forms\Components\Tabs\Tab::make('Preferencias')
                             ->icon('heroicon-o-cog-8-tooth')
                             ->schema([
-                                Forms\Components\TextInput::make('igv_percentage')
-                                    ->label('Porcentaje de IGV (%)')
-                                    ->numeric()
-                                    ->default(18)
+                                Forms\Components\Select::make('igv_percentage')
+                                    ->label('Régimen Tributario - IGV (%)')
+                                    ->options([
+                                        '18.00' => '18% - Régimen General / MYPE Estándar',
+                                        '10.50' => '10.5% - Ley MYPE Restaurantes y Hoteles',
+                                        '0.00'  => '0% - Exonerado / Inafecto (Amazonía, etc.)',
+                                    ])
+                                    ->default('18.00')
+                                    ->required()
+                                    ->helperText('Asegúrate de cumplir los requisitos de SUNAT si eliges el 10.5%.')
                                     ->columnSpanFull(), // Mejor full para que no quede huérfano
 
                                 Forms\Components\Toggle::make('prices_include_igv')

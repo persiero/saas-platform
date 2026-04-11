@@ -8,6 +8,7 @@ use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Support\Facades\Auth;
 use Filament\Notifications\Notification;
 use Carbon\Carbon;
+use Filament\Actions\Action;
 
 class CreatePurchase extends CreateRecord
 {
@@ -28,6 +29,27 @@ class CreatePurchase extends CreateRecord
         $data['tenant_id'] = Auth::user()->tenant_id;
         return $data;
     }
+
+
+
+    protected function getFormActions(): array
+    {
+        return [
+            Action::make('create')
+                ->label('Registrar')
+                ->submit('create'), // importante
+
+            Action::make('createAnother')
+                ->label('Registrar y crear otra')
+                ->submit('createAnother'),
+
+            Action::make('cancel')
+                ->label('Cancelar')
+                ->color('gray'),
+        ];
+    }
+
+
 
     protected function getCreatedNotificationTitle(): ?string
     {

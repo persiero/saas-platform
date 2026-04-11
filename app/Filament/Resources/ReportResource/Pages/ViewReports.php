@@ -115,19 +115,19 @@ class ViewReports extends Page
 
     public function exportToExcel()
     {
-        // 1. Obtenemos las ventas del período (usando las variables de tus filtros)
         $tenantId = Auth::user()->tenant_id;
 
-        $sales = \Percy\Core\Models\Sale::where('tenant_id', $tenantId)
+        // 🌟 MEJORA NIVEL DIOS: Cargamos las relaciones anidadas 'items.product'
+        // Esto trae todas las ventas, sus detalles y el nombre del producto en 1 sola consulta
+        $sales = \Percy\Core\Models\Sale::with(['customer', 'user', 'items.product'])
+            ->where('tenant_id', $tenantId)
             ->whereBetween('sold_at', [$this->startDate . ' 00:00:00', $this->endDate . ' 23:59:59'])
             ->where('status', '!=', 'canceled')
             ->orderBy('sold_at', 'desc')
             ->get();
 
-        // 2. Nombre dinámico del archivo
-        $fileName = 'reporte_ventas_' . now()->format('Ymd_Hi') . '.csv';
+        $fileName = 'reporte_ventas_detallado_' . now()->format('Ymd_Hi') . '.csv';
 
-        // 3. Cabeceras HTTP para forzar la descarga en el navegador
         $headers = [
             "Content-type"        => "text/csv; charset=UTF-8",
             "Content-Disposition" => "attachment; filename=$fileName",
@@ -136,48 +136,90 @@ class ViewReports extends Page
             "Expires"             => "0"
         ];
 
-        // 4. Construimos el archivo CSV "al vuelo"
         $callback = function() use($sales) {
             $file = fopen('php://output', 'w');
 
-            // Agregar BOM para UTF-8 (Para que Excel lea tildes correctamente)
             fputs($file, chr(0xEF) . chr(0xBB) . chr(0xBF));
 
-            // Cabeceras del CSV (Usamos ';' por los estándares de Excel en Latam)
+            // 🌟 AGREGAMOS LAS COLUMNAS DEL PRODUCTO Y CANTIDAD
             fputcsv($file, [
                 'Fecha',
                 'Tipo Comprobante',
                 'Serie y Numero',
-                'Metodo de Pago', // <-- Nueva columna
+                'Doc. Cliente',
+                'Nombre Cliente',
+                'Cajero',
+                'Metodo de Pago',
                 'Estado SUNAT',
-                'Total (S/)'
+                'Producto',          // <-- NUEVO
+                'Cantidad',          // <-- NUEVO
+                'Precio Unit. (S/)', // <-- NUEVO
+                'Total Fila (S/)',   // <-- NUEVO (Cantidad x Precio)
+                'Total Comprobante (S/)'
             ], ';');
 
-            // 5. Llenamos las filas con los nombres de columnas CORRECTOS
             foreach ($sales as $sale) {
-                // Traductor rápido de tipo de documento
                 $tipoDoc = match($sale->document_type) {
                     '01' => 'Factura',
                     '03' => 'Boleta',
-                    default => 'Nota de Venta / Ticket'
+                    default => 'Nota de Venta'
                 };
 
-                fputcsv($file, [
-                    \Carbon\Carbon::parse($sale->sold_at)->format('d/m/Y H:i'),
-                    $tipoDoc,
-                    // 🌟 CORRECCIÓN AQUÍ: Usamos series y correlative
-                    $sale->series . '-' . str_pad($sale->correlative, 6, '0', STR_PAD_LEFT),
-                    // 🌟 4. Agregamos el valor del metodo de pago
-                    $sale->payment_method ?? 'No especificado',
-                    strtoupper($sale->sunat_status ?? 'NO ENVIADO'),
-                    number_format($sale->total, 2, '.', '')
-                ], ';');
+                $docCliente = $sale->customer ? ($sale->customer->document_number ?? '00000000') : '00000000';
+                $nomCliente = $sale->customer ? ($sale->customer->name ?? 'CLIENTES VARIOS') : 'CLIENTES VARIOS';
+                $nomCajero  = $sale->user ? ($sale->user->name ?? 'Sistema') : 'Sistema';
+                $serieNum   = $sale->series . '-' . str_pad($sale->correlative, 6, '0', STR_PAD_LEFT);
+
+                // 🌟 LÓGICA DE DETALLE: Recorremos los ítems de esta venta
+                if ($sale->items && $sale->items->count() > 0) {
+                    foreach ($sale->items as $item) {
+                        // Obtenemos el nombre del producto, si se eliminó de la BD ponemos "Desconocido"
+                        $nombreProducto = $item->product ? $item->product->name : 'Producto Eliminado/Desconocido';
+
+                        // Calculamos el total de la fila.
+                        // Nota: Si tu modelo SaleItem usa otros nombres (ej. unit_price), ajústalos aquí
+                        $precioUnitario = $item->unit_price ?? 0;
+                        $totalFila = $precioUnitario * $item->quantity;
+
+                        fputcsv($file, [
+                            \Carbon\Carbon::parse($sale->sold_at)->format('d/m/Y H:i'),
+                            $tipoDoc,
+                            $serieNum,
+                            $docCliente,
+                            $nomCliente,
+                            $nomCajero,
+                            $sale->payment_method ?? 'No especificado',
+                            strtoupper($sale->sunat_status ?? 'NO ENVIADO'),
+                            $nombreProducto,
+                            $item->quantity,
+                            number_format($precioUnitario, 2, '.', ''),
+                            number_format($totalFila, 2, '.', ''),
+                            number_format($sale->total, 2, '.', '')
+                        ], ';');
+                    }
+                } else {
+                    // Si por algún motivo la venta no tiene ítems guardados, imprimimos la fila genérica
+                    fputcsv($file, [
+                        \Carbon\Carbon::parse($sale->sold_at)->format('d/m/Y H:i'),
+                        $tipoDoc,
+                        $serieNum,
+                        $docCliente,
+                        $nomCliente,
+                        $nomCajero,
+                        $sale->payment_method ?? 'No especificado',
+                        strtoupper($sale->sunat_status ?? 'NO ENVIADO'),
+                        'SIN DETALLE DE PRODUCTOS',
+                        '0',
+                        '0.00',
+                        '0.00',
+                        number_format($sale->total, 2, '.', '')
+                    ], ';');
+                }
             }
 
             fclose($file);
         };
 
-        // 6. Retornamos la descarga directa
         return response()->stream($callback, 200, $headers);
     }
 }

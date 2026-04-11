@@ -1,14 +1,14 @@
 <?php
 
-namespace App\Filament\Resources\ZoneResource\Pages;
+namespace App\Filament\Resources\RoomResource\Pages;
 
-use App\Filament\Resources\ZoneResource;
+use App\Filament\Resources\RoomResource;
 use Filament\Actions;
 use Filament\Resources\Pages\EditRecord;
 
-class EditZone extends EditRecord
+class EditRoom extends EditRecord
 {
-    protected static string $resource = ZoneResource::class;
+    protected static string $resource = RoomResource::class;
 
     protected function getHeaderActions(): array
     {

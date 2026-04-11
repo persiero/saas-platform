@@ -182,10 +182,16 @@ class EditBusinessProfile extends Page implements HasForms
                         Tabs\Tab::make('Impuestos')
                             ->icon('heroicon-o-cog-8-tooth')
                             ->schema([
-                                TextInput::make('igv_percentage')
-                                    ->label('IGV (%)')
-                                    ->numeric()
-                                    ->default(18),
+                                Select::make('igv_percentage')
+                                    ->label('Régimen Tributario - IGV (%)')
+                                    ->options([
+                                        '18.00' => '18% - Régimen General / MYPE Estándar',
+                                        '10.50' => '10.5% - Ley MYPE Restaurantes y Hoteles',
+                                        '0.00'  => '0% - Exonerado / Inafecto (Amazonía, etc.)',
+                                    ])
+                                    ->default('18.00')
+                                    ->required()
+                                    ->helperText('Asegúrate de cumplir los requisitos de SUNAT si eliges el 10.5%.'),
                                 Toggle::make('prices_include_igv')
                                     ->label('Los precios del catálogo ya incluyen IGV')
                                     ->default(true),

@@ -20,73 +20,77 @@ class ZoneResource extends Resource
     protected static ?string $model = Zone::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
-    protected static ?string $navigationGroup = 'Configuración';
-    protected static ?string $modelLabel = 'Zona y Mesas';
-    protected static ?string $pluralModelLabel = 'Zonas y Mesas';
-    protected static ?int $navigationSort = 3;
+    protected static ?string $navigationGroup = 'Catálogos';
 
-    // 🌟 SEGURIDAD SAAS: Solo trae las zonas de ESTE inquilino
+    // 🌟 Nombres genéricos para que aplique a ambos módulos
+    protected static ?string $modelLabel = 'Zona / Piso';
+    protected static ?string $pluralModelLabel = 'Zonas y Pisos';
+    protected static ?int $navigationSort = 4;
+
+    // 🌟 TRAEMOS EL CONTEO DE AMBOS (Mesas y Habitaciones)
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()
             ->where('tenant_id', Auth::user()->tenant_id)
-            ->withCount('tables'); // Trae el conteo de mesas para mostrar en la tabla
+            ->withCount(['tables', 'rooms']); // 👈 Mágia: Laravel cuenta ambos
     }
 
-    // 🌟 MAGIA SAAS: Solo se muestra si el negocio es Restaurante (has_tables = true)
+    // 🌟 MAGIA SAAS: Visible si tiene Mesas O Habitaciones
     public static function canViewAny(): bool
     {
         /** @var \Percy\Core\Models\User $user */
         $user = Auth::user();
         $features = $user->tenant->businessSector->features ?? [];
 
-        // 🌟 COMBINADO: Debe ser restaurante Y NO ser Vendedor
-        return ($features['has_tables'] ?? false) && !$user->hasRole('Vendedor');
+        $hasTables = $features['has_tables'] ?? false;
+        $hasRooms = $features['has_rooms'] ?? false;
+
+        // Si tiene cualquiera de los dos módulos y no es vendedor puro
+        return ($hasTables || $hasRooms) && !$user->hasRole('Vendedor');
     }
 
     public static function form(Form $form): Form
     {
         return $form
             ->schema([
-                Forms\Components\Section::make('Información de la Zona')
-                    ->description('Crea un ambiente (Ej: Salón, Terraza) y agrégale sus mesas.')
+                Forms\Components\Section::make('Información del Espacio')
+                    ->description('Crea un ambiente (Ej: Salón, Terraza, Piso 1, Bungalows).')
                     ->schema([
                         Forms\Components\TextInput::make('name')
-                            ->label('Nombre de la Zona')
-                            ->placeholder('Ej: Salón Principal')
+                            ->label('Nombre de la Zona o Piso')
+                            ->placeholder('Ej: Salón Principal o Piso 1')
                             ->required()
                             ->maxLength(255)
                             ->columnSpan(['default' => 1, 'md' => 2]),
 
                         Forms\Components\Toggle::make('is_active')
-                            ->label('Zona Activa')
+                            ->label('Activo')
                             ->default(true)
                             ->columnSpan(['default' => 1, 'md' => 1]),
                     ])->columns(['default' => 1, 'md' => 3]),
 
+                // 🌟 MAGIA UX: Esta sección SOLO aparece si el cliente tiene módulo de restaurante
                 Forms\Components\Section::make('Distribución de Mesas')
+                    ->visible(fn () => Auth::user()->tenant->businessSector->features['has_tables'] ?? false)
                     ->schema([
-                        // 🌟 MAGIA UX: Repetidor Relacional (Crea las mesas directamente aquí)
                         Forms\Components\Repeater::make('tables')
-                            ->relationship() // Laravel detecta automáticamente la relación "tables" del modelo Zone
+                            ->relationship()
                             ->label('')
                             ->addActionLabel('Agregar nueva mesa')
-                            // INYECTAMOS EL TENANT_ID A CADA MESA NUEVA ANTES DE GUARDAR
                             ->mutateRelationshipDataBeforeCreateUsing(function (array $data): array {
                                 $data['tenant_id'] = Auth::user()->tenant_id;
-                                $data['status'] = Table::STATUS_AVAILABLE; // Por defecto nace libre
+                                $data['status'] = Table::STATUS_AVAILABLE;
                                 return $data;
                             })
                             ->schema([
                                 Forms\Components\TextInput::make('name')
                                     ->label('Nombre / Número')
-                                    ->placeholder('Ej: Mesa 1')
                                     ->required()
                                     ->maxLength(255)
                                     ->columnSpan(['default' => 1, 'md' => 2]),
 
                                 Forms\Components\TextInput::make('capacity')
-                                    ->label('Sillas (Capacidad)')
+                                    ->label('Sillas')
                                     ->numeric()
                                     ->default(4)
                                     ->minValue(1)
@@ -99,8 +103,8 @@ class ZoneResource extends Resource
                                     ->columnSpan(['default' => 1, 'md' => 1]),
                             ])
                             ->columns(['default' => 1, 'md' => 4])
-                            ->defaultItems(1) // Siempre muestra al menos una fila vacía para llenar
-                            ->reorderable(false) // Desactivamos el reordenamiento para no complicar la BD por ahora
+                            ->defaultItems(1)
+                            ->reorderable(false)
                             ->collapsible(),
                     ]),
             ]);
@@ -111,15 +115,24 @@ class ZoneResource extends Resource
         return $table
             ->columns([
                 Tables\Columns\TextColumn::make('name')
-                    ->label('Zona')
+                    ->label('Zona / Piso')
                     ->searchable()
                     ->sortable()
                     ->weight('bold'),
 
+                // 🌟 COLUMNA DINÁMICA: Solo se muestra si tiene restaurante
                 Tables\Columns\TextColumn::make('tables_count')
                     ->label('Total Mesas')
                     ->badge()
-                    ->color('info'),
+                    ->color('info')
+                    ->visible(fn () => Auth::user()->tenant->businessSector->features['has_tables'] ?? false),
+
+                // 🌟 COLUMNA DINÁMICA: Solo se muestra si tiene hotel
+                Tables\Columns\TextColumn::make('rooms_count')
+                    ->label('Habitaciones')
+                    ->badge()
+                    ->color('success')
+                    ->visible(fn () => Auth::user()->tenant->businessSector->features['has_rooms'] ?? false),
 
                 Tables\Columns\ToggleColumn::make('is_active')
                     ->label('Activo'),
@@ -146,9 +159,7 @@ class ZoneResource extends Resource
 
     public static function getRelations(): array
     {
-        return [
-            //
-        ];
+        return [];
     }
 
     public static function getPages(): array
