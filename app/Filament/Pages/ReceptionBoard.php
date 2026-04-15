@@ -196,7 +196,7 @@ class ReceptionBoard extends Page
             });
     }
 
-    // 🌟 ACCIÓN PARA AGREGAR PRODUCTOS A LA CUENTA
+    // 🌟 ACCIÓN PARA AGREGAR PRODUCTOS A LA CUENTA (CON CONTROL DE STOCK)
     public function addConsumptionAction(): Action
     {
         return Action::make('addConsumption')
@@ -207,13 +207,36 @@ class ReceptionBoard extends Page
             ->form([
                 Forms\Components\Select::make('product_id')
                     ->label('Seleccionar Producto')
-                    // Traemos los productos del Tenant actual (Bebidas, snacks, etc)
-                    ->options(\Percy\Core\Models\Product::where('tenant_id', Auth::user()->tenant_id)->pluck('name', 'id'))
+                    ->options(function () {
+                        // 🌟 UX: Traemos los productos activos y le concatenamos el stock al nombre
+                        return \Percy\Core\Models\Product::where('tenant_id', Auth::user()->tenant_id)
+                            ->where('active', true)
+                            ->get()
+                            ->mapWithKeys(function ($product) {
+                                $stockLabel = $product->current_stock > 0
+                                    ? " (Stock: {$product->current_stock})"
+                                    : " (¡AGOTADO!)";
+                                return [$product->id => $product->name . $stockLabel];
+                            });
+                    })
                     ->required()
                     ->searchable()
-                    ->live(onBlur: true)
-                    // Autocompleta el precio cuando se elige el producto
-                    ->afterStateUpdated(fn ($state, Forms\Set $set) => $set('unit_price', \Percy\Core\Models\Product::find($state)?->price ?? 0)),
+                    ->live()
+                    ->afterStateUpdated(function ($state, Forms\Set $set, Forms\Get $get) {
+                        $product = \Percy\Core\Models\Product::find($state);
+                        if ($product) {
+                            $set('unit_price', $product->price ?? 0);
+                            $set('max_stock', $product->current_stock ?? 0);
+
+                            // Recalculamos el total si ya había escrito un número en cantidad
+                            $set('total', floatval($get('quantity') ?? 0) * floatval($product->price ?? 0));
+                        } else {
+                            $set('max_stock', 0);
+                        }
+                    }),
+
+                // 🌟 MAGIA: Guardamos el stock máximo oculto en memoria para validarlo
+                Forms\Components\Hidden::make('max_stock')->default(0),
 
                 Forms\Components\Grid::make(2)->schema([
                     Forms\Components\TextInput::make('quantity')
@@ -221,8 +244,25 @@ class ReceptionBoard extends Page
                         ->numeric()
                         ->default(1)
                         ->required()
-                        ->live()
-                        ->afterStateUpdated(fn ($state, Forms\Get $get, Forms\Set $set) => $set('total', $state * ($get('unit_price') ?? 0))),
+                        ->live(onBlur: true)
+
+                        // 🌟 UX VISUAL: Muestra el stock disponible arriba de la caja de texto
+                        ->hint(fn (Forms\Get $get) => $get('product_id') ? 'Disponible: ' . $get('max_stock') : null)
+                        ->hintColor(fn (Forms\Get $get) => (floatval($get('quantity')) > floatval($get('max_stock'))) ? 'danger' : 'success')
+
+                        // 🌟 BLINDAJE 1: Reglas de validación en el formulario
+                        ->rules([
+                            fn (Forms\Get $get) => function (string $attribute, $value, \Closure $fail) use ($get) {
+                                $maxStock = floatval($get('max_stock'));
+                                if (floatval($value) > $maxStock) {
+                                    $fail("Solo hay {$maxStock} unidades en stock.");
+                                }
+                                if (floatval($value) <= 0) {
+                                    $fail("La cantidad debe ser mayor a 0.");
+                                }
+                            },
+                        ])
+                        ->afterStateUpdated(fn ($state, Forms\Get $get, Forms\Set $set) => $set('total', floatval($state) * floatval($get('unit_price') ?? 0))),
 
                     Forms\Components\TextInput::make('unit_price')
                         ->label('Precio Unit. (S/)')
@@ -230,16 +270,73 @@ class ReceptionBoard extends Page
                         ->numeric(),
                 ]),
             ])
-            ->action(function (array $data, array $arguments) {
-                $room = Room::find($arguments['room_id']);
-
-                // Buscamos la cuenta (recepción) activa de esta habitación
-                $reception = \Percy\Core\Models\Reception::where('room_id', $room->id)->where('status', 'active')->first();
+            ->action(function (array $data, array $arguments, \Filament\Actions\Action $action) {
                 $product = \Percy\Core\Models\Product::find($data['product_id']);
+                $quantityToDeduct = (float)$data['quantity'];
+
+                // 1. Blindaje de Stock
+                if ($quantityToDeduct > $product->current_stock) {
+                    \Filament\Notifications\Notification::make()->danger()->title('Stock Insuficiente')->body("Solo quedan {$product->current_stock} unidades.")->send();
+                    $action->halt();
+                }
+
+                $room = Room::find($arguments['room_id']);
+                $reception = \Percy\Core\Models\Reception::where('room_id', $room->id)->where('status', 'active')->first();
+                $remainingQuantity = $quantityToDeduct;
+
+                // 2. 🌟 LÓGICA FEFO (Lotes) DIRECTA EN RECEPCIÓN
+                $features = Auth::user()->tenant->businessSector->features ?? [];
+                if ($features['has_lots'] ?? false) {
+                    $lotes = \Percy\Core\Models\ProductBatch::where('product_id', $product->id)
+                        ->where('is_active', true)
+                        ->where('current_quantity', '>', 0)
+                        ->orderBy('expiration_date', 'asc')
+                        ->get();
+
+                    foreach ($lotes as $lote) {
+                        if ($remainingQuantity <= 0) break;
+
+                        $descuentoLote = min($lote->current_quantity, $remainingQuantity);
+                        $lote->current_quantity -= $descuentoLote;
+                        $lote->save(); // El ProductBatchObserver actualizará el stock global
+                        $remainingQuantity -= $descuentoLote;
+
+                        // 🌟 KARDEX DE SALIDA (Lote)
+                        \Percy\Core\Models\InventoryMovement::create([
+                            'tenant_id' => Auth::user()->tenant_id,
+                            'product_id' => $product->id,
+                            'user_id' => Auth::id(),
+                            'product_batch_id' => $lote->id,
+                            'type' => 'OUT',
+                            'quantity' => $descuentoLote,
+                            'balance_after' => $product->fresh()->current_stock,
+                            'reason' => "Consumo en " . $room->name,
+                            'reference_type' => 'Percy\Core\Models\Reception', // Referencia a la estadía
+                            'reference_id' => $reception->id,
+                        ]);
+                    }
+                }
+
+                // 3. 🌟 KARDEX DE SALIDA (Sin Lote / Restante)
+                if ($remainingQuantity > 0) {
+                    $product->current_stock -= $remainingQuantity;
+                    $product->save();
+
+                    \Percy\Core\Models\InventoryMovement::create([
+                        'tenant_id' => Auth::user()->tenant_id,
+                        'product_id' => $product->id,
+                        'user_id' => Auth::id(),
+                        'type' => 'OUT',
+                        'quantity' => $remainingQuantity,
+                        'balance_after' => $product->current_stock,
+                        'reason' => "Consumo en " . $room->name,
+                        'reference_type' => 'Percy\Core\Models\Reception',
+                        'reference_id' => $reception->id,
+                    ]);
+                }
 
                 $total = $data['quantity'] * $data['unit_price'];
 
-                // Guardamos el detalle en la tabla que acabamos de crear
                 \Percy\Core\Models\ReceptionItem::create([
                     'reception_id' => $reception->id,
                     'product_id' => $product->id,
@@ -249,9 +346,7 @@ class ReceptionBoard extends Page
                     'total' => $total,
                 ]);
 
-                // Actualizamos el contador de consumos totales en la recepción madre
                 $reception->increment('consumptions_total', $total);
-
                 \Filament\Notifications\Notification::make()->success()->title('Producto cargado a la habitación')->send();
             });
     }
@@ -691,23 +786,25 @@ class ReceptionBoard extends Page
                             $totalExoneradas += $precioTotalSnack;
                         }
 
+                        // 🌟 APAGAMOS EL OBSERVER DE STOCK
+                        \Percy\Core\Observers\SaleItemObserver::$muteStockDeduction = true;
+
+                        // Guardamos normal (así los otros Observers inyectarán el tenant_id sin problema)
                         \Percy\Core\Models\SaleItem::create([
                             'sale_id' => $sale->id,
-
-                            // 🌟 ESTO ES CLAVE: Le pasamos el ID real para que el Observer descuente el stock
                             'product_id' => $consumo->product_id,
-
-                            // 🌟 TRUCO CONTABLE: Le agregamos "Consumo:" para justificar la tasa MYPE ante el contador
                             'item_name' => 'Consumo: ' . $consumo->item_name,
-
                             'quantity' => $cantidadSnack,
                             'unit_value' => $valorUnitarioSnack,
                             'unit_price' => $precioUnitarioSnack,
                             'total' => $precioTotalSnack,
                             'igv_amount' => $igvTotalSnack,
-                            'tenant_id' => Auth::user()->tenant_id,
+                            'tenant_id' => \Illuminate\Support\Facades\Auth::user()->tenant_id,
                             'afectacion_igv_id' => $afectacionId,
                         ]);
+
+                        // 🌟 VOLVEMOS A ENCENDER EL OBSERVER
+                        \Percy\Core\Observers\SaleItemObserver::$muteStockDeduction = false;
                     }
 
                     // 3. Actualizamos la Cabecera
@@ -811,19 +908,42 @@ class ReceptionBoard extends Page
             });
     }
 
-    // 🌟 FUNCIÓN PARA ELIMINAR UN SNACK POR ERROR
     public function deleteExtra($itemId)
     {
         $item = \Percy\Core\Models\ReceptionItem::find($itemId);
+
         if ($item) {
-            $reception = $item->reception;
-            $reception->decrement('consumptions_total', $item->total);
+            $reception = \Percy\Core\Models\Reception::find($item->reception_id);
+            if ($reception) {
+                $reception->decrement('consumptions_total', $item->total);
+            }
+
+            if ($item->product_id) {
+                $product = \Percy\Core\Models\Product::find($item->product_id);
+
+                // Devolvemos el stock físico
+                $product->increment('current_stock', $item->quantity);
+
+                // 🌟 KARDEX DE INGRESO (Devolución)
+                \Percy\Core\Models\InventoryMovement::create([
+                    'tenant_id' => Auth::user()->tenant_id,
+                    'product_id' => $product->id,
+                    'user_id' => Auth::id(),
+                    'type' => 'IN',
+                    'quantity' => $item->quantity,
+                    'balance_after' => $product->fresh()->current_stock,
+                    'reason' => "Devolución de " . ($reception->room->name ?? 'Habitación'),
+                    'reference_type' => 'Percy\Core\Models\Reception',
+                    'reference_id' => $reception->id,
+                ]);
+            }
+
             $item->delete();
 
             \Filament\Notifications\Notification::make()
                 ->success()
                 ->title('Consumo eliminado')
-                ->body('El producto fue retirado de la cuenta.')
+                ->body('El producto retornó al stock y al Kardex.')
                 ->send();
         }
     }

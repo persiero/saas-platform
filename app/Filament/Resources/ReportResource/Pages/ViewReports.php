@@ -173,8 +173,14 @@ class ViewReports extends Page
                 // 🌟 LÓGICA DE DETALLE: Recorremos los ítems de esta venta
                 if ($sale->items && $sale->items->count() > 0) {
                     foreach ($sale->items as $item) {
-                        // Obtenemos el nombre del producto, si se eliminó de la BD ponemos "Desconocido"
-                        $nombreProducto = $item->product ? $item->product->name : 'Producto Eliminado/Desconocido';
+                        // 🌟 MAGIA EXCEL: Si tiene producto en catálogo, usa ese.
+                        // Si no tiene (como el hospedaje), usa el nombre impreso en el ticket.
+                        $nombreProducto = 'Desconocido';
+                        if ($item->product) {
+                            $nombreProducto = $item->product->name;
+                        } elseif ($item->item_name) {
+                            $nombreProducto = $item->item_name;
+                        }
 
                         // Calculamos el total de la fila.
                         // Nota: Si tu modelo SaleItem usa otros nombres (ej. unit_price), ajústalos aquí
