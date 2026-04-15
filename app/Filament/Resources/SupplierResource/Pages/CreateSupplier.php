@@ -7,6 +7,7 @@ use Filament\Actions;
 use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Support\Facades\Auth;
 use Filament\Notifications\Notification;
+use Filament\Actions\Action;
 
 class CreateSupplier extends CreateRecord
 {
@@ -20,6 +21,23 @@ class CreateSupplier extends CreateRecord
     protected function getRedirectUrl(): string
     {
         return $this->getResource()::getUrl('index');
+    }
+
+    protected function getFormActions(): array
+    {
+        return [
+            Action::make('create')
+                ->label('Registrar')
+                ->submit('create'), // importante
+
+            Action::make('createAnother')
+                ->label('Registrar y crear otra')
+                ->submit('createAnother'),
+
+            Action::make('cancel')
+                ->label('Cancelar')
+                ->color('gray'),
+        ];
     }
 
     protected function mutateFormDataBeforeCreate(array $data): array

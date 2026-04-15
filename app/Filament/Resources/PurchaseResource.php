@@ -79,12 +79,26 @@ class PurchaseResource extends Resource
                                     ->preload()
                                     ->native(false)
                                     ->helperText('Selecciona el proveedor de esta compra')
-                                    ->createOptionForm([
-                                        Forms\Components\TextInput::make('name')->label('Nombre / Razón Social')->required(),
-                                        Forms\Components\TextInput::make('ruc')->label('RUC')->length(11),
-                                        Forms\Components\Toggle::make('active')->label('Activo')->default(true),
-                                    ])
+                                    // 🌟 AQUÍ ESTÁ EL TRUCO PARA EL BOTÓN BONITO
+                                    ->manageOptionActions(function (\Filament\Forms\Components\Actions\Action $action) {
+                                        return $action
+                                            ->icon('heroicon-o-user-plus') // Un icono de "Agregar Usuario/Empresa"
+                                            ->color('info') // Le da color verde para que resalte
+                                            ->tooltip('Agregar Nuevo Proveedor'); // Texto al pasar el mouse
+                                    })
                                     ->createOptionModalHeading('Registrar Nuevo Proveedor')
+                                    ->createOptionForm([
+                                        Forms\Components\TextInput::make('name')
+                                            ->label('Nombre / Razón Social')
+                                            ->required(),
+                                        Forms\Components\TextInput::make('ruc')
+                                            ->label('RUC')
+                                            ->length(11)
+                                            ->numeric(), // Siempre es bueno forzar a que sean solo números
+                                        Forms\Components\Toggle::make('active')
+                                            ->label('Activo')
+                                            ->default(true),
+                                    ])
                                     ->columnSpanFull(),
                             ]),
 

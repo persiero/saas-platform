@@ -41,12 +41,40 @@
             <div class="flex-1 min-h-[50vh] overflow-y-auto bg-gray-50 dark:bg-gray-900 rounded-xl p-4 border border-gray-200 dark:border-gray-800 shadow-inner">
                 <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
                     @forelse($this->products as $product)
+                        @php
+                            // 🌟 MAGIA UX: Calculamos el estado de stock antes de dibujar el botón
+                            $isProduct = $product->type === 'product'; // Asumiendo que usas 'product' vs 'service'
+                            $stock = $product->current_stock ?? 0;
+                            $isOutOfStock = $isProduct && $stock <= 0;
+                        @endphp
+
                         <button
-                            wire:click="addProduct({{ $product->id }})"
-                            class="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col items-center justify-center text-center hover:border-primary-500 dark:hover:border-primary-400 h-32 cursor-pointer transition group"
+                            {{-- Si está agotado, bloqueamos el clic en el HTML --}}
+                            @if(!$isOutOfStock) wire:click="addProduct({{ $product->id }})" @endif
+                            @disabled($isOutOfStock)
+                            class="relative p-4 rounded-xl shadow-sm border flex flex-col items-center justify-center text-center h-32 transition group
+                                   {{ $isOutOfStock
+                                      ? 'bg-gray-100 dark:bg-gray-800/50 border-red-200 dark:border-red-900/30 opacity-60 cursor-not-allowed'
+                                      : 'bg-white dark:bg-gray-800 border-gray-100 dark:border-gray-700 hover:border-primary-500 dark:hover:border-primary-400 cursor-pointer' }}"
                         >
-                            <span class="font-bold text-sm line-clamp-2 text-gray-800 dark:text-gray-200 leading-tight group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">{{ $product->name }}</span>
-                            <span class="text-primary-600 dark:text-primary-400 font-black mt-2">S/ {{ number_format($product->price, 2) }}</span>
+                            {{-- 🌟 ETIQUETA VISUAL DE STOCK (Solo para productos físicos) --}}
+                            @if($isProduct)
+                                @if($isOutOfStock)
+                                    <span class="absolute top-2 right-2 bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-400 text-[9px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider">Agotado</span>
+                                @else
+                                    <span class="absolute top-2 right-2 bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400 text-[10px] font-bold px-1.5 py-0.5 rounded shadow-sm">
+                                        Stock: {{ floatval($stock) }}
+                                    </span>
+                                @endif
+                            @endif
+
+                            <span class="font-bold text-sm line-clamp-2 leading-tight transition-colors mt-2
+                                {{ $isOutOfStock ? 'text-gray-500 dark:text-gray-500' : 'text-gray-800 dark:text-gray-200 group-hover:text-primary-600 dark:group-hover:text-primary-400' }}">
+                                {{ $product->name }}
+                            </span>
+                            <span class="font-black mt-2 {{ $isOutOfStock ? 'text-gray-400 dark:text-gray-600' : 'text-primary-600 dark:text-primary-400' }}">
+                                S/ {{ number_format($product->price, 2) }}
+                            </span>
                         </button>
                     @empty
                         <div class="col-span-full text-center text-gray-500 py-12 font-medium">
