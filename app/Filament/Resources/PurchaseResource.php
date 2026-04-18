@@ -181,6 +181,31 @@ class PurchaseResource extends Resource
                                     ->requiresConfirmation()
                                     ->modalHeading('Eliminar Producto')
                             )
+                            // 🌟 LA MAGIA CORREGIDA: Leemos, calculamos y luego BORRAMOS la evidencia
+                            ->mutateRelationshipDataBeforeCreateUsing(function (array $data) {
+                                $isFractionable = $data['_is_fractionable'] ?? false;
+                                $presentacion = $data['measurement_unit'] ?? 'box';
+
+                                // 1. Hacemos la matemática si eligieron Unidad
+                                if ($isFractionable && $presentacion === 'unit') {
+                                    $product = \Percy\Core\Models\Product::find($data['product_id']);
+                                    if ($product && $product->units_per_box > 0) {
+                                        // Convertimos (Ej: 50 unidades / 100 = 0.5 cajas)
+                                        $data['quantity'] = $data['quantity'] / $product->units_per_box;
+                                        $data['unit_cost'] = $data['unit_cost'] * $product->units_per_box;
+                                    }
+                                }
+
+                                // 2. 🚨 LIMPIEZA DE SEGURIDAD 🚨
+                                // Borramos todos los campos temporales del formulario para que
+                                // Laravel no intente guardarlos en la tabla purchase_items y lance error SQL
+                                unset($data['_is_fractionable']);
+                                unset($data['_is_weighable']);
+                                unset($data['unit_code']);
+                                unset($data['measurement_unit']);
+
+                                return $data;
+                            })
                             ->schema([
                                 Forms\Components\Select::make('product_id')
                                     ->relationship('product', 'name')
@@ -198,20 +223,50 @@ class PurchaseResource extends Resource
                                             $set('_is_fractionable', $product->is_fractionable);
                                             $set('_is_weighable', $product->is_weighable ?? false);
                                             $set('unit_code', $product->unidadSunat ? $product->unidadSunat->codigo : 'NIU');
+                                            $set('measurement_unit', 'box'); // Por defecto compramos por caja
                                         }
                                         self::updateRow($get, $set);
                                         self::updateTotals($get, $set);
                                     })
-                                    // 🚀 COLUMNAS INTELIGENTES SEGÚN EL NEGOCIO
-                                    ->columnSpan(function () {
-                                        $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
-                                        $hasLots = $features['has_lots'] ?? false;
-                                        $hasExpiry = $features['has_expiry_dates'] ?? false;
+                                    // 🌟 MEJORA: Ancho dinámico inteligente
+                                    ->columnSpan([
+                                        'default' => 12, // En celular ocupa el 100%
+                                        'md' => function (\Filament\Forms\Get $get) {
+                                            $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                                            $isPharmacy = ($features['has_lots'] ?? false) || ($features['has_expiry_dates'] ?? false);
 
-                                        if ($hasLots && $hasExpiry) return 2; // Farmacia (Más pequeño para dejar espacio)
-                                        if (!$hasLots && $hasExpiry) return 4; // Minimarket
-                                        return 6; // Tienda General
-                                    }),
+                                            if ($isPharmacy) {
+                                                return $get('_is_fractionable') ? 4 : 6;
+                                            }
+                                            return 6; // Tienda general
+                                        }
+                                    ]),
+
+                                // 🌟 NUEVO CAMPO: Selector de Presentación para Compras
+                                Forms\Components\Select::make('measurement_unit')
+                                    ->label('Presentación')
+                                    ->options(['box' => 'Caja', 'unit' => 'Unidad'])
+                                    ->visible(fn (Get $get) => $get('_is_fractionable'))
+                                    ->required(fn (Get $get) => $get('_is_fractionable'))
+                                    ->default('box')
+                                    ->live()
+                                    ->afterStateUpdated(function ($state, Set $set, Get $get) {
+                                        if ($productId = $get('product_id')) {
+                                            $product = \Percy\Core\Models\Product::find($productId);
+                                            if ($product) {
+                                                if ($state === 'unit' && $product->units_per_box > 0) {
+                                                    // Calcula el costo de la pastilla individual
+                                                    $set('unit_cost', round($product->cost / $product->units_per_box, 4));
+                                                } else {
+                                                    $set('unit_cost', $product->cost);
+                                                }
+                                            }
+                                        }
+                                        self::updateRow($get, $set);
+                                        self::updateTotals($get, $set);
+                                    })
+                                    // 🌟 Fijo de 2 columnas
+                                    ->columnSpan(['default' => 12, 'md' => 2]),
 
                                 Forms\Components\TextInput::make('batch_number')
                                     ->label('N° de Lote')
@@ -220,7 +275,8 @@ class PurchaseResource extends Resource
                                         return $features['has_lots'] ?? false;
                                     })
                                     ->required(fn () => \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features['has_lots'] ?? false)
-                                    ->columnSpan(2),
+                                    // 🌟 Un poco más ancho para que se lea el lote
+                                    ->columnSpan(['default' => 12, 'md' => 3]),
 
                                 Forms\Components\DatePicker::make('expiration_date')
                                     ->label('Vencimiento')
@@ -231,8 +287,8 @@ class PurchaseResource extends Resource
                                         return $features['has_expiry_dates'] ?? false;
                                     })
                                     ->required(fn () => \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features['has_expiry_dates'] ?? false)
-                                    // 🚀 Si es Farmacia ocupa 1 columna, si es Minimarket ocupa 2 para verse mejor
-                                    ->columnSpan(2),
+                                    // 🌟 Un poco más ancho para la fecha
+                                    ->columnSpan(['default' => 12, 'md' => 3]),
 
                                 Forms\Components\TextInput::make('quantity')
                                     ->label('Cantidad')
@@ -241,6 +297,9 @@ class PurchaseResource extends Resource
                                     ->minValue(fn (\Filament\Forms\Get $get) => $get('_is_weighable') ? 0.001 : 1)
                                     ->step(fn (\Filament\Forms\Get $get) => $get('_is_weighable') ? 0.001 : 1)
                                     ->suffix(function (\Filament\Forms\Get $get) {
+                                        if ($get('_is_fractionable')) {
+                                            return $get('measurement_unit') === 'unit' ? 'Und' : 'Caj';
+                                        }
                                         if (!$get('_is_weighable')) return 'Und';
                                         return match($get('unit_code')) { 'KGM' => 'Kg', 'LTR' => 'Lt', 'GLL' => 'Gal', default => $get('unit_code') ?? 'Und' };
                                     })
@@ -254,9 +313,16 @@ class PurchaseResource extends Resource
                                     ->required()
                                     ->live(onBlur: true)
                                     ->afterStateUpdated(fn(\Filament\Forms\Get $get, \Filament\Forms\Set $set) => [self::updateRow($get, $set), self::updateTotals($get, $set)])
-                                    ->columnSpan(2),
+                                    // 🌟 MEJORA: Mucho más espacio para respirar
+                                    ->columnSpan([
+                                        'default' => 12,
+                                        'md' => function () {
+                                            $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                                            $isPharmacy = ($features['has_lots'] ?? false) || ($features['has_expiry_dates'] ?? false);
+                                            return $isPharmacy ? 4 : 2;
+                                        }
+                                    ]),
 
-                                // 🚀 SACAMOS EL GRID Y LOS PONEMOS DIRECTOS CON TAMAÑO 2
                                 Forms\Components\TextInput::make('unit_cost')
                                     ->label('Costo Inc. IGV')
                                     ->numeric()
@@ -266,7 +332,15 @@ class PurchaseResource extends Resource
                                     ->minValue(0)
                                     ->live(onBlur: true)
                                     ->afterStateUpdated(fn(\Filament\Forms\Get $get, \Filament\Forms\Set $set) => [self::updateRow($get, $set), self::updateTotals($get, $set)])
-                                    ->columnSpan(2),
+                                    // 🌟 MEJORA: Suficiente espacio para el prefijo "S/" y los decimales
+                                    ->columnSpan([
+                                        'default' => 12,
+                                        'md' => function () {
+                                            $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                                            $isPharmacy = ($features['has_lots'] ?? false) || ($features['has_expiry_dates'] ?? false);
+                                            return $isPharmacy ? 4 : 2;
+                                        }
+                                    ]),
 
                                 Forms\Components\TextInput::make('subtotal')
                                     ->label('Subtotal')
@@ -274,7 +348,15 @@ class PurchaseResource extends Resource
                                     ->readonly()
                                     ->prefix('S/')
                                     ->dehydrated()
-                                    ->columnSpan(2),
+                                    // 🌟 MEJORA: Ancho equitativo con los otros dos
+                                    ->columnSpan([
+                                        'default' => 12,
+                                        'md' => function () {
+                                            $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                                            $isPharmacy = ($features['has_lots'] ?? false) || ($features['has_expiry_dates'] ?? false);
+                                            return $isPharmacy ? 4 : 2;
+                                        }
+                                    ]),
 
                                 // CAMPOS OCULTOS
                                 Forms\Components\Hidden::make('_is_fractionable'),

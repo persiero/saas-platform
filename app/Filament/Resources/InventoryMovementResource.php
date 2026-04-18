@@ -144,17 +144,74 @@ class InventoryMovementResource extends Resource
 
                 Tables\Columns\TextColumn::make('quantity')
                     ->label('Cant.')
-                    ->numeric()
                     ->sortable()
                     ->weight('black')
                     ->color(fn ($record) => $record->type === 'IN' ? 'success' : 'danger')
-                    ->formatStateUsing(fn ($state, $record) => ($record->type === 'IN' ? '+' : '-') . $state),
+                    ->formatStateUsing(function ($state, $record) {
+                        $product = $record->product;
+                        if (!$product) return $state;
+
+                        $signo = $record->type === 'IN' ? '+' : '-';
+                        $valorAbsoluto = abs((float) $state);
+
+                        // Si es fraccionable (Farmacia)
+                        if ($product->is_fractionable && $product->units_per_box > 0) {
+                            $cajas = floor($valorAbsoluto);
+                            $fraccion = $valorAbsoluto - $cajas;
+                            $unidades = round($fraccion * $product->units_per_box);
+
+                            $texto = [];
+                            if ($cajas > 0) $texto[] = "{$cajas} Cajas";
+                            if ($unidades > 0) $texto[] = "{$unidades} Und";
+
+                            $resultado = empty($texto) ? '0 Und' : implode(' y ', $texto);
+                            return "{$signo} {$resultado}";
+                        }
+
+                        // Si es granel (Peso/Volumen)
+                        if ($product->is_weighable) {
+                            $codigoUnidad = $product->unidadSunat ? $product->unidadSunat->codigo : '';
+                            $sufijo = match($codigoUnidad) { 'KGM' => 'Kg', 'LTR' => 'Lt', 'GLL' => 'Gal', default => '' };
+                            return "{$signo} " . number_format($valorAbsoluto, 2) . " {$sufijo}";
+                        }
+
+                        // Normal
+                        return "{$signo} " . number_format($valorAbsoluto, 0) . ' Und';
+                    }),
 
                 Tables\Columns\TextColumn::make('balance_after')
                     ->label('Saldo')
-                    ->numeric()
                     ->sortable()
-                    ->description('Stock final'),
+                    ->description('Stock final')
+                    ->formatStateUsing(function ($state, $record) {
+                        $product = $record->product;
+                        if (!$product) return $state;
+
+                        $valorAbsoluto = (float) $state;
+
+                        // Si es fraccionable (Farmacia)
+                        if ($product->is_fractionable && $product->units_per_box > 0) {
+                            $cajas = floor($valorAbsoluto);
+                            $fraccion = $valorAbsoluto - $cajas;
+                            $unidades = round($fraccion * $product->units_per_box);
+
+                            $texto = [];
+                            if ($cajas > 0) $texto[] = "{$cajas} Cajas";
+                            if ($unidades > 0) $texto[] = "{$unidades} Und";
+
+                            return empty($texto) ? '0 Und' : implode(' y ', $texto);
+                        }
+
+                        // Si es granel
+                        if ($product->is_weighable) {
+                            $codigoUnidad = $product->unidadSunat ? $product->unidadSunat->codigo : '';
+                            $sufijo = match($codigoUnidad) { 'KGM' => 'Kg', 'LTR' => 'Lt', 'GLL' => 'Gal', default => '' };
+                            return number_format($valorAbsoluto, 2) . " {$sufijo}";
+                        }
+
+                        // Normal
+                        return number_format($valorAbsoluto, 0) . ' Und';
+                    }),
 
                 Tables\Columns\TextColumn::make('reason')
                     ->label('Motivo')

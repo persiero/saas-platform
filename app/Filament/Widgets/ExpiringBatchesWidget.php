@@ -78,9 +78,38 @@ class ExpiringBatchesWidget extends BaseWidget
 
                 Tables\Columns\TextColumn::make('current_quantity')
                     ->label('Stock Atrapado')
-                    ->numeric()
-                    // Si quedan más de 10 cajas por vencer, es crítico (rojo), si son pocas, gris.
-                    ->color(fn ($state) => $state > 10 ? 'danger' : 'gray'),
+                    // Mantenemos tu lógica de colores de alerta
+                    ->color(fn ($state) => $state > 10 ? 'danger' : 'gray')
+                    // 🌟 MAGIA UX: Traductor de Stock
+                    ->formatStateUsing(function ($state, $record) {
+                        $product = $record->product;
+                        if (!$product) return $state;
+
+                        $stock = (float) $state;
+
+                        // 1. Fraccionable (Farmacia)
+                        if ($product->is_fractionable && $product->units_per_box > 0) {
+                            $cajas = floor(abs($stock));
+                            $fraccion = abs($stock) - $cajas;
+                            $unidades = round($fraccion * $product->units_per_box);
+
+                            $texto = [];
+                            if ($cajas > 0) $texto[] = "{$cajas} caj";
+                            if ($unidades > 0) $texto[] = "{$unidades} und";
+
+                            return empty($texto) ? '0 und' : implode(' y ', $texto);
+                        }
+
+                        // 2. Granel (Peso/Volumen - Minimarket)
+                        if ($product->is_weighable) {
+                            $codigoUnidad = $product->unidadSunat ? $product->unidadSunat->codigo : '';
+                            $sufijo = match($codigoUnidad) { 'KGM' => 'kg', 'LTR' => 'lt', 'GLL' => 'gal', default => 'und' };
+                            return number_format($stock, 2) . " {$sufijo}";
+                        }
+
+                        // 3. Normal (Tienda general)
+                        return number_format($stock, 0) . ' und';
+                    }),
             ])
             ->paginated([5]) // Paginación pequeña para no saturar el Dashboard visualmente
             ->striped(); // Diseño de filas alternadas

@@ -20,6 +20,8 @@ class ListExpenses extends ListRecords
                 ->icon('heroicon-o-plus-circle')
                 ->color('primary')
                 ->slideOver() // Se abre lateralmente
+                ->modalSubmitActionLabel('Registrar')
+                ->createAnother(false)
                 ->mutateFormDataUsing(function (array $data): array {
                     $data['tenant_id'] = Auth::user()->tenant_id;
                     return $data;
