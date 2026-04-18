@@ -8,6 +8,7 @@ use Filament\Actions;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\ListRecords;
 use Illuminate\Support\Facades\Auth;
+use Filament\Actions\Action;
 
 class ListCashRegisters extends ListRecords
 {
@@ -21,8 +22,12 @@ class ListCashRegisters extends ListRecords
             Actions\CreateAction::make()
                 ->label('Abrir Nueva Caja')
                 ->icon('heroicon-o-lock-open')
-                ->modalHeading('Apertura de Turno')
+                ->modalHeading('Apertura de Caja')
                 ->modalWidth('sm') // Modal pequeño y elegante
+                // 🌟 MAGIA UX: Cambiamos el nombre del botón azul principal
+                ->modalSubmitActionLabel('Abrir')
+                // 🌟 MAGIA UX: Desaparecemos el botón de "Crear y crear otro"
+                ->createAnother(false)
 
                 // 🌟 MAGIA VISUAL: Bloquea el botón si ya hay una caja abierta en TODO el local
                 ->disabled(function () {

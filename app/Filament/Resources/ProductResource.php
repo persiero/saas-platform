@@ -262,13 +262,25 @@ class ProductResource extends Resource
                 Forms\Components\Group::make()->schema([
                     Forms\Components\Section::make('Precios e Impuestos')->schema([
                         Forms\Components\TextInput::make('price')
-                            ->label('Precio de Venta')
+                            // 🌟 MAGIA SAAS: Label dinámico según el tipo de negocio
+                            ->label(function () {
+                                $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                                $isPharmacy = ($features['has_lots'] ?? false) && ($features['has_expiry_dates'] ?? false);
+
+                                return $isPharmacy ? 'Precio de Venta (Caja)' : 'Precio de Venta';
+                            })
                             ->numeric()
                             ->prefix('S/')
                             ->required(),
 
                         Forms\Components\TextInput::make('cost')
-                            ->label('Costo Referencial')
+                            // 🌟 MAGIA SAAS: Label dinámico según el tipo de negocio
+                            ->label(function () {
+                                $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                                $isPharmacy = ($features['has_lots'] ?? false) && ($features['has_expiry_dates'] ?? false);
+
+                                return $isPharmacy ? 'Costo Referencial (Caja)' : 'Costo Referencial';
+                            })
                             ->numeric()
                             ->prefix('S/')
                             ->default(0),
@@ -333,41 +345,52 @@ class ProductResource extends Resource
 
                 Tables\Columns\TextColumn::make('current_stock')
                     ->label('Stock')
-                    //->numeric()
                     ->badge()
                     ->state(function (Product $record): float {
                         $record->refresh();
-                        return $record->current_stock;
+                        return (float) $record->current_stock;
                     })
-                    // 🌟 1. FORMATEAMOS EL TEXTO (Rayitas para servicios, número para productos)
+                    // 🌟 MAGIA UX: TRADUCTOR A HUMANO
                     ->formatStateUsing(function (float $state, \Percy\Core\Models\Product $record): string {
                         if ($record->type === 'service') {
                             return '---';
                         }
-                        return (string) $state;
-                    })
-                    // 🌟 2. CONTROLAMOS EL ÍCONO
-                    ->icon(function (float $state, \Percy\Core\Models\Product $record): ?string {
-                        // Si es servicio, no mostramos ningún ícono de alerta
-                        if ($record->type === 'service') {
-                            return null; // O puedes poner 'heroicon-m-minus' si quieres un guion
+
+                        // 1. Fraccionable (Farmacia)
+                        if ($record->is_fractionable && $record->units_per_box > 0) {
+                            $cajas = floor(abs($state));
+                            $fraccion = abs($state) - $cajas;
+                            $unidades = round($fraccion * $record->units_per_box);
+
+                            $texto = [];
+                            if ($cajas > 0) $texto[] = "{$cajas} Cajas";
+                            if ($unidades > 0) $texto[] = "{$unidades} Und";
+
+                            return empty($texto) ? '0 Und' : implode(' y ', $texto);
                         }
 
-                        // Si es producto, aplicamos tu lógica original
+                        // 2. Granel (Peso/Volumen)
+                        if ($record->is_weighable) {
+                            $codigoUnidad = $record->unidadSunat ? $record->unidadSunat->codigo : '';
+                            $sufijo = match($codigoUnidad) { 'KGM' => 'Kg', 'LTR' => 'Lt', 'GLL' => 'Gal', default => 'Und' };
+                            return number_format($state, 2) . " {$sufijo}";
+                        }
+
+                        // 3. Normal (Enteros)
+                        return number_format($state, 0) . ' Und';
+                    })
+                    // 🌟 TUS ÍCONOS ORIGINALES
+                    ->icon(function (float $state, \Percy\Core\Models\Product $record): ?string {
+                        if ($record->type === 'service') return null;
                         return match (true) {
                             $state <= 5 => 'heroicon-o-exclamation-triangle',
                             $state <= 15 => 'heroicon-o-exclamation-circle',
                             default => 'heroicon-o-check-circle',
                         };
                     })
-                    // 🌟 3. CONTROLAMOS EL COLOR
+                    // 🌟 TUS COLORES ORIGINALES
                     ->color(function (float $state, \Percy\Core\Models\Product $record): string {
-                        // Si es servicio, siempre será gris (neutral)
-                        if ($record->type === 'service') {
-                            return 'gray';
-                        }
-
-                        // Si es producto, aplicamos tu lógica original
+                        if ($record->type === 'service') return 'gray';
                         return match (true) {
                             $state <= 5 => 'danger',
                             $state <= 15 => 'warning',
@@ -462,9 +485,30 @@ class ProductResource extends Resource
                             $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
                             $hasLots = $features['has_lots'] ?? false;
                             $hasExpiry = $features['has_expiry_dates'] ?? false;
-
-                            // 🌟 LA CLAVE: ¿El negocio usa la tabla de lotes/vencimientos?
                             $usesBatches = $hasLots || $hasExpiry;
+
+                            // 🌟 MAGIA UX: HELPER DE TRADUCCIÓN INTERNO
+                            $traducirStock = function ($stockDecimal) use ($record) {
+                                $stock = (float) $stockDecimal;
+
+                                if ($record->is_fractionable && $record->units_per_box > 0) {
+                                    $cajas = floor(abs($stock));
+                                    $fraccion = abs($stock) - $cajas;
+                                    $unidades = round($fraccion * $record->units_per_box);
+                                    $texto = [];
+                                    if ($cajas > 0) $texto[] = "{$cajas} caj";
+                                    if ($unidades > 0) $texto[] = "{$unidades} und";
+                                    return empty($texto) ? '0 und' : implode(' y ', $texto);
+                                }
+
+                                if ($record->is_weighable) {
+                                    $codigoUnidad = $record->unidadSunat ? $record->unidadSunat->codigo : '';
+                                    $sufijo = match($codigoUnidad) { 'KGM' => 'kg', 'LTR' => 'lt', 'GLL' => 'gal', default => 'und' };
+                                    return number_format($stock, 2) . " {$sufijo}";
+                                }
+
+                                return number_format($stock, 0) . ' und';
+                            };
 
                             return [
                                 Forms\Components\Select::make('type')
@@ -477,20 +521,21 @@ class ProductResource extends Resource
                                     ->default('OUT')
                                     ->live(),
 
-                                // 🌟 NUEVO: Selección de Lote o Vencimiento (Visible para Farmacias Y Minimarkets)
                                 Forms\Components\Select::make('product_batch_id')
                                     ->label($hasLots ? 'Lote a afectar' : 'Fecha de Vencimiento a afectar')
-                                    ->options(function () use ($record, $hasLots) {
+                                    ->options(function () use ($record, $hasLots, $traducirStock) {
                                         return \Percy\Core\Models\ProductBatch::where('product_id', $record->id)
                                             ->where('is_active', true)
                                             ->get()
-                                            ->mapWithKeys(function ($b) use ($hasLots) {
+                                            ->mapWithKeys(function ($b) use ($hasLots, $traducirStock) {
                                                 $vence = $b->expiration_date ? \Carbon\Carbon::parse($b->expiration_date)->format('d/m/Y') : 'N/D';
 
-                                                // Texto dinámico según el negocio
+                                                // 🌟 TRADUCIMOS EL STOCK DEL LOTE
+                                                $textoStock = $traducirStock($b->current_quantity);
+
                                                 $texto = $hasLots
-                                                    ? "Lote: {$b->batch_number} | Vence: {$vence} | Stock: " . (float)$b->current_quantity
-                                                    : "Vence: {$vence} | Stock Actual: " . (float)$b->current_quantity;
+                                                    ? "Lote: {$b->batch_number} | Vence: {$vence} | Stock: {$textoStock}"
+                                                    : "Vence: {$vence} | Stock Actual: {$textoStock}";
 
                                                 return [$b->id => $texto];
                                             });
@@ -500,7 +545,6 @@ class ProductResource extends Resource
                                     ->searchable()
                                     ->preload(),
 
-                                // Unidad de Ajuste (Mantenemos la lógica solo para Farmacia)
                                 Forms\Components\Select::make('measurement_unit')
                                     ->label('Unidad de Ajuste')
                                     ->options([
@@ -515,13 +559,13 @@ class ProductResource extends Resource
                                 Forms\Components\TextInput::make('quantity')
                                     ->label('Cantidad')
                                     ->numeric()
-                                    ->minValue(0.001) // 🌟 Permitimos decimales para ajustes de Minimarket
+                                    ->minValue(0.001)
                                     ->required()
                                     ->live(),
 
                                 Forms\Components\Placeholder::make('stock_warning')
                                     ->label('')
-                                    ->content(function (Forms\Get $get, $record) use ($hasLots) {
+                                    ->content(function (Forms\Get $get) use ($hasLots, $record, $traducirStock) {
                                         if ($get('type') === 'OUT' && $get('quantity')) {
                                             $stockActual = (float) $record->current_stock;
                                             $cantidadIngresada = (float) $get('quantity');
@@ -533,10 +577,16 @@ class ProductResource extends Resource
 
                                             $stockFinal = $stockActual - $cantidadAjuste;
 
+                                            // 🌟 TRADUCIMOS EL TEXTO DE LA ALERTA
+                                            $textoActual = $traducirStock($stockActual);
+
                                             if ($stockFinal < 0) {
-                                                return "⚠️ Stock Global insuficiente. Actual: {$stockActual} | Faltarían: " . abs($stockFinal);
+                                                $textoFaltante = $traducirStock(abs($stockFinal));
+                                                return "⚠️ Stock Global insuficiente. Actual: {$textoActual} | Faltarían: {$textoFaltante}";
                                             }
-                                            return "✓ Stock Global actual: {$stockActual} | Quedará en: {$stockFinal}";
+
+                                            $textoFinal = $traducirStock($stockFinal);
+                                            return "✓ Stock Global actual: {$textoActual} | Quedará en: {$textoFinal}";
                                         }
                                         return '';
                                     })
@@ -565,7 +615,7 @@ class ProductResource extends Resource
                                 $cantidadAjuste = $cantidadIngresada / $record->units_per_box;
                             }
 
-                            // 2. BUSCAR EL LOTE O VENCIMIENTO AFECTADO 🌟
+                            // 2. BUSCAR EL LOTE O VENCIMIENTO AFECTADO
                             $batch = null;
                             if ($usesBatches && isset($data['product_batch_id'])) {
                                 $batch = \Percy\Core\Models\ProductBatch::find($data['product_batch_id']);
@@ -576,14 +626,12 @@ class ProductResource extends Resource
                                 if ($stockActual < $cantidadAjuste) {
                                     \Filament\Notifications\Notification::make()
                                         ->title('Stock Global Insuficiente')
-                                        ->body("Intentas retirar {$cantidadAjuste} pero solo hay {$stockActual}.")
                                         ->danger()->send();
                                     return;
                                 }
                                 if ($batch && $batch->current_quantity < $cantidadAjuste) {
                                     \Filament\Notifications\Notification::make()
                                         ->title('Stock de Vencimiento Insuficiente')
-                                        ->body("El registro seleccionado solo tiene {$batch->current_quantity} disponible.")
                                         ->danger()->send();
                                     return;
                                 }
@@ -597,9 +645,8 @@ class ProductResource extends Resource
                                 $batch->current_quantity = $tipoAjuste === 'OUT'
                                     ? $batch->current_quantity - $cantidadAjuste
                                     : $batch->current_quantity + $cantidadAjuste;
-                                $batch->save(); // El ProductBatchObserver actualizará el stock principal automáticamente
+                                $batch->save();
                             } else {
-                                // Si no hay lotes (Tienda General), actualizamos el stock principal directo
                                 $record->update(['current_stock' => $saldoFinal]);
                             }
 
@@ -617,15 +664,35 @@ class ProductResource extends Resource
 
                             \Filament\Notifications\Notification::make()
                                 ->title('Inventario Ajustado')
-                                ->body('El Kardex y el stock han sido actualizados correctamente.')
-                                ->success()
-                                ->send();
+                                ->success()->send();
                         })
                         ->requiresConfirmation()
                         ->modalHeading(fn ($record) => 'Ajuste de Inventario: ' . $record->name)
-                        ->modalDescription(fn ($record) => new \Illuminate\Support\HtmlString(
-                            'Estás a punto de modificar el stock de <strong>' . $record->name . '</strong>. <br>Stock global actual: <strong>' . (float)$record->current_stock . '</strong>'
-                        ))
+                        ->modalDescription(function ($record) {
+                            // 🌟 TRADUCIMOS LA DESCRIPCIÓN DEL MODAL
+                            $stock = (float) $record->current_stock;
+                            $textoStock = '';
+
+                            if ($record->is_fractionable && $record->units_per_box > 0) {
+                                $cajas = floor(abs($stock));
+                                $fraccion = abs($stock) - $cajas;
+                                $unidades = round($fraccion * $record->units_per_box);
+                                $t = [];
+                                if ($cajas > 0) $t[] = "{$cajas} caj";
+                                if ($unidades > 0) $t[] = "{$unidades} und";
+                                $textoStock = empty($t) ? '0 und' : implode(' y ', $t);
+                            } elseif ($record->is_weighable) {
+                                $cu = $record->unidadSunat ? $record->unidadSunat->codigo : '';
+                                $su = match($cu) { 'KGM' => 'kg', 'LTR' => 'lt', 'GLL' => 'gal', default => 'und' };
+                                $textoStock = number_format($stock, 2) . " {$su}";
+                            } else {
+                                $textoStock = number_format($stock, 0) . ' und';
+                            }
+
+                            return new \Illuminate\Support\HtmlString(
+                                'Estás a punto de modificar el stock de <strong>' . $record->name . '</strong>. <br>Stock global actual: <strong>' . $textoStock . '</strong>'
+                            );
+                        })
                         ->modalWidth('lg'),
                 ])
                 ->label('Acciones')

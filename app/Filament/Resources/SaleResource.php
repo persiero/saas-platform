@@ -109,7 +109,7 @@ class SaleResource extends Resource
                                 '00' => 'Nota de Venta (Interno)',
                             ])
                             ->required()
-                            ->default('03')
+                            ->default('00')
                             ->live()
                             ->afterStateUpdated(function (Set $set, $state) {
                                 $serieAuto = \Percy\Core\Models\Serie::where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id)
@@ -131,9 +131,13 @@ class SaleResource extends Resource
                                     ->where('active', true)
                                     ->pluck('serie', 'serie');
                             })
-                            ->default(function () {
+                            // CÓDIGO CORREGIDO (DINÁMICO):
+                            ->default(function (Get $get) {
+                                // 🌟 Ahora lee el documento que esté seleccionado arriba, o usa '00' si no hay nada
+                                $docType = $get('document_type') ?? '00';
+
                                 return \Percy\Core\Models\Serie::where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id)
-                                    ->where('document_type', '03')
+                                    ->where('document_type', $docType)
                                     ->where('active', true)
                                     ->value('serie');
                             })
@@ -482,7 +486,7 @@ class SaleResource extends Resource
                                     }),
 
                                 Forms\Components\Select::make('measurement_unit')
-                                    ->label('Present.')
+                                    ->label('Presentación')
                                     ->options(['box' => 'Caja', 'unit' => 'Unidad'])
                                     ->visible(fn (Get $get) => $get('_is_fractionable'))
                                     ->required(fn (Get $get) => $get('_is_fractionable'))
@@ -521,7 +525,7 @@ class SaleResource extends Resource
                                     ->columnSpan(['default' => 1, 'md' => 2]),
 
                                 Forms\Components\TextInput::make('quantity')
-                                    ->label('Cant.')
+                                    ->label('Cantidad')
                                     ->numeric()
                                     ->default(1)
                                     ->minValue(fn (\Filament\Forms\Get $get) => $get('_is_weighable') ? 0.001 : 1)
@@ -558,17 +562,54 @@ class SaleResource extends Resource
                                     ->afterStateUpdated(fn(\Filament\Forms\Get $get, \Filament\Forms\Set $set) => [self::updateRow($get, $set), self::updateTotals($get, $set)])
                                     ->helperText(function (\Filament\Forms\Get $get) {
                                         if (!$get('product_id')) return null;
-                                        $totalStock = $get('_stock_disponible') ?? 0;
-                                        $tipo = 'Und';
-                                        if ($get('_is_weighable')) {
-                                            $tipo = match($get('unit_code')) { 'KGM' => 'Kg', 'LTR' => 'Lt', default => $get('unit_code') };
-                                        }
+
+                                        // Función auxiliar interna para traducir números a texto humano (ABREVIADO)
+                                        $traducirStock = function ($stockDecimal, $isFractionable, $isWeighable, $unitCode, $unitsPerBox) {
+                                            $stock = (float) $stockDecimal;
+
+                                            // 1. Fraccionable (Farmacia)
+                                            if ($isFractionable && $unitsPerBox > 0) {
+                                                $cajas = floor(abs($stock));
+                                                $fraccion = abs($stock) - $cajas;
+                                                $unidades = round($fraccion * $unitsPerBox);
+
+                                                $texto = [];
+                                                // 🌟 REDUCIMOS TEXTO: Usamos "caj" y "und" en minúsculas
+                                                if ($cajas > 0) $texto[] = "{$cajas} caj";
+                                                if ($unidades > 0) $texto[] = "{$unidades} und";
+
+                                                return empty($texto) ? '0 und' : implode(' y ', $texto);
+                                            }
+
+                                            // 2. Granel (Peso/Volumen)
+                                            if ($isWeighable) {
+                                                $sufijo = match($unitCode) { 'KGM' => 'kg', 'LTR' => 'lt', 'GLL' => 'gal', default => 'und' };
+                                                return number_format($stock, 2) . " {$sufijo}";
+                                            }
+
+                                            // 3. Normal
+                                            return number_format($stock, 0) . ' und';
+                                        };
+
+                                        $isFractionable = $get('_is_fractionable') ?? false;
+                                        $isWeighable = $get('_is_weighable') ?? false;
+                                        $unitCode = $get('unit_code') ?? 'NIU';
+
+                                        $producto = \Percy\Core\Models\Product::find($get('product_id'));
+                                        $unitsPerBox = $producto ? $producto->units_per_box : 0;
+
+                                        $totalStockDecimal = $get('_stock_disponible') ?? 0;
+                                        $textoTotal = $traducirStock($totalStockDecimal, $isFractionable, $isWeighable, $unitCode, $unitsPerBox);
+
                                         if ($batchId = $get('product_batch_id')) {
                                             $batch = \Percy\Core\Models\ProductBatch::find($batchId);
-                                            $loteStock = $batch ? $batch->current_quantity : 0;
-                                            return "Lote: {$loteStock} | Total: {$totalStock} {$tipo}";
+                                            $loteStockDecimal = $batch ? $batch->current_quantity : 0;
+                                            $textoLote = $traducirStock($loteStockDecimal, $isFractionable, $isWeighable, $unitCode, $unitsPerBox);
+
+                                            return "Lote: {$textoLote} | Total: {$textoTotal}";
                                         }
-                                        return "Stock Total: {$totalStock} {$tipo}";
+
+                                        return "Stock Total: {$textoTotal}";
                                     }),
 
                                 Forms\Components\Grid::make(['default' => 2])
