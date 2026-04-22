@@ -121,6 +121,9 @@ class PosOrder extends Page
             }
         }
 
+        // 🌟 APAGAMOS EL KARDEX LOCO (El Observer no hará nada)
+        \Percy\Core\Observers\SaleItemObserver::$muteStockDeduction = true;
+
         // Si pasó el candado de stock (o es un servicio), procedemos a agregarlo
         if ($existingItem) {
 
@@ -161,7 +164,21 @@ class PosOrder extends Page
     // 🌟 ACCIÓN: Eliminar plato de la comanda
     public function removeItem($itemId)
     {
-        $this->sale->items()->where('id', $itemId)->delete();
+        $item = $this->sale->items()->find($itemId);
+        if (!$item) return;
+
+        if ($item->sent_quantity > 0 && Auth::user()->hasRole('Vendedor')) {
+            \Filament\Notifications\Notification::make()->danger()->title('Plato en Cocina')->body('Este plato ya se está preparando. Pide a un Administrador que lo anule.')->send();
+            return;
+        }
+
+        // 🌟 MAGIA FINANCIERA: Si el admin borra algo ya cocinado, devolvemos el stock
+        if ($item->sent_quantity > 0) {
+            $observer = new \Percy\Core\Observers\SaleItemObserver();
+            $observer->refundStock($item, $item->sent_quantity);
+        }
+
+        $item->delete();
         $this->recalculateTotals();
     }
 
@@ -214,50 +231,108 @@ class PosOrder extends Page
     public function decrementItem($itemId)
     {
         $item = $this->sale->items()->find($itemId);
-        if ($item) {
-            if ($item->quantity > 1) {
-                // Si hay más de 1, restamos
-                $item->update([
-                    'quantity' => $item->quantity - 1,
-                    'total' => ($item->quantity - 1) * $item->unit_price,
-                ]);
-            } else {
-                // Si la cantidad es 1 y presionan "-", eliminamos el plato
-                $item->delete();
-            }
-            $this->recalculateTotals();
-        }
-    }
+        if (!$item) return;
 
-    // 🌟 ACCIÓN: Enviar a Cocina y volver al mapa
-    public function sendToKitchen()
-    {
-        // 1. Validar que la comanda no esté vacía
-        if ($this->sale->items()->count() === 0) {
-            \Filament\Notifications\Notification::make()
-                ->warning()
-                ->title('Comanda vacía')
-                ->body('Agrega al menos un plato antes de enviar a cocina.')
-                ->send();
+        if ($item->quantity <= $item->sent_quantity && Auth::user()->hasRole('Vendedor')) {
+            \Filament\Notifications\Notification::make()->danger()->title('Bloqueado')->body('No puedes reducir platos que ya están en cocina. Llama al Administrador.')->send();
             return;
         }
 
-        // 2. Notificamos al usuario
-        \Filament\Notifications\Notification::make()
-            ->success()
-            ->title('¡Enviado a Cocina!')
-            ->body('La comanda se envió a preparación.')
-            ->send();
+        if ($item->quantity > 1) {
+            $newQuantity = $item->quantity - 1;
 
-        // 3. Disparamos el ticket de cocina en una pestaña nueva
-        $kitchenTicketUrl = url('/print/kitchen/' . $this->sale->id);
+            // 🌟 MAGIA FINANCIERA: Si el admin reduce por debajo de lo enviado a cocina
+            if ($newQuantity < $item->sent_quantity) {
+                $refundQty = $item->sent_quantity - $newQuantity;
+                $item->sent_quantity = $newQuantity; // Ajustamos la memoria de cocina
 
-        $this->js("
-            window.open('{$kitchenTicketUrl}', '_blank');
-        ");
+                $observer = new \Percy\Core\Observers\SaleItemObserver();
+                $observer->refundStock($item, $refundQty);
+            }
 
-        // Lo devolvemos al mapa de mesas para que siga trabajando
-        return redirect()->to(PosRestaurant::getUrl());
+            $item->update([
+                'quantity' => $newQuantity,
+                'sent_quantity' => $item->sent_quantity, // Guardamos el ajuste
+                'total' => $newQuantity * $item->unit_price,
+            ]);
+        } else {
+            $this->removeItem($itemId); // Reutilizamos la lógica completa de borrar
+        }
+        $this->recalculateTotals();
+    }
+
+    // 🌟 EL MOTOR DE DESCUENTOS INTELIGENTE
+    private function processPendingInventory()
+    {
+        $observer = new \Percy\Core\Observers\SaleItemObserver();
+
+        // 🌟 LA CURA AL LAZY LOADING: Cargamos los productos y la venta por adelantado
+        // para que el Observer no tenga que hacer consultas extra por cada plato.
+        $this->sale->loadMissing(['items.product', 'items.sale']);
+
+        foreach ($this->sale->items as $item) {
+            // Calculamos qué falta enviar (Ej: Pidió 4, ya se enviaron 3 = Falta 1)
+            $pendingQuantity = $item->quantity - $item->sent_quantity;
+
+            if ($pendingQuantity > 0) {
+                try {
+                    // Descontamos solo la diferencia
+                    $observer->deductStock($item, $pendingQuantity);
+
+                    // Actualizamos que ya se envió
+                    $item->update(['sent_quantity' => $item->quantity]);
+                } catch (\Exception $e) {
+                    \Filament\Notifications\Notification::make()
+                        ->danger()
+                        ->title('Error de Stock')
+                        ->body($e->getMessage())
+                        ->send();
+                }
+            }
+        }
+    }
+
+    // 🌟 NUEVO BOTÓN MODERNO: Enviar a Cocina
+    public function sendToKitchenAction(): \Filament\Actions\Action
+    {
+        return \Filament\Actions\Action::make('sendToKitchen')
+            ->label('A Cocina')
+            ->color('warning')
+            ->icon('heroicon-m-fire')
+            ->extraAttributes(['class' => 'w-full h-full text-lg shadow-md [&>button]:w-full [&>button]:justify-center [&>button]:h-full'])
+            ->requiresConfirmation() // 🌟 EL MODAL MODERNO
+            ->modalHeading('Enviar a Cocina')
+            ->modalDescription('¿Estás seguro de enviar este pedido a cocina? Revisa bien las cantidades, una vez enviado solo un administrador podrá anularlo y afectar el inventario.')
+            ->modalSubmitActionLabel('Sí, enviar a cocina')
+            ->action(function () {
+                if ($this->sale->items()->count() === 0) {
+                    \Filament\Notifications\Notification::make()->warning()->title('Comanda vacía')->body('Agrega al menos un plato.')->send();
+                    return;
+                }
+
+                $platosNuevos = [];
+                foreach ($this->sale->items as $item) {
+                    $pendientes = $item->quantity - $item->sent_quantity;
+                    if ($pendientes > 0) {
+                        $platosNuevos[$item->id] = $pendientes;
+                    }
+                }
+
+                if (empty($platosNuevos)) {
+                    \Filament\Notifications\Notification::make()->info()->title('Sin cambios')->body('No hay platos nuevos para enviar.')->send();
+                    return;
+                }
+
+                $this->processPendingInventory();
+
+                \Filament\Notifications\Notification::make()->success()->title('¡Enviado a Cocina!')->send();
+
+                $query = http_build_query(['send' => $platosNuevos]);
+                $kitchenTicketUrl = url('/print/kitchen/' . $this->sale->id . '?' . $query);
+
+                $this->js("window.open('{$kitchenTicketUrl}', '_blank');");
+                return redirect()->to(PosRestaurant::getUrl());
+            });
     }
 
     // 🌟 AGREGAR NOTA A UN PLATO ESPECÍFICO
@@ -277,44 +352,58 @@ class PosOrder extends Page
             ->label('Cobrar')
             ->color('success')
             ->icon('heroicon-m-banknotes')
-            // 🌟 BLOQUEO DE MOZO: Oculta el botón si es Vendedor
             ->visible(fn () => !Auth::user()->hasRole('Vendedor'))
             ->extraAttributes(['class' => 'w-full [&>button]:w-full [&>button]:justify-center'])
             ->modalHeading('Finalizar Venta')
-            ->modalDescription('Por favor, selecciona cómo desea pagar el cliente.')
+            ->modalDescription('Selecciona el comprobante y método de pago.')
             ->modalSubmitActionLabel('Confirmar Pago y Liberar Mesa')
             ->form([
                 \Filament\Forms\Components\Select::make('document_type')
                     ->label('Tipo de Comprobante')
                     ->options([
+                        '00' => 'Nota de Venta (Interno)',
                         '03' => 'Boleta Electrónica',
                         '01' => 'Factura Electrónica',
-                        '00' => 'Nota de Venta (Interno)',
                     ])
-                    ->default('03')
+                    ->default('00')
                     ->required()
                     ->live()
-                    // 🌟 Limpiamos cliente y serie al cambiar de comprobante
-                    ->afterStateUpdated(function (\Filament\Forms\Set $set) {
+                    ->afterStateUpdated(function (\Filament\Forms\Set $set, $state) {
                         $set('customer_id', null);
-                        $set('serie_documento', null);
+
+                        // Buscamos la serie (usamos value() que es más rápido que first()->serie)
+                        $serieAuto = \Percy\Core\Models\Serie::where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id)
+                            ->where('document_type', $state)
+                            ->where('active', true)
+                            ->value('serie');
+
+                        // Inyectamos el valor
+                        $set('serie_documento', $serieAuto);
                     }),
 
-                // 🌟 NUEVO CAMPO: Selector de Serie Dinámico
                 \Filament\Forms\Components\Select::make('serie_documento')
                     ->label('Serie del Comprobante')
+                    // 🌟 LA MAGIA ABSOLUTA: Esto fuerza a reconstruir el HTML del selector
+                    ->key(fn (\Filament\Forms\Get $get) => 'serie_dinamica_' . $get('document_type'))
                     ->options(function (\Filament\Forms\Get $get) {
                         $docType = $get('document_type');
-                        return \Percy\Core\Models\Serie::where('tenant_id', Auth::user()->tenant_id)
+                        return \Percy\Core\Models\Serie::where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id)
                             ->where('document_type', $docType)
                             ->where('active', true)
                             ->pluck('serie', 'serie');
                     })
+                    ->default(function () {
+                        return \Percy\Core\Models\Serie::where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id)
+                            ->where('document_type', '00')
+                            ->where('active', true)
+                            ->value('serie');
+                    })
+                    ->selectablePlaceholder(false)
                     ->required()
+                    ->live()
                     ->validationMessages([
-                        'required' => '⚠️ Debes seleccionar una serie. Si no hay opciones, créala en Configuración > Series.',
-                    ])
-                    ->helperText('Selecciona la serie a utilizar.'),
+                        'required' => '⚠️ No hay series para este comprobante.',
+                    ]),
 
                 \Filament\Forms\Components\Select::make('customer_id')
                     ->label('Cliente')
@@ -463,6 +552,9 @@ class PosOrder extends Page
                 // 3. Calculamos el monto en letras
                 $formatter = new \Luecano\NumeroALetras\NumeroALetras();
                 $legendText = $formatter->toInvoice($this->sale->total, 2, 'SOLES');
+
+                // 🌟 POR SI PIDIÓ ALGO A ÚLTIMA HORA Y NO LO ENVIÓ A COCINA
+                $this->processPendingInventory();
 
                 // 4. Cerramos la cuenta
                 $this->sale->update([

@@ -83,11 +83,16 @@
                             </div>
 
                             {{-- 🌟 PARTE INFERIOR (Ocupa el espacio vacío, mantiene la simetría) --}}
-                            <div class="mt-auto w-full flex justify-center h-6"> {{-- Altura fija para el badge --}}
-                                @if($table->status === 'occupied' && $table->activeSale)
+                            <div class="mt-auto w-full flex justify-center h-6">
+                                @php
+                                    // 🌟 Capturamos la venta pendiente que mandamos desde el controlador
+                                    $ventaPendiente = $table->sales->first();
+                                @endphp
+
+                                @if($table->status === 'occupied' && $ventaPendiente)
                                     <div class="text-[10px] font-bold uppercase tracking-wider bg-white/50 dark:bg-black/20 px-3 py-1 rounded-lg flex items-center justify-center gap-1.5 shadow-inner">
                                         <x-heroicon-s-user class="w-3 h-3" />
-                                        {{ explode(' ', $table->activeSale->user->name)[0] ?? 'Cajero' }}
+                                        {{ explode(' ', $ventaPendiente->user->name)[0] ?? 'Mozo' }}
                                     </div>
                                 @endif
                             </div>

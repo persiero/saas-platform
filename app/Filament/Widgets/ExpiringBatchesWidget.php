@@ -35,7 +35,7 @@ class ExpiringBatchesWidget extends BaseWidget
             ->query(
                 // Buscamos los lotes del negocio actual que tengan stock y venzan en los próximos 90 días (o ya estén vencidos)
                 ProductBatch::query()
-                    ->with('product') // Traemos el nombre del producto para no sobrecargar la base de datos
+                    ->with('product.unidadSunat') // Traemos el producto y de paso, su Unidad de SUNAT
                     ->where('tenant_id', Auth::user()->tenant_id)
                     ->where('current_quantity', '>', 0) // No alertamos si ya se acabó el stock
                     ->where('expiration_date', '<=', now()->addDays(90))

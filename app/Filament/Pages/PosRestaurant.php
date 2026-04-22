@@ -32,7 +32,10 @@ class PosRestaurant extends Page
             ->where('is_active', true)
             ->with(['tables' => function ($query) {
                 $query->where('is_active', true)
-                      ->with(['activeSale.user']); // 🌟 MAGIA: Carga la venta activa y su usuario
+                      ->with(['sales' => function ($q) {
+                          // 🌟 MAGIA: Filtramos estrictamente la venta pendiente y a su mozo
+                          $q->where('status', 'pending')->with('user');
+                      }]);
             }])
             ->get();
 

@@ -14,6 +14,7 @@ use Filament\Tables\Table as FilamentTable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Illuminate\Support\Facades\Auth;
+use Filament\Tables\Filters\TrashedFilter;
 
 class ZoneResource extends Resource
 {
@@ -27,12 +28,15 @@ class ZoneResource extends Resource
     protected static ?string $pluralModelLabel = 'Zonas y Pisos';
     protected static ?int $navigationSort = 4;
 
-    // 🌟 TRAEMOS EL CONTEO DE AMBOS (Mesas y Habitaciones)
+    // 🌟 TRAEMOS EL CONTEO Y PERMITIMOS VER LA PAPELERA
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()
             ->where('tenant_id', Auth::user()->tenant_id)
-            ->withCount(['tables', 'rooms']); // 👈 Mágia: Laravel cuenta ambos
+            ->withCount(['tables', 'rooms'])
+            ->withoutGlobalScopes([
+                SoftDeletingScope::class, // Permite que el filtro de papelera funcione
+            ]);
     }
 
     // 🌟 MAGIA SAAS: Visible si tiene Mesas O Habitaciones
@@ -48,6 +52,17 @@ class ZoneResource extends Resource
         // Si tiene cualquiera de los dos módulos y no es vendedor puro
         return ($hasTables || $hasRooms) && !$user->hasRole('Vendedor');
     }
+
+    // =========================================================
+    // 🔐 SEGURIDAD: Solo Administradores pueden gestionar Zonas
+    // =========================================================
+    public static function canCreate(): bool { return Auth::user()->isAdmin(); }
+    public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool { return Auth::user()->isAdmin(); }
+    public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool { return Auth::user()->isAdmin(); }
+    public static function canRestore(\Illuminate\Database\Eloquent\Model $record): bool { return Auth::user()->isAdmin(); }
+    public static function canForceDelete(\Illuminate\Database\Eloquent\Model $record): bool { return false; } // Nadie borra definitivamente
+    public static function canDeleteAny(): bool { return Auth::user()->isAdmin(); }
+    public static function canRestoreAny(): bool { return Auth::user()->isAdmin(); }
 
     public static function form(Form $form): Form
     {
@@ -144,15 +159,47 @@ class ZoneResource extends Resource
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
-                //
+                // 🌟 FILTRO DE PAPELERA
+                TrashedFilter::make(),
             ])
             ->actions([
-                Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
+                Tables\Actions\ActionGroup::make([
+                    Tables\Actions\ViewAction::make()
+                        ->label('Ver detalles')
+                        ->icon('heroicon-o-eye')
+                        ->color('info'),
+
+                    Tables\Actions\EditAction::make()
+                        ->label('Editar')
+                        ->icon('heroicon-o-pencil')
+                        ->color('warning'),
+
+                    Tables\Actions\DeleteAction::make() // Borrado lógico
+                        ->label('Eliminar')
+                        ->icon('heroicon-o-trash')
+                        ->requiresConfirmation()
+                        ->modalHeading('Eliminar Zona')
+                        ->modalDescription('¿Estás seguro de que deseas eliminar esta zona? Las ventas históricas se mantendrán, pero ya no estará disponible para nuevas operaciones.'),
+
+                    Tables\Actions\RestoreAction::make()
+                        ->label('Restaurar')
+                        ->icon('heroicon-o-arrow-uturn-left')
+                        ->color('success')
+                        ->requiresConfirmation()
+                        ->modalHeading('Restaurar Zona')
+                        ->modalDescription('¿Deseas rescatar esta zona de la papelera? Sus mesas/habitaciones volverán a estar activas.'),
+                ])
+                ->label('Acciones')
+                ->icon('heroicon-o-ellipsis-vertical')
+                ->button()
+                ->color('gray'),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
+                    Tables\Actions\DeleteBulkAction::make()
+                        ->label('Eliminar seleccionados')
+                        ->requiresConfirmation(),
+                    Tables\Actions\RestoreBulkAction::make(), // Restaurar masivo
                 ]),
             ]);
     }
