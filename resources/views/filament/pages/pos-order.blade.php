@@ -42,39 +42,58 @@
                 <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
                     @forelse($this->products as $product)
                         @php
-                            // 🌟 MAGIA UX: Calculamos el estado de stock antes de dibujar el botón
-                            $isProduct = $product->type === 'product'; // Asumiendo que usas 'product' vs 'service'
-                            $stock = $product->current_stock ?? 0;
+                            // 🌟 MAGIA UX: Calculamos el estado de stock
+                            $isProduct = $product->type === 'product';
+                            $stock = (float)($product->current_stock ?? 0);
                             $isOutOfStock = $isProduct && $stock <= 0;
                         @endphp
 
                         <button
-                            {{-- Si está agotado, bloqueamos el clic en el HTML --}}
                             @if(!$isOutOfStock) wire:click="addProduct({{ $product->id }})" @endif
                             @disabled($isOutOfStock)
-                            class="relative p-4 rounded-xl shadow-sm border flex flex-col items-center justify-center text-center h-32 transition group
+                            {{-- Quitamos 'relative' y ajustamos el diseño --}}
+                            class="p-3 rounded-xl shadow-sm border flex flex-row items-center gap-3 text-left h-24 overflow-hidden transition group
                                    {{ $isOutOfStock
                                       ? 'bg-gray-100 dark:bg-gray-800/50 border-red-200 dark:border-red-900/30 opacity-60 cursor-not-allowed'
-                                      : 'bg-white dark:bg-gray-800 border-gray-100 dark:border-gray-700 hover:border-primary-500 dark:hover:border-primary-400 cursor-pointer' }}"
+                                      : 'bg-white dark:bg-gray-800 border-gray-100 dark:border-gray-700 hover:border-primary-500 dark:hover:border-primary-400 cursor-pointer hover:shadow-md' }}"
                         >
-                            {{-- 🌟 ETIQUETA VISUAL DE STOCK (Solo para productos físicos) --}}
-                            @if($isProduct)
-                                @if($isOutOfStock)
-                                    <span class="absolute top-2 right-2 bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-400 text-[9px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider">Agotado</span>
+                            {{-- 🌟 IMAGEN O ÍCONO DEL PRODUCTO --}}
+                            <div class="flex-shrink-0 w-16 h-16 rounded-lg bg-gray-50 dark:bg-gray-700 border border-gray-100 dark:border-gray-600 flex items-center justify-center overflow-hidden">
+                                @if($product->image)
+                                    <img src="{{ Storage::disk('r2_public')->url($product->image) }}" alt="{{ $product->name }}" class="w-full h-full object-cover">
                                 @else
-                                    <span class="absolute top-2 right-2 bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400 text-[10px] font-bold px-1.5 py-0.5 rounded shadow-sm">
-                                        Stock: {{ floatval($stock) }}
-                                    </span>
+                                    <x-heroicon-o-cube class="w-8 h-8 text-gray-300 dark:text-gray-500" />
                                 @endif
-                            @endif
+                            </div>
 
-                            <span class="font-bold text-sm line-clamp-2 leading-tight transition-colors mt-2
-                                {{ $isOutOfStock ? 'text-gray-500 dark:text-gray-500' : 'text-gray-800 dark:text-gray-200 group-hover:text-primary-600 dark:group-hover:text-primary-400' }}">
-                                {{ $product->name }}
-                            </span>
-                            <span class="font-black mt-2 {{ $isOutOfStock ? 'text-gray-400 dark:text-gray-600' : 'text-primary-600 dark:text-primary-400' }}">
-                                S/ {{ number_format($product->price, 2) }}
-                            </span>
+                            {{-- 🌟 DETALLES DEL PRODUCTO (Nombre, Precio y Stock) --}}
+                            <div class="flex flex-col flex-grow h-full justify-between py-0.5">
+                                {{-- Nombre arriba --}}
+                                <span class="font-bold text-sm leading-tight line-clamp-2 transition-colors
+                                    {{ $isOutOfStock ? 'text-gray-500 dark:text-gray-500' : 'text-gray-800 dark:text-gray-200 group-hover:text-primary-600 dark:group-hover:text-primary-400' }}">
+                                    {{ $product->name }}
+                                </span>
+
+                                {{-- Fila Inferior: Precio a la izquierda, Stock a la derecha --}}
+                                <div class="flex justify-between items-end w-full">
+                                    <span class="font-black text-sm {{ $isOutOfStock ? 'text-gray-400 dark:text-gray-600' : 'text-primary-600 dark:text-primary-400' }}">
+                                        S/ {{ number_format($product->price, 2) }}
+                                    </span>
+
+                                    {{-- Etiqueta de Stock integrada en la fila --}}
+                                    @if($isProduct)
+                                        @if($isOutOfStock)
+                                            <span class="bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400 text-[10px] font-black px-2 py-0.5 rounded shadow-sm uppercase tracking-widest">
+                                                Agotado
+                                            </span>
+                                        @else
+                                            <span class="bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 text-[10px] font-bold px-2 py-0.5 rounded">
+                                                {{ $stock }} und
+                                            </span>
+                                        @endif
+                                    @endif
+                                </div>
+                            </div>
                         </button>
                     @empty
                         <div class="col-span-full text-center text-gray-500 py-12 font-medium">
@@ -158,10 +177,9 @@
                 </div>
 
                 <div class="flex flex-row gap-3 w-full">
-                    <div class="w-1/2">
-                        <x-filament::button wire:click="sendToKitchen" color="warning" size="lg" icon="heroicon-m-fire" class="w-full h-full text-lg shadow-md">
-                            A Cocina
-                        </x-filament::button>
+                    <div class="w-1/2 flex [&>button]:w-full [&>button]:h-full [&>button]:text-lg [&>button]:shadow-md">
+                        {{-- 🌟 Llamamos al nuevo Modal Moderno --}}
+                        {{ $this->sendToKitchenAction }}
                     </div>
 
                     <div class="w-1/2 flex [&>button]:w-full [&>button]:h-full [&>button]:text-lg [&>button]:shadow-md">

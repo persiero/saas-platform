@@ -35,19 +35,26 @@ class SaleResource extends Resource
     protected static ?int $navigationSort = 2;
 
     public static function getEloquentQuery(): Builder
-    {
-        return parent::getEloquentQuery()
-            // 1. Filtro por local (Tenant)
-            ->where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id)
+{
+    return parent::getEloquentQuery()
+        // 1. Filtro por local (Tenant)
+        ->where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id)
 
-            // 🌟 2. NUEVO: Ocultamos los borradores de mesas vacías
-            ->where(function ($query) {
-                $query->where('total', '>', 0)->orWhere('status', '!=', 'pending');
-            })
+        // 2. Ocultamos los borradores de mesas vacías
+        ->where(function ($query) {
+            $query->where('total', '>', 0)->orWhere('status', '!=', 'pending');
+        })
 
-            // 3. Tu precarga de relaciones intacta (Para que cargue rápido)
-            ->with(['items.product', 'items.product.unidadSunat']);
-    }
+        // 🌟 3. LA SOLUCIÓN DEFINITIVA:
+        // Agregamos 'user' y 'cashRegister.user' para que la columna apilada
+        // no tenga que buscar los nombres uno por uno.
+        ->with([
+            'user',
+            'cashRegister.user',
+            'items.product',
+            'items.product.unidadSunat'
+        ]);
+}
 
     // 1.Nadie edita una venta ya hecha.
     public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
@@ -739,10 +746,20 @@ class SaleResource extends Resource
                             ->placeholder('Público en General') // Por si no hay cliente registrado
                             ->icon('heroicon-o-user'),
 
+                        // 🌟 EL CAJERO: Quien cobró (Dueño de la caja donde se pagó)
+                        TextEntry::make('cashRegister.user.name')
+                            ->label('Cobrado por (Cajero)')
+                            ->icon('heroicon-o-banknotes')
+                            ->placeholder('No registrado')
+                            // Solo mostramos al cajero si la venta ya se pagó y se cerró
+                            ->visible(fn ($record) => $record->status === 'completed'),
+
+                        // 🌟 EL MOZO: Quien creó la comanda
                         TextEntry::make('user.name')
-                            ->label('Atendido por (Mozo/Cajero)')
-                            ->icon('heroicon-o-identification')
-                            ->weight('bold'),
+                            ->label('Atendido por (Mozo)')
+                            ->icon('heroicon-o-user')
+                            ->weight('bold')
+                            ->color('primary'),
 
                         TextEntry::make('sold_at')
                             ->label('Fecha de Emisión')
@@ -760,7 +777,38 @@ class SaleResource extends Resource
                                 TextEntry::make('quantity')
                                     ->label('Cant.')
                                     ->badge()
-                                    ->color('gray'),
+                                    ->color('gray')
+                                    // 🌟 MAGIA UX: Formateo inteligente según el tipo de unidad
+                                    ->formatStateUsing(function ($state, $record) {
+                                        // $state trae el 4.0000, lo convertimos a float para matar ceros inútiles
+                                        $cantidad = (float) $state;
+
+                                        // Si se vendió por caja
+                                        if ($record->measurement_unit === 'box') {
+                                            return number_format($cantidad, 0) . ' Caj';
+                                        }
+
+                                        // Evaluamos el código SUNAT que quedó guardado en esta línea
+                                        $codigo = $record->unit_code ?? 'NIU';
+                                        $esGranel = in_array($codigo, ['KGM', 'LTR', 'GLL', 'GRM']);
+
+                                        $sufijo = match($codigo) {
+                                            'KGM' => 'kg',
+                                            'LTR' => 'lt',
+                                            'GLL' => 'gal',
+                                            'NIU' => 'und',
+                                            'ZZ'  => 'serv',
+                                            default => strtolower($codigo)
+                                        };
+
+                                        // Si es a granel, permitimos decimales (ej. 1.50 kg)
+                                        if ($esGranel) {
+                                            return number_format($cantidad, 2) . ' ' . $sufijo;
+                                        }
+
+                                        // Si es una unidad normal, mostramos números enteros (ej. 4 und)
+                                        return number_format($cantidad, 0) . ' ' . $sufijo;
+                                    }),
 
                                 // 🌟 CAMBIO: Usamos 'item_name' en lugar de 'product.name'
                                 // Esto es vital contablemente: muestra el nombre exacto que tenía el producto en el momento de la venta
@@ -792,7 +840,12 @@ class SaleResource extends Resource
                             ->money('PEN'),
 
                         TextEntry::make('igv')
-                            ->label('IGV (18%)')
+                            // 🌟 MAGIA SAAS: Leemos el IGV dinámico del Tenant (Empresa)
+                            // Usamos (float) para que "18.00" se vea como "18" y "10.50" se vea como "10.5"
+                            ->label(function ($record) {
+                                $porcentajeIgv = (float) ($record->tenant->igv_percentage ?? 18);
+                                return "IGV ({$porcentajeIgv}%)";
+                            })
                             ->money('PEN'),
 
                         // Parte inferior: Totales y Método de Pago
@@ -870,10 +923,25 @@ class SaleResource extends Resource
                 ->tooltip(fn (Sale $record): ?string => $record->customer?->name),
 
             Tables\Columns\TextColumn::make('user.name')
-                ->label('Cajero')
-                ->icon('heroicon-o-identification')
-                ->limit(20)
-                ->toggleable(), // Permite ocultar la columna si la pantalla es pequeña
+                    ->label('Atención / Cobro')
+                    ->icon('heroicon-o-user')
+                    ->weight('bold')
+                    // 🌟 MAGIA UX: Usamos la descripción para apilar el nombre del Cajero abajo
+                    ->description(function ($record): ?string {
+                        // Si la venta ya se completó y tiene una caja asociada
+                        if ($record->status === 'completed' && $record->cashRegister) {
+                            // Extraemos el primer nombre para no saturar la tabla
+                            $nombreCajero = explode(' ', $record->cashRegister->user->name)[0] ?? 'Desconocido';
+                            return "💰 Caja: {$nombreCajero}";
+                        }
+
+                        // Si aún está comiendo en la mesa
+                        return '⏳ Pendiente de cobro';
+                    })
+                    ->limit(20) // 🌟 Protege el diseño de nombres larguísimos
+                    ->toggleable() // 🌟 Permite ocultar la columna en celulares
+                    ->searchable()
+                    ->sortable(),
 
             Tables\Columns\TextColumn::make('total')
                 ->label('Total')

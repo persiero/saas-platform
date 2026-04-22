@@ -41,7 +41,10 @@ class InventoryMovementResource extends Resource
     // Solo mostramos los movimientos de la empresa actual
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()->where('tenant_id', Auth::user()->tenant_id);
+        return parent::getEloquentQuery()
+            ->where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id)
+            // 🌟 LA CURA AL LAZY LOADING: Traemos el producto y su unidad de SUNAT de golpe
+            ->with(['product.unidadSunat']);
     }
 
     // El Kardex es principalmente de auditoría, por ahora bloqueamos la creación manual directa aquí

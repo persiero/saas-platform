@@ -64,22 +64,41 @@
             </tr>
         </thead>
         <tbody>
-                @foreach($sale->items as $item)
-                <tr>
-                    <td class="qty-col">[{{ floatval($item->quantity) }}]</td>
-                    <td class="item-col">
-                        {{ strtoupper($item->item_name) }}
+            @php
+                // 🌟 CAPTURAMOS LAS NOVEDADES DE LA URL
+                $nuevosPlatos = request()->query('send', []);
+            @endphp
 
-                        {{-- 🌟 MAGIA: Si hay nota, la imprimimos bien llamativa --}}
-                        @if($item->note)
-                            <br>
-                            <span style="font-size: 14px; font-weight: normal; font-style: italic;">
-                                >> *{{ strtoupper($item->note) }}*
-                            </span>
-                        @endif
+            @foreach($sale->items as $item)
+                {{-- 🌟 LA MAGIA: Solo dibujamos la fila si el ID del plato vino en la URL --}}
+                @if(array_key_exists($item->id, $nuevosPlatos))
+                    <tr>
+                        {{-- 🌟 Imprimimos la cantidad NUEVA, no el total histórico --}}
+                        <td class="qty-col">[{{ floatval($nuevosPlatos[$item->id]) }}]</td>
+                        <td class="item-col">
+                            {{ strtoupper($item->item_name) }}
+
+                            {{-- 🌟 MAGIA: Si hay nota, la imprimimos bien llamativa --}}
+                            @if($item->note)
+                                <br>
+                                <span style="font-size: 14px; font-weight: normal; font-style: italic;">
+                                    >> *{{ strtoupper($item->note) }}*
+                                </span>
+                            @endif
+                        </td>
+                    </tr>
+                @endif
+            @endforeach
+
+            {{-- 🌟 SEGURIDAD: Si por alguna razón (ej. recargan la página) no hay datos nuevos, mostramos un aviso --}}
+            @if(empty($nuevosPlatos))
+                <tr>
+                    <td colspan="2" class="text-center" style="padding: 15px 0; font-style: italic;">
+                        - TICKET DE REFERENCIA -<br>
+                        No hay platos nuevos pendientes
                     </td>
                 </tr>
-            @endforeach
+            @endif
         </tbody>
     </table>
 
