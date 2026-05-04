@@ -6,7 +6,14 @@ use App\Http\Controllers\SaleController;
 // 🌟 1. PRIMERO LAS RUTAS DE SUBDOMINIOS (TIENDAS SAAS)
 // Al ponerlas aquí arriba, Laravel las evalúa antes que cualquier redirección global.
 Route::domain('{tenant_domain}.' . env('APP_URL_BASE', 'saas-platform.test'))->group(function () {
+    // Ruta del Catálogo Principal (La que ya tenías)
     Route::get('/', [\App\Http\Controllers\StorefrontController::class, 'index'])->name('storefront.index');
+
+    // 🌟 Ruta del Checkout (Apuntando al controlador nuevo)
+    Route::get('/checkout', [\App\Http\Controllers\StorefrontController::class, 'checkout'])->name('storefront.checkout');
+
+    // 🌟 LA NUEVA RUTA POST (Asegúrate de que esta línea exista aquí adentro)
+    Route::post('/checkout/process', [\App\Http\Controllers\StorefrontController::class, 'processWebOrder'])->name('storefront.process');
 });
 
 // 🌟 2. RUTAS GLOBALES DEL SISTEMA PRINCIPAL

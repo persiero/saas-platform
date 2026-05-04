@@ -11,7 +11,11 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        // 🌟 AGREGAMOS ESTA LÍNEA PARA PERMITIR EL CHECKOUT PÚBLICO
+        $middleware->validateCsrfTokens(except: [
+            'checkout/process',
+            '*/checkout/process', // El asterisco cubre cualquier subdominio (minimarketenma, etc)
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

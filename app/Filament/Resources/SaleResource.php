@@ -35,30 +35,36 @@ class SaleResource extends Resource
     protected static ?int $navigationSort = 2;
 
     public static function getEloquentQuery(): Builder
-{
-    return parent::getEloquentQuery()
-        // 1. Filtro por local (Tenant)
-        ->where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id)
+    {
+        return parent::getEloquentQuery()
+            // 1. Filtro por local (Tenant)
+            ->where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id)
 
-        // 2. Ocultamos los borradores de mesas vacías
-        ->where(function ($query) {
-            $query->where('total', '>', 0)->orWhere('status', '!=', 'pending');
-        })
+            // 2. Ocultamos los borradores de mesas vacías
+            ->where(function ($query) {
+                $query->where('total', '>', 0)->orWhere('status', '!=', 'pending');
+            })
 
-        // 🌟 3. LA SOLUCIÓN DEFINITIVA:
-        // Agregamos 'user' y 'cashRegister.user' para que la columna apilada
-        // no tenga que buscar los nombres uno por uno.
-        ->with([
-            'user',
-            'cashRegister.user',
-            'items.product',
-            'items.product.unidadSunat'
-        ]);
-}
+            // 🌟 3. LA SOLUCIÓN DEFINITIVA:
+            // Agregamos 'user' y 'cashRegister.user' para que la columna apilada
+            // no tenga que buscar los nombres uno por uno.
+            ->with([
+                'user',
+                'cashRegister.user',
+                'items.product',
+                'items.product.unidadSunat'
+            ]);
+    }
 
-    // 1.Nadie edita una venta ya hecha.
+    // 1. Candado Inteligente: Nadie edita una venta ya hecha... EXCEPTO los pedidos web entrantes.
     public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
     {
+        // 🌟 PERMITIR EDICIÓN: Solo si es pedido web y está pendiente de validación/cobro
+        if ($record->channel === 'ecommerce' && $record->status === 'pending_payment') {
+            return true;
+        }
+
+        // 🔒 BLOQUEAR EDICIÓN: Para todas las ventas presenciales o web ya completadas
         return false;
     }
 
@@ -105,6 +111,19 @@ class SaleResource extends Resource
     {
         return $form
             ->schema([
+                // 🌟 1. AVISO PARA EL CAJERO (Solo visible en ventas web pendientes)
+                Forms\Components\Section::make('🛍️ PEDIDO WEB PENDIENTE DE COBRO')
+                    ->description('Verifique el pago con el cliente y asigne el tipo de comprobante. Al "Guardar cambios", se emitirá el documento final y no podrá editarse más.')
+                    ->schema([
+                        Forms\Components\Placeholder::make('kitchen_notes')
+                            ->label('Datos ingresados por el cliente en la tienda web:')
+                            ->content(fn (?Sale $record) => $record ? $record->kitchen_notes : 'Sin datos')
+                            ->extraAttributes(['class' => 'font-mono text-sm text-gray-700 bg-yellow-50 p-4 rounded-lg'])
+                    ])
+                    // 🌟 SOLUCIÓN: Quitamos ->color() y usamos extraAttributes para darle un borde amarillo llamativo
+                    ->extraAttributes(['class' => 'ring-2 ring-amber-500'])
+                    ->visible(fn (?Sale $record) => $record && $record->channel === 'ecommerce' && $record->status === 'pending_payment'),
+
                 Forms\Components\Group::make()->schema([
                     // 🌟 1. INFORMACIÓN DE VENTA (Responsivo)
                     Forms\Components\Section::make('Información de Venta')->schema([
@@ -125,6 +144,7 @@ class SaleResource extends Resource
                                     ->value('serie');
                                 $set('series', $serieAuto);
                             })
+                            ->disabled(fn (?Sale $record) => $record && $record->status !== 'pending_payment')
                             ->columnSpan(['default' => 1, 'md' => 1]),
 
                         Forms\Components\Select::make('series')
@@ -149,6 +169,7 @@ class SaleResource extends Resource
                                     ->value('serie');
                             })
                             ->selectablePlaceholder(false)
+                            ->disabled(fn (?Sale $record) => $record && $record->status !== 'pending_payment')
                             ->columnSpan(['default' => 1, 'md' => 1]),
 
                         Forms\Components\Hidden::make('correlative'),
@@ -168,6 +189,7 @@ class SaleResource extends Resource
                             ->live()
                             ->required(fn (\Filament\Forms\Get $get) => $get('document_type') === '01')
                             ->helperText(fn (\Filament\Forms\Get $get) => $get('document_type') === '01' ? 'Obligatorio para Facturas' : 'Opcional. Déjalo en blanco para Consumidor Final.')
+                            ->disabled(fn (?Sale $record) => $record && $record->status !== 'pending_payment')
                             // 🌟 Ocupará 2 columnas en PC, pero 1 en móvil
                             ->columnSpan(['default' => 1, 'md' => 2])
                             ->createOptionAction(
@@ -286,6 +308,7 @@ class SaleResource extends Resource
                             ->live()
                             ->required()
                             ->afterStateUpdated(fn (Forms\Set $set) => $set('payment_reference', null))
+                            ->disabled(fn (?Sale $record) => $record && $record->status !== 'pending_payment')
                             ->columnSpan(['default' => 1, 'md' => 1]),
 
                         Forms\Components\TextInput::make('payment_reference')
@@ -293,6 +316,7 @@ class SaleResource extends Resource
                             ->placeholder('Ej: 123456')
                             ->visible(fn (\Filament\Forms\Get $get) => \Percy\Core\Models\Sale::requiresReference($get('payment_method') ?? ''))
                             ->required(fn (\Filament\Forms\Get $get) => \Percy\Core\Models\Sale::requiresReference($get('payment_method') ?? ''))
+                            ->disabled(fn (?Sale $record) => $record && $record->status !== 'pending_payment')
                             ->columnSpan(['default' => 1, 'md' => 1]),
 
                         Forms\Components\DateTimePicker::make('sold_at')
@@ -302,7 +326,13 @@ class SaleResource extends Resource
                             ->maxDate(now())
                             ->helperText('SUNAT solo acepta documentos de los últimos 7 días')
                             ->required()
+                            ->disabled(fn (?Sale $record) => $record && $record->status !== 'pending_payment')
                             ->columnSpan(['default' => 1, 'md' => 1]),
+                            // 🌟 SOLUCIÓN: Agregamos estos campos como Hidden para que Filament permita guardarlos
+                            //Forms\Components\Hidden::make('status'),
+                            //Forms\Components\Hidden::make('user_id'),
+                            //Forms\Components\Hidden::make('sunat_status'),
+                            // (El de 'correlative' ya lo tenías oculto arriba, así que ese está bien)
 
                         Forms\Components\TextInput::make('prescription_code')
                             ->label('N° de Receta Médica / CMP')
@@ -336,7 +366,7 @@ class SaleResource extends Resource
 
                         Forms\Components\Select::make('status')
                             ->label('Estado')
-                            ->options(['completed' => 'Completado', 'pending' => 'Pendiente', 'canceled' => 'Anulado'])
+                            ->options(['completed' => 'Completado', 'pending_payment' => 'Pendiente de Cobro', 'canceled' => 'Anulado'])
                             ->default('completed')
                             ->hidden(),
                     ])->columns(['default' => 1, 'md' => 4]), // 🌟 El contenedor usa 1 col en móvil, 4 en PC
@@ -424,6 +454,7 @@ class SaleResource extends Resource
                                 }
                                 $set('scanner', null);
                             })
+                            ->hidden(fn (?Sale $record) => $record && $record->channel === 'ecommerce')
                             ->columnSpanFull(),
 
                         Forms\Components\Repeater::make('items')
@@ -442,15 +473,23 @@ class SaleResource extends Resource
                                     ->label('Producto')
                                     ->searchable()
                                     ->preload()
-                                    ->required()
+                                    // ❌ ELIMINAMOS ->required()
+                                    ->required(false) // 🌟 Ahora es opcional (para permitir el delivery)
                                     // 🌟 REPEATER RESPONSIVO: Ocupa 1 col en móvil y 4 en PC
                                     ->columnSpan(['default' => 1, 'md' => 3])
                                     ->live(onBlur: true)
+                                    // 🌟 Ocultamos este select SI no hay un product_id guardado previamente
+                                    // (Asi el cajero solo ve el texto "Servicio de Delivery")
+                                    ->hidden(fn (\Filament\Forms\Get $get) =>
+                                        $get('../../channel') === 'ecommerce' &&
+                                        empty($get('product_id')) &&
+                                        !empty($get('item_name'))
+                                    )
                                     ->afterStateUpdated(function ($state, Set $set, Get $get) {
                                         if ($state) {
                                             $product = \Percy\Core\Models\Product::find($state);
 
-                                            // 🌟 1. Leemos el interruptor y la tasa
+                                            // 1. Leemos el interruptor y la tasa
                                             $tenant = \Illuminate\Support\Facades\Auth::user()->tenant;
                                             $tenantIgv = $tenant->igv_percentage ?? 18;
                                             $includesIgv = $tenant->prices_include_igv ?? true;
@@ -458,11 +497,11 @@ class SaleResource extends Resource
                                             $afectacion = \Percy\Core\Models\AfectacionIgv::find($product->afectacion_igv_id ?? 1);
                                             $porcentaje = ($afectacion && $afectacion->gravado) ? ($tenantIgv / 100) : 0;
 
-                                            // 🌟 2. Matemáticas según el interruptor
+                                            // 2. Matemáticas según el interruptor
                                             $precioVentaFinal = $includesIgv ? $product->price : ($product->price * (1 + $porcentaje));
                                             $precioFraccionFinal = $includesIgv ? ($product->unit_price ?? 0) : (($product->unit_price ?? 0) * (1 + $porcentaje));
 
-                                            // 🌟 3. Asignamos los precios calculados
+                                            // 3. Asignamos los precios calculados
                                             $set('unit_price', round($precioVentaFinal, 2));
                                             $set('_box_price', round($precioVentaFinal, 2));
                                             $set('_fraction_price', round($precioFraccionFinal, 2));
@@ -491,6 +530,14 @@ class SaleResource extends Resource
                                         self::updateRow($get, $set);
                                         self::updateTotals($get, $set);
                                     }),
+
+                                // 🌟 NUEVO CAMPO: Solo se muestra para el Servicio de Delivery
+                                Forms\Components\TextInput::make('item_name')
+                                    ->label('Servicio Adicional')
+                                    ->disabled() // El cajero no puede editar el nombre "Servicio de Delivery"
+                                    ->columnSpan(['default' => 1, 'md' => 3])
+                                    // Solo se hace visible si el campo de arriba (product_id) está vacío
+                                    ->visible(fn (\Filament\Forms\Get $get) => empty($get('product_id')) && !empty($get('item_name'))),
 
                                 Forms\Components\Select::make('measurement_unit')
                                     ->label('Presentación')
@@ -649,6 +696,8 @@ class SaleResource extends Resource
                                 Forms\Components\Hidden::make('_fraction_price'),
                                 Forms\Components\Hidden::make('_is_weighable')->default(false),
                             ])
+                            // 👇 Agregamos esto al Repeater principal:
+                            ->disabled(fn (?Sale $record) => $record && $record->channel === 'ecommerce')
                             ->columns(['default' => 1, 'md' => 12]) // 🌟 REPEATER DE 12 COLUMNAS EN PC, 1 EN MÓVIL
                             ->defaultItems(0)
                             ->addActionLabel('Agregar otro producto'),
@@ -700,7 +749,7 @@ class SaleResource extends Resource
                         Forms\Components\Hidden::make('igv'),
                         Forms\Components\Hidden::make('total'),
                     ]),
-                ])->columnSpan(['default' => 1, 'lg' => 1]), // 🌟 GRUPO DERECHO
+                ])->columnSpan(['default' => 1, 'lg' => 4]), // 🌟 GRUPO DERECHO
             ])
             ->columns(['default' => 1, 'lg' => 4]); // 🌟 CONTENEDOR PRINCIPAL
     }
@@ -913,35 +962,60 @@ class SaleResource extends Resource
                     default => null,
                 }),
 
+            // 🌟 1. COLUMNA CLIENTE (Omnicanal Corregido)
             Tables\Columns\TextColumn::make('customer.name')
                 ->label('Cliente')
-                ->placeholder('Público en General')
+                ->default('Público en General') // 🌟 CAMBIO CLAVE: Usamos default en lugar de placeholder
                 ->sortable()
                 ->searchable()
-                ->icon('heroicon-o-user')
+                ->icon(fn (Sale $record): string => match ($record->channel) {
+                    'ecommerce' => 'heroicon-s-globe-alt',
+                    default => 'heroicon-o-building-storefront',
+                })
+                ->iconColor(fn (Sale $record): string => match ($record->channel) {
+                    'ecommerce' => 'brand',
+                    default => 'gray',
+                })
+                ->weight(fn (Sale $record) => $record->channel === 'ecommerce' ? 'bold' : 'normal')
+                ->description(fn (Sale $record): ?string => match ($record->channel) {
+                    'ecommerce' => '🌐 Tienda Online',
+                    default => '🏪 Venta en Local',
+                })
                 ->limit(30)
-                ->tooltip(fn (Sale $record): ?string => $record->customer?->name),
+                ->tooltip(fn (Sale $record): ?string => $record->customer?->name ?? 'Público en General'),
 
+            // 🌟 2. COLUMNA ATENCIÓN / COBRO
             Tables\Columns\TextColumn::make('user.name')
-                    ->label('Atención / Cobro')
-                    ->icon('heroicon-o-user')
-                    ->weight('bold')
-                    // 🌟 MAGIA UX: Usamos la descripción para apilar el nombre del Cajero abajo
-                    ->description(function ($record): ?string {
-                        // Si la venta ya se completó y tiene una caja asociada
-                        if ($record->status === 'completed' && $record->cashRegister) {
-                            // Extraemos el primer nombre para no saturar la tabla
-                            $nombreCajero = explode(' ', $record->cashRegister->user->name)[0] ?? 'Desconocido';
-                            return "💰 Caja: {$nombreCajero}";
-                        }
+                ->label('Atención / Cobro')
+                ->state(function (Sale $record): string {
+                    if ($record->channel === 'ecommerce') return 'Cliente (Web)';
+                    return $record->user?->name ?? 'Desconocido';
+                })
+                ->icon(fn (Sale $record) => $record->channel === 'ecommerce' ? 'heroicon-o-shopping-cart' : 'heroicon-o-user')
+                ->weight('bold')
+                ->description(function (Sale $record): ?string {
+                    $isPaid = $record->status === 'completed' || !empty($record->payment_method);
 
-                        // Si aún está comiendo en la mesa
-                        return '⏳ Pendiente de cobro';
-                    })
-                    ->limit(20) // 🌟 Protege el diseño de nombres larguísimos
-                    ->toggleable() // 🌟 Permite ocultar la columna en celulares
-                    ->searchable()
-                    ->sortable(),
+                    // 🌟 SOLUCIÓN: Leemos directamente al usuario, no a la caja registradora
+                    $cajeroNombre = $record->user ? explode(' ', $record->user->name)[0] : 'Desconocido';
+
+                    // 🍔 CASO 1: RESTAURANTE (Tiene mesa asignada)
+                    if (!empty($record->table_id)) {
+                        return $isPaid ? "💰 Cobró: {$cajeroNombre}" : '⏳ Comiendo en mesa';
+                    }
+
+                    // 🌐 CASO 2: E-COMMERCE (Tienda Web)
+                    if ($record->channel === 'ecommerce') {
+                        return $isPaid ? "✅ Atendido por: {$cajeroNombre}" : '⏳ Pendiente de atención';
+                    }
+
+                    // 🏪 CASO 3: MINIMARKET / PRESENCIAL
+                    return null;
+                })
+                ->limit(20)
+                ->toggleable()
+                ->searchable()
+                ->sortable(),
 
             Tables\Columns\TextColumn::make('total')
                 ->label('Total')
@@ -953,20 +1027,30 @@ class SaleResource extends Resource
 
             Tables\Columns\TextColumn::make('payment_method')
                 ->label('Pago')
-                ->badge()
-                ->icon(fn (string $state): string => match ($state) {
-                    'Efectivo' => 'heroicon-o-banknotes',
+                // 🌟 MAGIA UI: Solo se vuelve un "badge" (con fondo) si está Pendiente
+                ->badge(fn (?string $state): bool => $state === 'Pendiente' || empty($state))
+
+                // Formateamos para que los vacíos digan "Pendiente"
+                ->formatStateUsing(fn (?string $state): string => empty($state) ? 'Pendiente' : $state)
+
+                // Asignamos los iconos
+                ->icon(fn (?string $state): string => match ($state) {
+                    'Efectivo', 'Contado' => 'heroicon-o-banknotes',
                     'Yape', 'Plin' => 'heroicon-o-device-phone-mobile',
                     'Tarjeta' => 'heroicon-o-credit-card',
                     'Transferencia' => 'heroicon-o-arrow-path',
+                    null, '', 'Pendiente' => 'heroicon-o-clock',
                     default => 'heroicon-o-currency-dollar',
                 })
-                ->color(fn (string $state): string => match ($state) {
-                    'Efectivo' => 'success',
-                    'Yape' => 'purple',
-                    'Plin' => 'info',
-                    'Tarjeta' => 'warning',
-                    'Transferencia' => 'gray',
+
+                // 🌟 COLORES CORPORATIVOS (Se aplicarán al icono y al texto, sin fondo saturado)
+                ->color(fn (?string $state): string => match ($state) {
+                    'Efectivo', 'Contado' => 'success', // Verde sutil
+                    'Yape' => 'purple',                 // Morado característico
+                    'Plin' => 'info',                   // Celeste/Azul característico
+                    'Tarjeta' => 'warning',             // Naranja/Amarillo neutral
+                    'Transferencia' => 'gray',          // Gris sobrio
+                    null, '', 'Pendiente' => 'danger',  // Rojo intenso (Como tiene badge=true, este sí tendrá fondo rojo)
                     default => 'gray',
                 })
                 ->toggleable(),
@@ -994,8 +1078,8 @@ class SaleResource extends Resource
                     $record->status === 'canceled' => 'Anulado',
                     $record->document_type === '00' => 'Uso Interno',
                     $state === 'accepted' => 'Aceptado',
-                    $state === 'pending' => 'Pendiente',
-                    $state === 'rejected' => 'Rechazado',
+                    $state === 'pending' => 'Pendiente SUNAT',
+                    $state === 'rejected' => 'Rechazado SUNAT',
                     default => ucfirst($state),
                 })
                 ->tooltip(fn (Sale $record): ?string =>
@@ -1081,6 +1165,49 @@ class SaleResource extends Resource
 
                 // 📁 GRUPO DE OPCIONES DESPLEGABLE
                 Tables\Actions\ActionGroup::make([
+                    // 🌟 BOTÓN EDITAR (Filament lo ocultará automáticamente si canEdit es false)
+                    Tables\Actions\EditAction::make()
+                        ->label('Procesar Pedido')
+                        ->icon('heroicon-o-pencil-square')
+                        ->color('warning') // Un color llamativo para el cajero
+                        ->visible(fn (\Percy\Core\Models\Sale $record) => $record->channel === 'ecommerce' && $record->status === 'pending_payment')
+                        ->using(function (\Illuminate\Database\Eloquent\Model $record, array $data): \Illuminate\Database\Eloquent\Model {
+
+                            // A. Inyectamos estado y cajero obligatoriamente
+                            $data['status'] = 'completed';
+                            $data['user_id'] = \Illuminate\Support\Facades\Auth::id();
+
+                            // B. Lógica SUNAT (Corregida)
+                            $tipoDoc = $data['document_type'] ?? $record->document_type;
+
+                            if (in_array($tipoDoc, ['01', '03'])) {
+                                $data['sunat_status'] = 'pending';
+                            } else {
+                                unset($data['sunat_status']);
+                            }
+
+                            // C. Generamos el nuevo correlativo
+                            $tipoNuevo = $data['document_type'] ?? $record->document_type;
+                            $serieNueva = $data['series'] ?? $record->series;
+
+                            if ($record->document_type !== $tipoNuevo || $record->series !== $serieNueva) {
+                                $serieConfig = \Percy\Core\Models\Serie::where('tenant_id', $record->tenant_id)
+                                    ->where('document_type', $tipoNuevo)
+                                    ->where('serie', $serieNueva)
+                                    ->first();
+
+                                if ($serieConfig) {
+                                    $serieConfig->increment('correlative');
+                                    $data['correlative'] = $serieConfig->correlative;
+                                }
+                            }
+
+                            // D. Forzamos el guardado
+                            $record->forceFill($data);
+                            $record->save();
+
+                            return $record;
+                        }),
 
                     // 1. Ver Detalle (Siempre visible)
                     Tables\Actions\ViewAction::make()
