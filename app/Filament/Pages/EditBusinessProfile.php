@@ -27,7 +27,7 @@ class EditBusinessProfile extends Page implements HasForms
     protected static ?string $navigationGroup = 'Configuración';
     protected static ?string $navigationLabel = 'Mi Empresa';
     protected static ?string $title = 'Configuración de SUNAT';
-    protected static ?int $navigationSort = 61;
+    protected static ?int $navigationSort = 6;
 
     protected static string $view = 'percy-core::filament.pages.edit-business-profile';
 

@@ -1,3 +1,19 @@
+{{-- 🌟 BARRA DE ANUNCIOS (Top Bar) --}}
+    <div class="bg-gray-900 text-white text-[11px] md:text-xs font-medium py-1.5 px-4 flex justify-center items-center gap-4 tracking-wider overflow-hidden">
+
+        {{-- 🌟 Corrección: hidden md:flex (Sin conflictos) y whitespace-nowrap (Sin saltos de línea) --}}
+        <span class="hidden md:flex items-center gap-1.5 whitespace-nowrap">
+            <x-heroicon-o-shield-check class="w-4 h-4 text-green-400"/>
+            Compra 100% Segura
+        </span>
+
+        <span class="flex items-center gap-1.5 whitespace-nowrap">
+            <x-heroicon-o-truck class="w-4 h-4 text-brand"/>
+            Delivery a todo Trujillo y alrededores
+        </span>
+
+    </div>
+
 {{-- 🌟 CABECERA PRINCIPAL --}}
     <header class="bg-white shadow-sm sticky top-0 z-50">
         <div class="max-w-6xl mx-auto px-4 py-3 flex justify-between items-center">
@@ -39,23 +55,24 @@
             </button>
         </div>
 
-        {{-- 🌟 BUSCADOR Y CATEGORÍAS (Scroll Horizontal) --}}
-        <div class="max-w-6xl mx-auto px-4 pb-3">
-            <div class="relative mb-3">
-                <input type="text" id="searchInput" onkeyup="filterProducts()" placeholder="Buscar productos..." class="w-full bg-gray-100 border-transparent focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 rounded-xl py-2 pl-10 pr-4 text-sm transition-all">
-                <svg class="w-5 h-5 text-gray-400 absolute left-3 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-            </div>
+        {{-- 🌟 BUSCADOR Y CATEGORÍAS (Solo se muestra en el catálogo, no en el checkout) --}}
+        @isset($categories)
+            <div class="max-w-6xl mx-auto px-4 pb-3">
+                <div class="relative mb-3">
+                    <input type="text" id="searchInput" onkeyup="filterProducts()" placeholder="Buscar productos..." class="w-full bg-gray-100 border-transparent focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 rounded-xl py-2 pl-10 pr-4 text-sm transition-all">
+                    <svg class="w-5 h-5 text-gray-400 absolute left-3 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                </div>
 
-            <div class="flex overflow-x-auto hide-scrollbar gap-2 pb-1" id="category-filters">
-                {{-- 🌟 Pasamos 'this' para saber qué botón pintar --}}
-                <button onclick="filterCategory('all', this)" class="category-btn active-category px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors">
-                    Todos
-                </button>
-                @foreach($categories as $category)
-                    <button onclick="filterCategory('{{ $category->name }}', this)" class="category-btn bg-gray-100 text-gray-600 hover:bg-gray-200 px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors">
-                        {{ $category->name }}
+                <div class="flex overflow-x-auto hide-scrollbar gap-2 pb-1" id="category-filters">
+                    <button onclick="filterCategory('all', this)" class="category-btn active-category px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors">
+                        Todos
                     </button>
-                @endforeach
+                    @foreach($categories as $category)
+                        <button onclick="filterCategory('{{ $category->name }}', this)" class="category-btn bg-gray-100 text-gray-600 hover:bg-gray-200 px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors">
+                            {{ $category->name }}
+                        </button>
+                    @endforeach
+                </div>
             </div>
-        </div>
+        @endisset
     </header>

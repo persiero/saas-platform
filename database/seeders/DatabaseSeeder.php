@@ -32,6 +32,7 @@ class DatabaseSeeder extends Seeder
             \Percy\Core\Database\Seeders\BusinessSectorSeeder::class,
             \Percy\Core\Database\Seeders\SunatSeeder::class,
             \Percy\Core\Database\Seeders\RoleSeeder::class,
+            \Percy\Core\Database\Seeders\UbigeoSeeder::class,
         ]);
 
 

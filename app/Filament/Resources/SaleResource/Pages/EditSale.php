@@ -13,7 +13,7 @@ class EditSale extends EditRecord
     protected function getHeaderActions(): array
     {
         return [
-            Actions\DeleteAction::make(),
+            Actions\DeleteAction::make(), // Botón de eliminar en la cabecera (opcional)
         ];
     }
 }
