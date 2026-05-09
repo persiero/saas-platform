@@ -3,7 +3,7 @@
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\SaleController;
 
-/*
+
 // 🌟 1. PRIMERO LAS RUTAS DE SUBDOMINIOS (TIENDAS SAAS)
 // Al ponerlas aquí arriba, Laravel las evalúa antes que cualquier redirección global.
 Route::domain('{tenant_domain}.' . env('APP_URL_BASE', 'saas-platform.test'))->group(function () {
@@ -47,28 +47,3 @@ Route::get('/limpiar-cache', function () {
         return "❌ Error limpiando caché: " . $e->getMessage();
     }
 });
-*/
-
-Route::any('{any}', function () {
-    return '<!DOCTYPE html>
-    <html lang="es">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Virtual Perú - Software POS</title>
-        <style>
-            body { font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; background-color: #f3f4f6; color: #1f2937; margin: 0; text-align: center; }
-            .container { max-width: 600px; padding: 40px; background: white; border-radius: 12px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); border-top: 5px solid #f59e0b; }
-            h1 { color: #111827; margin-bottom: 10px;}
-            p { font-size: 16px; line-height: 1.5; color: #4b5563; }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <h1>Virtual Perú - Software de Gestión</h1>
-            <p>Nuestra plataforma B2B para Minimarkets y Restaurantes se encuentra en fase de desarrollo y mantenimiento programado.</p>
-            <p><strong>Estado:</strong> Solo acceso administrativo interno. No se admiten registros públicos ni transacciones comerciales en este momento.</p>
-        </div>
-    </body>
-    </html>';
-})->where('any', '.*');
