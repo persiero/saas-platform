@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bgGradient" x1="64" y1="64" x2="448" y2="448" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0F172A"/>
+      <stop offset="45%" stop-color="#1D4ED8"/>
+      <stop offset="100%" stop-color="#38BDF8"/>
+    </linearGradient>
+
+    <linearGradient id="ringGradient" x1="80" y1="80" x2="432" y2="432" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#38BDF8"/>
+      <stop offset="100%" stop-color="#2563EB"/>
+    </linearGradient>
+
+    <filter id="shadow" x="0" y="0" width="512" height="512" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#2563EB" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+
+  <!-- Outer Ring -->
+  <circle cx="256" cy="256" r="228" fill="url(#ringGradient)" filter="url(#shadow)"/>
+
+  <!-- Inner Circle -->
+  <circle cx="256" cy="256" r="206" fill="url(#bgGradient)"/>
+
+  <!-- Circuit Lines -->
+  <g stroke="#FFFFFF" stroke-width="14" stroke-linecap="round">
+    <line x1="230" y1="150" x2="355" y2="150"/>
+    <circle cx="370" cy="150" r="18" fill="#FFFFFF" stroke="none"/>
+
+    <line x1="220" y1="200" x2="315" y2="200"/>
+    <circle cx="205" cy="200" r="18" fill="#FFFFFF" stroke="none"/>
+
+    <line x1="315" y1="200" x2="315" y2="310"/>
+    <circle cx="315" cy="200" r="16" fill="url(#bgGradient)" stroke="#FFFFFF" stroke-width="10"/>
+  </g>
+
+  <!-- Letter V -->
+  <path d="M82 128H150L228 338L288 210H355L248 438H170L82 128Z" fill="#FFFFFF"/>
+
+  <!-- Letter P -->
+  <path d="M285 225H360C402 225 428 252 428 300C428 348 402 375 360 375H332V448H285V225ZM332 268V332H358C372 332 383 321 383 300C383 279 372 268 358 268H332Z" fill="#FFFFFF" opacity="0.95"/>
+</svg>
