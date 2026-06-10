@@ -13,21 +13,7 @@ class DatabaseSeeder extends Seeder
 
     public function run(): void
     {
-        // En lugar de User::create, usamos updateOrCreate
-        // Busca por email; si existe, lo actualiza. Si no, lo crea.
-        $superAdmin = \App\Models\User::updateOrCreate(
-            ['email' => 'percyrojasrod@gmail.com'], // Condición de búsqueda
-            [
-                'name' => 'Súper Administrador',
-                'password' => \Illuminate\Support\Facades\Hash::make('password123'),
-                'tenant_id' => null, // Descomenta esto si ya tienes un tenant creado
-            ]
-        );
-
-        // Le asignamos el rol con ID 1 (Administrador) solo si no lo tiene
-        $superAdmin->roles()->syncWithoutDetaching([1]);
-
-
+        // Primero ejecutar los seeders del Core
         $this->call([
             \Percy\Core\Database\Seeders\BusinessSectorSeeder::class,
             \Percy\Core\Database\Seeders\SunatSeeder::class,
@@ -35,6 +21,19 @@ class DatabaseSeeder extends Seeder
             \Percy\Core\Database\Seeders\UbigeoSeeder::class,
         ]);
 
+        // Luego crear o actualizar el Super Administrador
+        $superAdmin = User::updateOrCreate(
+            [
+                'email' => 'percyrojasrod@gmail.com',
+            ],
+            [
+                'name' => 'Súper Administrador',
+                'password' => Hash::make('password123'),
+                'tenant_id' => null,
+            ]
+        );
 
+        // Asignar rol Administrador (ID = 1)
+        $superAdmin->roles()->syncWithoutDetaching([1]);
     }
 }
