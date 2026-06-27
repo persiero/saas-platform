@@ -5,8 +5,8 @@ namespace App\Filament\Resources\SaleResource\Pages;
 use App\Filament\Resources\SaleResource;
 use Filament\Actions;
 use Filament\Resources\Pages\CreateRecord;
-use Percy\Core\Models\Serie;
 use Percy\Core\Models\CashRegister;
+use Percy\Core\Services\Sales\CorrelativeService;
 use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\Auth;
 
@@ -42,18 +42,25 @@ class CreateSale extends CreateRecord
 
     protected function mutateFormDataBeforeCreate(array $data): array
     {
-        $serieRecord = Serie::where('document_type', $data['document_type'])
-            ->where('serie', $data['series'])
+        $tenantId = Auth::user()->tenant_id;
+        $userId = Auth::id();
+
+        $cashRegister = CashRegister::where('tenant_id', $tenantId)
+            ->where('user_id', $userId)
+            ->where('status', 'open')
             ->first();
 
-        if (!$serieRecord) {
-            throw new \Exception("La serie seleccionada no está configurada en el sistema.");
+        if (!$cashRegister) {
+            throw new \Exception("Debes tener una caja abierta para registrar ventas.");
         }
 
-        $serieRecord->increment('correlative');
-        $data['correlative'] = $serieRecord->correlative;
+        $data['tenant_id'] = $tenantId;
+        $data['user_id'] = $userId;
+        $data['cash_register_id'] = $cashRegister->id;
 
-        // 🌟 MAGIA DE LAS LETRAS: Generamos el texto aquí mismo para TODOS los documentos
+        $data['correlative'] = app(CorrelativeService::class)
+            ->next($tenantId, $data['document_type'], $data['series']);
+
         if (isset($data['total'])) {
             $data['legend_text'] = $this->convertirTotalALetras((float) $data['total']);
         }

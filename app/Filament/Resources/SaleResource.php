@@ -8,6 +8,7 @@ use App\Services\SunatService;
 use Percy\Core\Models\Sale;
 use Percy\Core\Models\Product;
 use Percy\Core\Models\AfectacionIgv;
+use Percy\Core\Services\Sales\CorrelativeService;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Forms\Get;
@@ -117,12 +118,12 @@ class SaleResource extends Resource
                     ->schema([
                         Forms\Components\Placeholder::make('kitchen_notes')
                             ->label('Datos ingresados por el cliente en la tienda web:')
-                            ->content(fn (?Sale $record) => $record ? $record->kitchen_notes : 'Sin datos')
+                            ->content(fn(?Sale $record) => $record ? $record->kitchen_notes : 'Sin datos')
                             ->extraAttributes(['class' => 'font-mono text-sm text-gray-700 bg-yellow-50 p-4 rounded-lg'])
                     ])
                     // 🌟 SOLUCIÓN: Quitamos ->color() y usamos extraAttributes para darle un borde amarillo llamativo
                     ->extraAttributes(['class' => 'ring-2 ring-amber-500'])
-                    ->visible(fn (?Sale $record) => $record && $record->channel === 'ecommerce' && $record->status === 'pending_payment'),
+                    ->visible(fn(?Sale $record) => $record && $record->channel === 'ecommerce' && $record->status === 'pending_payment'),
 
                 Forms\Components\Group::make()->schema([
                     // 🌟 1. INFORMACIÓN DE VENTA (Responsivo)
@@ -144,7 +145,7 @@ class SaleResource extends Resource
                                     ->value('serie');
                                 $set('series', $serieAuto);
                             })
-                            ->disabled(fn (?Sale $record) => $record && $record->status !== 'pending_payment')
+                            ->disabled(fn(?Sale $record) => $record && $record->status !== 'pending_payment')
                             ->columnSpan(['default' => 1, 'md' => 1]),
 
                         Forms\Components\Select::make('series')
@@ -169,7 +170,7 @@ class SaleResource extends Resource
                                     ->value('serie');
                             })
                             ->selectablePlaceholder(false)
-                            ->disabled(fn (?Sale $record) => $record && $record->status !== 'pending_payment')
+                            ->disabled(fn(?Sale $record) => $record && $record->status !== 'pending_payment')
                             ->columnSpan(['default' => 1, 'md' => 1]),
 
                         Forms\Components\Hidden::make('correlative'),
@@ -187,13 +188,13 @@ class SaleResource extends Resource
                             ->searchable(['name', 'document_number'])
                             ->preload()
                             ->live()
-                            ->required(fn (\Filament\Forms\Get $get) => $get('document_type') === '01')
-                            ->helperText(fn (\Filament\Forms\Get $get) => $get('document_type') === '01' ? 'Obligatorio para Facturas' : 'Opcional. Déjalo en blanco para Consumidor Final.')
-                            ->disabled(fn (?Sale $record) => $record && $record->status !== 'pending_payment')
+                            ->required(fn(\Filament\Forms\Get $get) => $get('document_type') === '01')
+                            ->helperText(fn(\Filament\Forms\Get $get) => $get('document_type') === '01' ? 'Obligatorio para Facturas' : 'Opcional. Déjalo en blanco para Consumidor Final.')
+                            ->disabled(fn(?Sale $record) => $record && $record->status !== 'pending_payment')
                             // 🌟 Ocupará 2 columnas en PC, pero 1 en móvil
                             ->columnSpan(['default' => 1, 'md' => 2])
                             ->createOptionAction(
-                                fn (\Filament\Forms\Components\Actions\Action $action) => $action
+                                fn(\Filament\Forms\Components\Actions\Action $action) => $action
                                     ->icon('heroicon-s-user-plus')
                                     ->color('primary')
                                     ->tooltip('Registrar Nuevo Cliente')
@@ -222,14 +223,18 @@ class SaleResource extends Resource
 
                                         Forms\Components\TextInput::make('document_number')
                                             ->label('Número')
-                                            ->maxLength(fn (\Filament\Forms\Get $get) => match ($get('document_type')) {
-                                                'DNI' => 8, 'RUC' => 11, default => 15,
+                                            ->maxLength(fn(\Filament\Forms\Get $get) => match ($get('document_type')) {
+                                                'DNI' => 8,
+                                                'RUC' => 11,
+                                                default => 15,
                                             })
-                                            ->minLength(fn (\Filament\Forms\Get $get) => match ($get('document_type')) {
-                                                'DNI' => 8, 'RUC' => 11, default => null,
+                                            ->minLength(fn(\Filament\Forms\Get $get) => match ($get('document_type')) {
+                                                'DNI' => 8,
+                                                'RUC' => 11,
+                                                default => null,
                                             })
-                                            ->numeric(fn (\Filament\Forms\Get $get) => in_array($get('document_type'), ['DNI', 'RUC']))
-                                            ->placeholder(fn (\Filament\Forms\Get $get) => $get('document_type') === 'RUC' ? 'Ej: 20... (11 dígitos)' : 'Ej: 12345678')
+                                            ->numeric(fn(\Filament\Forms\Get $get) => in_array($get('document_type'), ['DNI', 'RUC']))
+                                            ->placeholder(fn(\Filament\Forms\Get $get) => $get('document_type') === 'RUC' ? 'Ej: 20... (11 dígitos)' : 'Ej: 12345678')
                                             ->required()
                                             ->columnSpan(1)
                                             ->suffixAction(
@@ -237,7 +242,7 @@ class SaleResource extends Resource
                                                     ->icon('heroicon-m-magnifying-glass')
                                                     ->color('primary')
                                                     ->tooltip('Buscar RUC (Decolecta)')
-                                                    ->visible(fn (\Filament\Forms\Get $get) => $get('document_type') === 'RUC')
+                                                    ->visible(fn(\Filament\Forms\Get $get) => $get('document_type') === 'RUC')
                                                     ->action(function ($state, \Filament\Forms\Set $set) {
                                                         if (blank($state) || strlen($state) !== 11) {
                                                             \Filament\Notifications\Notification::make()->danger()->title('Error')->body('Ingrese un RUC válido de 11 dígitos.')->send();
@@ -307,16 +312,16 @@ class SaleResource extends Resource
                             ->default('Efectivo')
                             ->live()
                             ->required()
-                            ->afterStateUpdated(fn (Forms\Set $set) => $set('payment_reference', null))
-                            ->disabled(fn (?Sale $record) => $record && $record->status !== 'pending_payment')
+                            ->afterStateUpdated(fn(Forms\Set $set) => $set('payment_reference', null))
+                            ->disabled(fn(?Sale $record) => $record && $record->status !== 'pending_payment')
                             ->columnSpan(['default' => 1, 'md' => 1]),
 
                         Forms\Components\TextInput::make('payment_reference')
                             ->label('N° de Operación / Referencia')
                             ->placeholder('Ej: 123456')
-                            ->visible(fn (\Filament\Forms\Get $get) => \Percy\Core\Models\Sale::requiresReference($get('payment_method') ?? ''))
-                            ->required(fn (\Filament\Forms\Get $get) => \Percy\Core\Models\Sale::requiresReference($get('payment_method') ?? ''))
-                            ->disabled(fn (?Sale $record) => $record && $record->status !== 'pending_payment')
+                            ->visible(fn(\Filament\Forms\Get $get) => \Percy\Core\Models\Sale::requiresReference($get('payment_method') ?? ''))
+                            ->required(fn(\Filament\Forms\Get $get) => \Percy\Core\Models\Sale::requiresReference($get('payment_method') ?? ''))
+                            ->disabled(fn(?Sale $record) => $record && $record->status !== 'pending_payment')
                             ->columnSpan(['default' => 1, 'md' => 1]),
 
                         Forms\Components\DateTimePicker::make('sold_at')
@@ -326,13 +331,13 @@ class SaleResource extends Resource
                             ->maxDate(now())
                             ->helperText('SUNAT solo acepta documentos de los últimos 7 días')
                             ->required()
-                            ->disabled(fn (?Sale $record) => $record && $record->status !== 'pending_payment')
+                            ->disabled(fn(?Sale $record) => $record && $record->status !== 'pending_payment')
                             ->columnSpan(['default' => 1, 'md' => 1]),
-                            // 🌟 SOLUCIÓN: Agregamos estos campos como Hidden para que Filament permita guardarlos
-                            //Forms\Components\Hidden::make('status'),
-                            //Forms\Components\Hidden::make('user_id'),
-                            //Forms\Components\Hidden::make('sunat_status'),
-                            // (El de 'correlative' ya lo tenías oculto arriba, así que ese está bien)
+                        // 🌟 SOLUCIÓN: Agregamos estos campos como Hidden para que Filament permita guardarlos
+                        //Forms\Components\Hidden::make('status'),
+                        //Forms\Components\Hidden::make('user_id'),
+                        //Forms\Components\Hidden::make('sunat_status'),
+                        // (El de 'correlative' ya lo tenías oculto arriba, así que ese está bien)
 
                         Forms\Components\TextInput::make('prescription_code')
                             ->label('N° de Receta Médica / CMP')
@@ -454,7 +459,7 @@ class SaleResource extends Resource
                                 }
                                 $set('scanner', null);
                             })
-                            ->hidden(fn (?Sale $record) => $record && $record->channel === 'ecommerce')
+                            ->hidden(fn(?Sale $record) => $record && $record->channel === 'ecommerce')
                             ->columnSpanFull(),
 
                         Forms\Components\Repeater::make('items')
@@ -465,7 +470,7 @@ class SaleResource extends Resource
                                 self::updateTotals($get, $set);
                             })
                             ->deleteAction(
-                                fn (\Filament\Forms\Components\Actions\Action $action) => $action->after(fn(Get $get, Set $set) => self::updateTotals($get, $set))
+                                fn(\Filament\Forms\Components\Actions\Action $action) => $action->after(fn(Get $get, Set $set) => self::updateTotals($get, $set))
                             )
                             ->schema([
                                 Forms\Components\Select::make('product_id')
@@ -480,10 +485,11 @@ class SaleResource extends Resource
                                     ->live(onBlur: true)
                                     // 🌟 Ocultamos este select SI no hay un product_id guardado previamente
                                     // (Asi el cajero solo ve el texto "Servicio de Delivery")
-                                    ->hidden(fn (\Filament\Forms\Get $get) =>
+                                    ->hidden(
+                                        fn(\Filament\Forms\Get $get) =>
                                         $get('../../channel') === 'ecommerce' &&
-                                        empty($get('product_id')) &&
-                                        !empty($get('item_name'))
+                                            empty($get('product_id')) &&
+                                            !empty($get('item_name'))
                                     )
                                     ->afterStateUpdated(function ($state, Set $set, Get $get) {
                                         if ($state) {
@@ -537,13 +543,13 @@ class SaleResource extends Resource
                                     ->disabled() // El cajero no puede editar el nombre "Servicio de Delivery"
                                     ->columnSpan(['default' => 1, 'md' => 3])
                                     // Solo se hace visible si el campo de arriba (product_id) está vacío
-                                    ->visible(fn (\Filament\Forms\Get $get) => empty($get('product_id')) && !empty($get('item_name'))),
+                                    ->visible(fn(\Filament\Forms\Get $get) => empty($get('product_id')) && !empty($get('item_name'))),
 
                                 Forms\Components\Select::make('measurement_unit')
                                     ->label('Presentación')
                                     ->options(['box' => 'Caja', 'unit' => 'Unidad'])
-                                    ->visible(fn (Get $get) => $get('_is_fractionable'))
-                                    ->required(fn (Get $get) => $get('_is_fractionable'))
+                                    ->visible(fn(Get $get) => $get('_is_fractionable'))
+                                    ->required(fn(Get $get) => $get('_is_fractionable'))
                                     ->columnSpan(['default' => 1, 'md' => 2])
                                     ->live()
                                     ->afterStateUpdated(function ($state, Set $set, Get $get) {
@@ -572,8 +578,8 @@ class SaleResource extends Resource
                                                 return [$batch->id => "{$batch->batch_number} (Vence: {$vence})"];
                                             });
                                     })
-                                    ->visible(fn () => \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features['has_lots'] ?? false)
-                                    ->required(fn () => \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features['has_lots'] ?? false)
+                                    ->visible(fn() => \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features['has_lots'] ?? false)
+                                    ->required(fn() => \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features['has_lots'] ?? false)
                                     ->searchable()
                                     ->preload()
                                     ->columnSpan(['default' => 1, 'md' => 2]),
@@ -582,16 +588,19 @@ class SaleResource extends Resource
                                     ->label('Cantidad')
                                     ->numeric()
                                     ->default(1)
-                                    ->minValue(fn (\Filament\Forms\Get $get) => $get('_is_weighable') ? 0.001 : 1)
-                                    ->step(fn (\Filament\Forms\Get $get) => $get('_is_weighable') ? 0.001 : 1)
+                                    ->minValue(fn(\Filament\Forms\Get $get) => $get('_is_weighable') ? 0.001 : 1)
+                                    ->step(fn(\Filament\Forms\Get $get) => $get('_is_weighable') ? 0.001 : 1)
                                     ->suffix(function (\Filament\Forms\Get $get) {
                                         if (!$get('_is_weighable')) return 'Und';
-                                        return match($get('unit_code')) {
-                                            'KGM' => 'Kg', 'LTR' => 'Lt', 'GLL' => 'Gal', default => $get('unit_code') ?? 'Und',
+                                        return match ($get('unit_code')) {
+                                            'KGM' => 'Kg',
+                                            'LTR' => 'Lt',
+                                            'GLL' => 'Gal',
+                                            default => $get('unit_code') ?? 'Und',
                                         };
                                     })
                                     ->rules([
-                                        fn (\Filament\Forms\Get $get) => function (string $attribute, $value, \Closure $fail) use ($get) {
+                                        fn(\Filament\Forms\Get $get) => function (string $attribute, $value, \Closure $fail) use ($get) {
                                             if (!$get('_is_weighable') && fmod((float)$value, 1) !== 0.0) {
                                                 $fail('Este producto solo admite cantidades enteras.');
                                             }
@@ -637,7 +646,12 @@ class SaleResource extends Resource
 
                                             // 2. Granel (Peso/Volumen)
                                             if ($isWeighable) {
-                                                $sufijo = match($unitCode) { 'KGM' => 'kg', 'LTR' => 'lt', 'GLL' => 'gal', default => 'und' };
+                                                $sufijo = match ($unitCode) {
+                                                    'KGM' => 'kg',
+                                                    'LTR' => 'lt',
+                                                    'GLL' => 'gal',
+                                                    default => 'und'
+                                                };
                                                 return number_format($stock, 2) . " {$sufijo}";
                                             }
 
@@ -697,7 +711,7 @@ class SaleResource extends Resource
                                 Forms\Components\Hidden::make('_is_weighable')->default(false),
                             ])
                             // 👇 Agregamos esto al Repeater principal:
-                            ->disabled(fn (?Sale $record) => $record && $record->channel === 'ecommerce')
+                            ->disabled(fn(?Sale $record) => $record && $record->channel === 'ecommerce')
                             ->columns(['default' => 1, 'md' => 12]) // 🌟 REPEATER DE 12 COLUMNAS EN PC, 1 EN MÓVIL
                             ->defaultItems(0)
                             ->addActionLabel('Agregar otro producto'),
@@ -708,17 +722,17 @@ class SaleResource extends Resource
                     Forms\Components\Section::make('Resumen Financiero')->schema([
                         Forms\Components\Placeholder::make('op_gravadas_lbl')
                             ->label('Op. Gravadas')
-                            ->content(fn (Get $get): string => 'S/ ' . number_format((float)($get('op_gravadas') ?? 0), 2))
+                            ->content(fn(Get $get): string => 'S/ ' . number_format((float)($get('op_gravadas') ?? 0), 2))
                             ->extraAttributes(['class' => 'flex justify-between border-b pb-1']),
 
                         Forms\Components\Placeholder::make('op_exoneradas_lbl')
                             ->label('Op. Exoneradas')
-                            ->content(fn (Get $get): string => 'S/ ' . number_format((float)($get('op_exoneradas') ?? 0), 2))
+                            ->content(fn(Get $get): string => 'S/ ' . number_format((float)($get('op_exoneradas') ?? 0), 2))
                             ->extraAttributes(['class' => 'flex justify-between border-b pb-1 text-gray-500']),
 
                         Forms\Components\Placeholder::make('op_inafectas_lbl')
                             ->label('Op. Inafectas')
-                            ->content(fn (Get $get): string => 'S/ ' . number_format((float)($get('op_inafectas') ?? 0), 2))
+                            ->content(fn(Get $get): string => 'S/ ' . number_format((float)($get('op_inafectas') ?? 0), 2))
                             ->extraAttributes(['class' => 'flex justify-between border-b pb-1 text-gray-500']),
 
                         Forms\Components\Placeholder::make('subtotal_lbl')
@@ -735,12 +749,12 @@ class SaleResource extends Resource
                                 $igv = \Illuminate\Support\Facades\Auth::user()->tenant->igv_percentage ?? 18;
                                 return "IGV ({$igv}%)";
                             })
-                            ->content(fn (Get $get): string => 'S/ ' . number_format((float)($get('igv') ?? 0), 2))
+                            ->content(fn(Get $get): string => 'S/ ' . number_format((float)($get('igv') ?? 0), 2))
                             ->extraAttributes(['class' => 'flex justify-between border-b pb-1']),
 
                         Forms\Components\Placeholder::make('total_lbl')
                             ->label('IMPORTE TOTAL')
-                            ->content(fn (Get $get): string => 'S/ ' . number_format((float)($get('total') ?? 0), 2))
+                            ->content(fn(Get $get): string => 'S/ ' . number_format((float)($get('total') ?? 0), 2))
                             ->extraAttributes(['class' => 'flex justify-between text-2xl font-black text-primary-600 pt-2']),
 
                         Forms\Components\Hidden::make('op_gravadas'),
@@ -764,7 +778,7 @@ class SaleResource extends Resource
                     ->schema([
                         TextEntry::make('document_type')
                             ->label('Comprobante')
-                            ->formatStateUsing(fn ($state) => match ($state) {
+                            ->formatStateUsing(fn($state) => match ($state) {
                                 '01' => 'Factura',
                                 '03' => 'Boleta',
                                 '07' => 'Nota de Crédito',
@@ -801,7 +815,7 @@ class SaleResource extends Resource
                             ->icon('heroicon-o-banknotes')
                             ->placeholder('No registrado')
                             // Solo mostramos al cajero si la venta ya se pagó y se cerró
-                            ->visible(fn ($record) => $record->status === 'completed'),
+                            ->visible(fn($record) => $record->status === 'completed'),
 
                         // 🌟 EL MOZO: Quien creó la comanda
                         TextEntry::make('user.name')
@@ -841,7 +855,7 @@ class SaleResource extends Resource
                                         $codigo = $record->unit_code ?? 'NIU';
                                         $esGranel = in_array($codigo, ['KGM', 'LTR', 'GLL', 'GRM']);
 
-                                        $sufijo = match($codigo) {
+                                        $sufijo = match ($codigo) {
                                             'KGM' => 'kg',
                                             'LTR' => 'lt',
                                             'GLL' => 'gal',
@@ -907,7 +921,7 @@ class SaleResource extends Resource
                             TextEntry::make('payment_reference')
                                 ->label('N° Referencia / Operación')
                                 ->placeholder('No aplica')
-                                ->visible(fn ($record) => in_array($record->payment_method, ['Yape', 'Plin', 'Tarjeta', 'Transferencia'])),
+                                ->visible(fn($record) => in_array($record->payment_method, ['Yape', 'Plin', 'Tarjeta', 'Transferencia'])),
 
                             TextEntry::make('total')
                                 ->label('IMPORTE TOTAL PAGADO')
@@ -915,7 +929,7 @@ class SaleResource extends Resource
                                 ->size(TextEntry\TextEntrySize::Large)
                                 ->weight('black')
                                 ->color('success')
-                                ->columnSpan(fn ($record) => in_array($record->payment_method, ['Efectivo']) ? 2 : 1),
+                                ->columnSpan(fn($record) => in_array($record->payment_method, ['Efectivo']) ? 2 : 1),
                         ]),
                     ])->columns(2),
             ]);
@@ -924,243 +938,244 @@ class SaleResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
-        ->columns([
-            Tables\Columns\TextColumn::make('document_number')
-                ->label('Comprobante')
-                ->state(fn (Sale $record): string => "{$record->series}-{$record->correlative}")
-                ->searchable(['series', 'correlative'])
-                ->sortable(false)
-                ->weight('bold')
-                // 🌟 CAMBIO: Evaluamos primero si está anulado
-                ->icon(fn (Sale $record): string => match (true) {
-                    $record->status === 'canceled' => 'heroicon-o-x-circle', // Ícono de anulación
-                    $record->document_type === '01' => 'heroicon-o-document-text',
-                    $record->document_type === '03' => 'heroicon-o-receipt-percent',
-                    $record->document_type === '07' => 'heroicon-o-arrow-uturn-left',
-                    $record->document_type === '08' => 'heroicon-o-arrow-trending-up',
-                    default => 'heroicon-o-document',
-                })
-                // 🌟 CAMBIO: Color rojo si está anulado
-                ->color(fn (Sale $record): string => match (true) {
-                    $record->status === 'canceled' => 'danger',
-                    $record->document_type === '07' => 'danger',
-                    $record->document_type === '08' => 'warning',
-                    $record->document_type === '01' => 'info',
-                    $record->document_type === '03' => 'success',
-                    default => 'gray',
-                })
-                // 🌟 MAGIA VISUAL AQUÍ: Agregamos la validación para Facturas y Boletas
-                ->description(fn (Sale $record): ?string => match (true) {
-                    $record->status === 'canceled' => 'Anulado',
-                    in_array($record->document_type, ['07', '08']) => "Ref: {$record->affected_document_series}-{$record->affected_document_correlative}",
+            ->columns([
+                Tables\Columns\TextColumn::make('document_number')
+                    ->label('Comprobante')
+                    ->state(fn(Sale $record): string => "{$record->series}-{$record->correlative}")
+                    ->searchable(['series', 'correlative'])
+                    ->sortable(false)
+                    ->weight('bold')
+                    // 🌟 CAMBIO: Evaluamos primero si está anulado
+                    ->icon(fn(Sale $record): string => match (true) {
+                        $record->status === 'canceled' => 'heroicon-o-x-circle', // Ícono de anulación
+                        $record->document_type === '01' => 'heroicon-o-document-text',
+                        $record->document_type === '03' => 'heroicon-o-receipt-percent',
+                        $record->document_type === '07' => 'heroicon-o-arrow-uturn-left',
+                        $record->document_type === '08' => 'heroicon-o-arrow-trending-up',
+                        default => 'heroicon-o-document',
+                    })
+                    // 🌟 CAMBIO: Color rojo si está anulado
+                    ->color(fn(Sale $record): string => match (true) {
+                        $record->status === 'canceled' => 'danger',
+                        $record->document_type === '07' => 'danger',
+                        $record->document_type === '08' => 'warning',
+                        $record->document_type === '01' => 'info',
+                        $record->document_type === '03' => 'success',
+                        default => 'gray',
+                    })
+                    // 🌟 MAGIA VISUAL AQUÍ: Agregamos la validación para Facturas y Boletas
+                    ->description(fn(Sale $record): ?string => match (true) {
+                        $record->status === 'canceled' => 'Anulado',
+                        in_array($record->document_type, ['07', '08']) => "Ref: {$record->affected_document_series}-{$record->affected_document_correlative}",
 
-                    // Si es Factura o Boleta Y tiene un documento afectado (la nota original), lo mostramos:
-                    $record->document_type === '01' => $record->affected_document_series ? "Factura (Ex {$record->affected_document_series}-{$record->affected_document_correlative})" : 'Factura',
-                    $record->document_type === '03' => $record->affected_document_series ? "Boleta (Ex {$record->affected_document_series}-{$record->affected_document_correlative})" : 'Boleta',
+                        // Si es Factura o Boleta Y tiene un documento afectado (la nota original), lo mostramos:
+                        $record->document_type === '01' => $record->affected_document_series ? "Factura (Ex {$record->affected_document_series}-{$record->affected_document_correlative})" : 'Factura',
+                        $record->document_type === '03' => $record->affected_document_series ? "Boleta (Ex {$record->affected_document_series}-{$record->affected_document_correlative})" : 'Boleta',
 
-                    $record->document_type === '00' => 'Nota de Venta',
-                    default => null,
-                }),
+                        $record->document_type === '00' => 'Nota de Venta',
+                        default => null,
+                    }),
 
-            // 🌟 1. COLUMNA CLIENTE (Omnicanal Corregido)
-            Tables\Columns\TextColumn::make('customer.name')
-                ->label('Cliente')
-                ->default('Público en General') // 🌟 CAMBIO CLAVE: Usamos default en lugar de placeholder
-                ->sortable()
-                ->searchable()
-                ->icon(fn (Sale $record): string => match ($record->channel) {
-                    'ecommerce' => 'heroicon-s-globe-alt',
-                    default => 'heroicon-o-building-storefront',
-                })
-                ->iconColor(fn (Sale $record): string => match ($record->channel) {
-                    'ecommerce' => 'brand',
-                    default => 'gray',
-                })
-                ->weight(fn (Sale $record) => $record->channel === 'ecommerce' ? 'bold' : 'normal')
-                ->description(fn (Sale $record): ?string => match ($record->channel) {
-                    'ecommerce' => '🌐 Tienda Online',
-                    default => '🏪 Venta en Local',
-                })
-                ->limit(30)
-                ->tooltip(fn (Sale $record): ?string => $record->customer?->name ?? 'Público en General'),
+                // 🌟 1. COLUMNA CLIENTE (Omnicanal Corregido)
+                Tables\Columns\TextColumn::make('customer.name')
+                    ->label('Cliente')
+                    ->default('Público en General') // 🌟 CAMBIO CLAVE: Usamos default en lugar de placeholder
+                    ->sortable()
+                    ->searchable()
+                    ->icon(fn(Sale $record): string => match ($record->channel) {
+                        'ecommerce' => 'heroicon-s-globe-alt',
+                        default => 'heroicon-o-building-storefront',
+                    })
+                    ->iconColor(fn(Sale $record): string => match ($record->channel) {
+                        'ecommerce' => 'brand',
+                        default => 'gray',
+                    })
+                    ->weight(fn(Sale $record) => $record->channel === 'ecommerce' ? 'bold' : 'normal')
+                    ->description(fn(Sale $record): ?string => match ($record->channel) {
+                        'ecommerce' => '🌐 Tienda Online',
+                        default => '🏪 Venta en Local',
+                    })
+                    ->limit(30)
+                    ->tooltip(fn(Sale $record): ?string => $record->customer?->name ?? 'Público en General'),
 
-            // 🌟 2. COLUMNA ATENCIÓN / COBRO
-            Tables\Columns\TextColumn::make('user.name')
-                ->label('Atención / Cobro')
-                ->state(function (Sale $record): string {
-                    if ($record->channel === 'ecommerce') return 'Cliente (Web)';
-                    return $record->user?->name ?? 'Desconocido';
-                })
-                ->icon(fn (Sale $record) => $record->channel === 'ecommerce' ? 'heroicon-o-shopping-cart' : 'heroicon-o-user')
-                ->weight('bold')
-                ->description(function (Sale $record): ?string {
-                    $isPaid = $record->status === 'completed' || !empty($record->payment_method);
+                // 🌟 2. COLUMNA ATENCIÓN / COBRO
+                Tables\Columns\TextColumn::make('user.name')
+                    ->label('Atención / Cobro')
+                    ->state(function (Sale $record): string {
+                        if ($record->channel === 'ecommerce') return 'Cliente (Web)';
+                        return $record->user?->name ?? 'Desconocido';
+                    })
+                    ->icon(fn(Sale $record) => $record->channel === 'ecommerce' ? 'heroicon-o-shopping-cart' : 'heroicon-o-user')
+                    ->weight('bold')
+                    ->description(function (Sale $record): ?string {
+                        $isPaid = $record->status === 'completed' || !empty($record->payment_method);
 
-                    // 🌟 SOLUCIÓN: Leemos directamente al usuario, no a la caja registradora
-                    $cajeroNombre = $record->user ? explode(' ', $record->user->name)[0] : 'Desconocido';
+                        // 🌟 SOLUCIÓN: Leemos directamente al usuario, no a la caja registradora
+                        $cajeroNombre = $record->user ? explode(' ', $record->user->name)[0] : 'Desconocido';
 
-                    // 🍔 CASO 1: RESTAURANTE (Tiene mesa asignada)
-                    if (!empty($record->table_id)) {
-                        return $isPaid ? "💰 Cobró: {$cajeroNombre}" : '⏳ Comiendo en mesa';
-                    }
+                        // 🍔 CASO 1: RESTAURANTE (Tiene mesa asignada)
+                        if (!empty($record->table_id)) {
+                            return $isPaid ? "💰 Cobró: {$cajeroNombre}" : '⏳ Comiendo en mesa';
+                        }
 
-                    // 🌐 CASO 2: E-COMMERCE (Tienda Web)
-                    if ($record->channel === 'ecommerce') {
-                        return $isPaid ? "✅ Atendido por: {$cajeroNombre}" : '⏳ Pendiente de atención';
-                    }
+                        // 🌐 CASO 2: E-COMMERCE (Tienda Web)
+                        if ($record->channel === 'ecommerce') {
+                            return $isPaid ? "✅ Atendido por: {$cajeroNombre}" : '⏳ Pendiente de atención';
+                        }
 
-                    // 🏪 CASO 3: MINIMARKET / PRESENCIAL
-                    return null;
-                })
-                ->limit(20)
-                ->toggleable()
-                ->searchable()
-                ->sortable(),
+                        // 🏪 CASO 3: MINIMARKET / PRESENCIAL
+                        return null;
+                    })
+                    ->limit(20)
+                    ->toggleable()
+                    ->searchable()
+                    ->sortable(),
 
-            Tables\Columns\TextColumn::make('total')
-                ->label('Total')
-                ->money('PEN')
-                ->sortable()
-                ->weight('bold')
-                ->alignment('right')
-                ->size('lg'),
+                Tables\Columns\TextColumn::make('total')
+                    ->label('Total')
+                    ->money('PEN')
+                    ->sortable()
+                    ->weight('bold')
+                    ->alignment('right')
+                    ->size('lg'),
 
-            Tables\Columns\TextColumn::make('payment_method')
-                ->label('Pago')
-                // 🌟 MAGIA UI: Solo se vuelve un "badge" (con fondo) si está Pendiente
-                ->badge(fn (?string $state): bool => $state === 'Pendiente' || empty($state))
+                Tables\Columns\TextColumn::make('payment_method')
+                    ->label('Pago')
+                    // 🌟 MAGIA UI: Solo se vuelve un "badge" (con fondo) si está Pendiente
+                    ->badge(fn(?string $state): bool => $state === 'Pendiente' || empty($state))
 
-                // Formateamos para que los vacíos digan "Pendiente"
-                ->formatStateUsing(fn (?string $state): string => empty($state) ? 'Pendiente' : $state)
+                    // Formateamos para que los vacíos digan "Pendiente"
+                    ->formatStateUsing(fn(?string $state): string => empty($state) ? 'Pendiente' : $state)
 
-                // Asignamos los iconos
-                ->icon(fn (?string $state): string => match ($state) {
-                    'Efectivo', 'Contado' => 'heroicon-o-banknotes',
-                    'Yape', 'Plin' => 'heroicon-o-device-phone-mobile',
-                    'Tarjeta' => 'heroicon-o-credit-card',
-                    'Transferencia' => 'heroicon-o-arrow-path',
-                    null, '', 'Pendiente' => 'heroicon-o-clock',
-                    default => 'heroicon-o-currency-dollar',
-                })
+                    // Asignamos los iconos
+                    ->icon(fn(?string $state): string => match ($state) {
+                        'Efectivo', 'Contado' => 'heroicon-o-banknotes',
+                        'Yape', 'Plin' => 'heroicon-o-device-phone-mobile',
+                        'Tarjeta' => 'heroicon-o-credit-card',
+                        'Transferencia' => 'heroicon-o-arrow-path',
+                        null, '', 'Pendiente' => 'heroicon-o-clock',
+                        default => 'heroicon-o-currency-dollar',
+                    })
 
-                // 🌟 COLORES CORPORATIVOS (Se aplicarán al icono y al texto, sin fondo saturado)
-                ->color(fn (?string $state): string => match ($state) {
-                    'Efectivo', 'Contado' => 'success', // Verde sutil
-                    'Yape' => 'purple',                 // Morado característico
-                    'Plin' => 'info',                   // Celeste/Azul característico
-                    'Tarjeta' => 'warning',             // Naranja/Amarillo neutral
-                    'Transferencia' => 'gray',          // Gris sobrio
-                    null, '', 'Pendiente' => 'danger',  // Rojo intenso (Como tiene badge=true, este sí tendrá fondo rojo)
-                    default => 'gray',
-                })
-                ->toggleable(),
+                    // 🌟 COLORES CORPORATIVOS (Se aplicarán al icono y al texto, sin fondo saturado)
+                    ->color(fn(?string $state): string => match ($state) {
+                        'Efectivo', 'Contado' => 'success', // Verde sutil
+                        'Yape' => 'purple',                 // Morado característico
+                        'Plin' => 'info',                   // Celeste/Azul característico
+                        'Tarjeta' => 'warning',             // Naranja/Amarillo neutral
+                        'Transferencia' => 'gray',          // Gris sobrio
+                        null, '', 'Pendiente' => 'danger',  // Rojo intenso (Como tiene badge=true, este sí tendrá fondo rojo)
+                        default => 'gray',
+                    })
+                    ->toggleable(),
 
-            Tables\Columns\TextColumn::make('sunat_status')
-                ->label('Estado')
-                ->badge()
-                ->icon(fn (string $state, Sale $record): string => match (true) {
-                    $record->status === 'canceled' => 'heroicon-o-archive-box-x-mark',
-                    $record->document_type === '00' => 'heroicon-o-building-storefront',
-                    $state === 'accepted' => 'heroicon-o-check-circle',
-                    $state === 'pending' => 'heroicon-o-clock',
-                    $state === 'rejected' => 'heroicon-o-x-circle',
-                    default => 'heroicon-o-question-mark-circle',
-                })
-                ->color(fn (string $state, Sale $record): string => match (true) {
-                    $record->status === 'canceled' => 'danger',
-                    $record->document_type === '00' => 'gray',
-                    $state === 'accepted' => 'success',
-                    $state === 'pending' => 'warning',
-                    $state === 'rejected' => 'danger',
-                    default => 'gray',
-                })
-                ->formatStateUsing(fn (string $state, Sale $record): string => match (true) {
-                    $record->status === 'canceled' => 'Anulado',
-                    $record->document_type === '00' => 'Uso Interno',
-                    $state === 'accepted' => 'Aceptado',
-                    $state === 'pending' => 'Pendiente SUNAT',
-                    $state === 'rejected' => 'Rechazado SUNAT',
-                    default => ucfirst($state),
-                })
-                ->tooltip(fn (Sale $record): ?string =>
-                    $record->sent_at
-                        ? "Enviado: {$record->sent_at->format('d/m/Y H:i')}"
-                        : $record->sunat_description
-                ),
+                Tables\Columns\TextColumn::make('sunat_status')
+                    ->label('Estado')
+                    ->badge()
+                    ->icon(fn(string $state, Sale $record): string => match (true) {
+                        $record->status === 'canceled' => 'heroicon-o-archive-box-x-mark',
+                        $record->document_type === '00' => 'heroicon-o-building-storefront',
+                        $state === 'accepted' => 'heroicon-o-check-circle',
+                        $state === 'pending' => 'heroicon-o-clock',
+                        $state === 'rejected' => 'heroicon-o-x-circle',
+                        default => 'heroicon-o-question-mark-circle',
+                    })
+                    ->color(fn(string $state, Sale $record): string => match (true) {
+                        $record->status === 'canceled' => 'danger',
+                        $record->document_type === '00' => 'gray',
+                        $state === 'accepted' => 'success',
+                        $state === 'pending' => 'warning',
+                        $state === 'rejected' => 'danger',
+                        default => 'gray',
+                    })
+                    ->formatStateUsing(fn(string $state, Sale $record): string => match (true) {
+                        $record->status === 'canceled' => 'Anulado',
+                        $record->document_type === '00' => 'Uso Interno',
+                        $state === 'accepted' => 'Aceptado',
+                        $state === 'pending' => 'Pendiente SUNAT',
+                        $state === 'rejected' => 'Rechazado SUNAT',
+                        default => ucfirst($state),
+                    })
+                    ->tooltip(
+                        fn(Sale $record): ?string =>
+                        $record->sent_at
+                            ? "Enviado: {$record->sent_at->format('d/m/Y H:i')}"
+                            : $record->sunat_description
+                    ),
 
-            Tables\Columns\TextColumn::make('sold_at')
-                ->label('Fecha')
-                ->dateTime('d/m/Y H:i')
-                ->sortable()
-                ->icon('heroicon-o-calendar')
-                ->since()
-                ->tooltip(fn (Sale $record): string => $record->sold_at->format('d/m/Y H:i:s')),
-        ])
-        ->defaultSort('sold_at', 'desc')
-        ->filters([
-            Tables\Filters\SelectFilter::make('document_type')
-                ->label('Tipo')
-                ->options([
-                    '01' => 'Facturas',
-                    '03' => 'Boletas',
-                    '07' => 'Notas de Crédito',
-                    '08' => 'Notas de Débito',
-                ])
-                ->multiple(),
+                Tables\Columns\TextColumn::make('sold_at')
+                    ->label('Fecha')
+                    ->dateTime('d/m/Y H:i')
+                    ->sortable()
+                    ->icon('heroicon-o-calendar')
+                    ->since()
+                    ->tooltip(fn(Sale $record): string => $record->sold_at->format('d/m/Y H:i:s')),
+            ])
+            ->defaultSort('sold_at', 'desc')
+            ->filters([
+                Tables\Filters\SelectFilter::make('document_type')
+                    ->label('Tipo')
+                    ->options([
+                        '01' => 'Facturas',
+                        '03' => 'Boletas',
+                        '07' => 'Notas de Crédito',
+                        '08' => 'Notas de Débito',
+                    ])
+                    ->multiple(),
 
-            Tables\Filters\SelectFilter::make('sunat_status')
-                ->label('Estado SUNAT')
-                ->options([
-                    'accepted' => 'Aceptado',
-                    'pending' => 'Pendiente',
-                    'rejected' => 'Rechazado',
-                ])
-                ->multiple(),
+                Tables\Filters\SelectFilter::make('sunat_status')
+                    ->label('Estado SUNAT')
+                    ->options([
+                        'accepted' => 'Aceptado',
+                        'pending' => 'Pendiente',
+                        'rejected' => 'Rechazado',
+                    ])
+                    ->multiple(),
 
-            Tables\Filters\SelectFilter::make('payment_method')
-                ->label('Método de Pago')
-                ->options(Sale::PAYMENT_METHODS)
-                ->multiple(),
+                Tables\Filters\SelectFilter::make('payment_method')
+                    ->label('Método de Pago')
+                    ->options(Sale::PAYMENT_METHODS)
+                    ->multiple(),
 
-            Tables\Filters\Filter::make('sold_at')
-                ->form([
-                    Forms\Components\DatePicker::make('desde')
-                        ->label('Desde'),
-                    Forms\Components\DatePicker::make('hasta')
-                        ->label('Hasta'),
-                ])
-                ->query(function (Builder $query, array $data): Builder {
-                    return $query
-                        ->when(
-                            $data['desde'],
-                            fn (Builder $query, $date): Builder => $query->whereDate('sold_at', '>=', $date),
-                        )
-                        ->when(
-                            $data['hasta'],
-                            fn (Builder $query, $date): Builder => $query->whereDate('sold_at', '<=', $date),
-                        );
-                })
-                ->indicateUsing(function (array $data): array {
-                    $indicators = [];
-                    if ($data['desde'] ?? null) {
-                        $indicators[] = 'Desde: ' . \Carbon\Carbon::parse($data['desde'])->format('d/m/Y');
-                    }
-                    if ($data['hasta'] ?? null) {
-                        $indicators[] = 'Hasta: ' . \Carbon\Carbon::parse($data['hasta'])->format('d/m/Y');
-                    }
-                    return $indicators;
-                }),
-        ])
-        ->filtersFormWidth('md')
-        ->filtersFormColumns(2)
-        ->actions([
+                Tables\Filters\Filter::make('sold_at')
+                    ->form([
+                        Forms\Components\DatePicker::make('desde')
+                            ->label('Desde'),
+                        Forms\Components\DatePicker::make('hasta')
+                            ->label('Hasta'),
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        return $query
+                            ->when(
+                                $data['desde'],
+                                fn(Builder $query, $date): Builder => $query->whereDate('sold_at', '>=', $date),
+                            )
+                            ->when(
+                                $data['hasta'],
+                                fn(Builder $query, $date): Builder => $query->whereDate('sold_at', '<=', $date),
+                            );
+                    })
+                    ->indicateUsing(function (array $data): array {
+                        $indicators = [];
+                        if ($data['desde'] ?? null) {
+                            $indicators[] = 'Desde: ' . \Carbon\Carbon::parse($data['desde'])->format('d/m/Y');
+                        }
+                        if ($data['hasta'] ?? null) {
+                            $indicators[] = 'Hasta: ' . \Carbon\Carbon::parse($data['hasta'])->format('d/m/Y');
+                        }
+                        return $indicators;
+                    }),
+            ])
+            ->filtersFormWidth('md')
+            ->filtersFormColumns(2)
+            ->actions([
 
-            // 🖨️ EL ÚNICO BOTÓN AFUERA: Siempre a la mano para imprimir rápido
+                // 🖨️ EL ÚNICO BOTÓN AFUERA: Siempre a la mano para imprimir rápido
                 Tables\Actions\Action::make('print')
                     ->label('Ticket')
                     ->icon('heroicon-o-printer')
                     ->color('info')
-                    ->url(fn (Sale $record): string => route('percy.print.ticket', $record))
+                    ->url(fn(Sale $record): string => route('percy.print.ticket', $record))
                     ->openUrlInNewTab(),
 
                 // 📁 GRUPO DE OPCIONES DESPLEGABLE
@@ -1170,7 +1185,7 @@ class SaleResource extends Resource
                         ->label('Procesar Pedido')
                         ->icon('heroicon-o-pencil-square')
                         ->color('warning') // Un color llamativo para el cajero
-                        ->visible(fn (\Percy\Core\Models\Sale $record) => $record->channel === 'ecommerce' && $record->status === 'pending_payment')
+                        ->visible(fn(\Percy\Core\Models\Sale $record) => $record->channel === 'ecommerce' && $record->status === 'pending_payment')
                         ->using(function (\Illuminate\Database\Eloquent\Model $record, array $data): \Illuminate\Database\Eloquent\Model {
 
                             // A. Inyectamos estado y cajero obligatoriamente
@@ -1190,16 +1205,9 @@ class SaleResource extends Resource
                             $tipoNuevo = $data['document_type'] ?? $record->document_type;
                             $serieNueva = $data['series'] ?? $record->series;
 
-                            if ($record->document_type !== $tipoNuevo || $record->series !== $serieNueva) {
-                                $serieConfig = \Percy\Core\Models\Serie::where('tenant_id', $record->tenant_id)
-                                    ->where('document_type', $tipoNuevo)
-                                    ->where('serie', $serieNueva)
-                                    ->first();
-
-                                if ($serieConfig) {
-                                    $serieConfig->increment('correlative');
-                                    $data['correlative'] = $serieConfig->correlative;
-                                }
+                            if ($record->document_type !== $tipoNuevo || $record->series !== $serieNueva || empty($record->correlative)) {
+                                $data['correlative'] = app(CorrelativeService::class)
+                                    ->next($record->tenant_id, $tipoNuevo, $serieNueva);
                             }
 
                             // D. Forzamos el guardado
@@ -1222,10 +1230,11 @@ class SaleResource extends Resource
                         ->label('Convertir a Boleta')
                         ->icon('heroicon-o-arrow-path-rounded-square')
                         ->color('success')
-                        ->visible(fn (Sale $record) =>
+                        ->visible(
+                            fn(Sale $record) =>
                             $record->document_type === '00' &&
-                            $record->status !== 'canceled' &&
-                            !\Illuminate\Support\Facades\Auth::user()->hasRole('Vendedor')
+                                $record->status !== 'canceled' &&
+                                !\Illuminate\Support\Facades\Auth::user()->hasRole('Vendedor')
                         )
                         ->form([
                             Forms\Components\Select::make('serie_boleta')
@@ -1241,19 +1250,20 @@ class SaleResource extends Resource
                         ->action(function (array $data, Sale $record) {
                             $originalDocType = $record->document_type;
                             $originalSeries = $record->series;
+                            $originalCorrelative = $record->correlative;
 
-                            $serieConfig = \Percy\Core\Models\Serie::where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id)
-                                ->where('document_type', '03')
-                                ->where('serie', $data['serie_boleta'])
-                                ->first();
+                            try {
+                                $nuevoCorrelativo = app(CorrelativeService::class)
+                                    ->next($record->tenant_id, '03', $data['serie_boleta']);
+                            } catch (\Exception $e) {
+                                \Filament\Notifications\Notification::make()
+                                    ->danger()
+                                    ->title('Error')
+                                    ->body($e->getMessage())
+                                    ->send();
 
-                            if (!$serieConfig) {
-                                \Filament\Notifications\Notification::make()->danger()->title('Error')->body('Serie no válida.')->send();
                                 return;
                             }
-
-                            $serieConfig->increment('correlative');
-                            $nuevoCorrelativo = $serieConfig->correlative;
 
                             $record->update([
                                 'document_type' => '03',
@@ -1261,20 +1271,10 @@ class SaleResource extends Resource
                                 'correlative' => $nuevoCorrelativo,
                                 'sold_at' => now(),
                                 'sunat_status' => 'pending',
-                                // 👇 Guardamos la huella de la Nota de Venta original
                                 'affected_document_type' => $originalDocType,
                                 'affected_document_series' => $originalSeries,
-                                'affected_document_correlative' => $record->correlative,
+                                'affected_document_correlative' => $originalCorrelative,
                             ]);
-
-                            /*$originalSerieConfig = \Percy\Core\Models\Serie::where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id)
-                                ->where('document_type', $originalDocType)
-                                ->where('serie', $originalSeries)
-                                ->first();
-
-                            if ($originalSerieConfig) {
-                                $originalSerieConfig->decrement('correlative');
-                            }*/
 
                             \Filament\Notifications\Notification::make()
                                 ->success()
@@ -1290,10 +1290,11 @@ class SaleResource extends Resource
                         ->label('Anular Ticket')
                         ->icon('heroicon-o-x-circle')
                         ->color('danger')
-                        ->visible(fn (Sale $record) =>
+                        ->visible(
+                            fn(Sale $record) =>
                             $record->document_type === '00' &&
-                            $record->status !== 'canceled' &&
-                            !\Illuminate\Support\Facades\Auth::user()->hasRole('Vendedor')
+                                $record->status !== 'canceled' &&
+                                !\Illuminate\Support\Facades\Auth::user()->hasRole('Vendedor')
                         )
                         ->form([
                             Forms\Components\TextInput::make('reason')
@@ -1353,8 +1354,8 @@ class SaleResource extends Resource
                         ->label('Enviar a SUNAT')
                         ->icon('heroicon-o-paper-airplane')
                         ->color('success')
-                        ->visible(fn (Sale $record) => $record->sunat_status !== 'accepted' && $record->document_type !== '00' && $record->status !== 'canceled')
-                        ->disabled(fn (Sale $record) => in_array($record->document_type, ['07', '08']) && empty($record->credit_note_type))
+                        ->visible(fn(Sale $record) => $record->sunat_status !== 'accepted' && $record->document_type !== '00' && $record->status !== 'canceled')
+                        ->disabled(fn(Sale $record) => in_array($record->document_type, ['07', '08']) && empty($record->credit_note_type))
                         ->requiresConfirmation()
                         ->action(function (Sale $record) {
                             try {
@@ -1378,14 +1379,14 @@ class SaleResource extends Resource
                     Tables\Actions\Action::make('downloadXml')
                         ->label('Descargar XML')
                         ->icon('heroicon-o-code-bracket')
-                        ->url(fn (Sale $record) => route('sales.download-xml', $record))
-                        ->visible(fn (Sale $record) => !empty($record->sunat_xml_path) && $record->status !== 'canceled'),
+                        ->url(fn(Sale $record) => route('sales.download-xml', $record))
+                        ->visible(fn(Sale $record) => !empty($record->sunat_xml_path) && $record->status !== 'canceled'),
 
                     Tables\Actions\Action::make('downloadCdr')
                         ->label('Descargar CDR')
                         ->icon('heroicon-o-archive-box')
-                        ->url(fn (Sale $record) => route('sales.download-cdr', $record))
-                        ->visible(fn (Sale $record) => !empty($record->sunat_cdr_path) && $record->status !== 'canceled'),
+                        ->url(fn(Sale $record) => route('sales.download-cdr', $record))
+                        ->visible(fn(Sale $record) => !empty($record->sunat_cdr_path) && $record->status !== 'canceled'),
 
                     Tables\Actions\Action::make('anularVenta')
                         ->label('Nota de Crédito')
@@ -1400,119 +1401,116 @@ class SaleResource extends Resource
                             return $isAdmin && $isAccepted && $isValidDocument && $isNotCanceled;
                         })
 
-                    ->form([
-                        Forms\Components\Select::make('serie_nota')
-                            ->label('Serie de Nota de Crédito')
-                            ->options(function (Sale $record) {
-                                // Determinamos el prefijo: Factura -> FC, Boleta -> BC
-                                $prefix = ($record->document_type === '01') ? 'FC' : 'BC';
+                        ->form([
+                            Forms\Components\Select::make('serie_nota')
+                                ->label('Serie de Nota de Crédito')
+                                ->options(function (Sale $record) {
+                                    // Determinamos el prefijo: Factura -> FC, Boleta -> BC
+                                    $prefix = ($record->document_type === '01') ? 'FC' : 'BC';
 
-                                return \Percy\Core\Models\Serie::where('document_type', '07')
-                                    ->where('serie', 'like', $prefix . '%')
-                                    ->where('active', true)
-                                    ->pluck('serie', 'serie');
-                            })
-                            ->required(),
+                                    return \Percy\Core\Models\Serie::where('tenant_id', $record->tenant_id)
+                                        ->where('document_type', '07')
+                                        ->where('serie', 'like', $prefix . '%')
+                                        ->where('active', true)
+                                        ->pluck('serie', 'serie');
+                                })
+                                ->required(),
 
-                        //Forms\Components\TextInput::make('correlativo_nota')
+                            //Forms\Components\TextInput::make('correlativo_nota')
                             //->label('Correlativo de la Nota (Ej: 1)')
                             //->numeric()
                             //->required(),
 
-                        Forms\Components\Select::make('credit_note_type')
-                            ->label('Motivo de Anulación')
-                            ->options([
-                                '01' => 'Anulación de la operación',
-                                '02' => 'Anulación por error en el RUC',
-                                '03' => 'Corrección por error en la descripción',
-                                '06' => 'Devolución total',
-                                '07' => 'Devolución por ítem',
-                                '10' => 'Otros Conceptos',
+                            Forms\Components\Select::make('credit_note_type')
+                                ->label('Motivo de Anulación')
+                                ->options([
+                                    '01' => 'Anulación de la operación',
+                                    '02' => 'Anulación por error en el RUC',
+                                    '03' => 'Corrección por error en la descripción',
+                                    '06' => 'Devolución total',
+                                    '07' => 'Devolución por ítem',
+                                    '10' => 'Otros Conceptos',
                                 ])
-                            ->default('01')
-                            ->required(),
-                    ])
-                    ->action(function (array $data, Sale $record) {
-                        try {
-                            // 1. Clonamos la venta original pero vaciamos los datos de respuesta SUNAT anteriores
-                            // --- LÓGICA DE CORRELATIVO AUTOMÁTICO ---
-                            $serieConfig = \Percy\Core\Models\Serie::where('document_type', '07')
-                                ->where('serie', $data['serie_nota'])
-                                ->first();
+                                ->default('01')
+                                ->required(),
+                        ])
+                        ->action(function (array $data, Sale $record) {
+                            try {
+                                $nuevoCorrelativo = app(CorrelativeService::class)
+                                    ->next($record->tenant_id, '07', $data['serie_nota']);
 
-                            if (!$serieConfig) {
-                                throw new \Exception("Debe registrar la serie {$data['serie_nota']} en Configuración primero.");
-                            }
+                                // Clonamos la venta original pero vaciamos los datos de respuesta SUNAT anteriores
+                                $nota = $record->replicate([
+                                    'sunat_status',
+                                    'sunat_code',
+                                    'sunat_description',
+                                    'sunat_hash',
+                                    'sunat_xml_path',
+                                    'sunat_cdr_path',
+                                    'sunat_pdf_path',
+                                    'legend_text'
+                                ]);
+                                $nota->document_type = '07';
+                                $nota->series = $data['serie_nota'];
+                                $nota->correlative = $nuevoCorrelativo; // Asignamos el número automático ✅
 
-                            $serieConfig->increment('correlative'); // +1 al contador de tu tabla series
+                                $nota->status = 'completed';
 
-                            // Clonamos la venta original pero vaciamos los datos de respuesta SUNAT anteriores
-                            $nota = $record->replicate([
-                                'sunat_status', 'sunat_code', 'sunat_description', 'sunat_hash',
-                                'sunat_xml_path', 'sunat_cdr_path', 'sunat_pdf_path', 'legend_text'
-                            ]);
-                            $nota->document_type = '07';
-                            $nota->series = $data['serie_nota'];
-                            $nota->correlative = $serieConfig->correlative; // Asignamos el número automático ✅
+                                // 3. Vinculamos el documento original (La Boleta/Factura que estamos anulando)
+                                $nota->affected_document_type = $record->document_type;
+                                $nota->affected_document_series = $record->series;
+                                $nota->affected_document_correlative = $record->correlative;
+                                $nota->credit_note_type = $data['credit_note_type'];
 
-                            $nota->status = 'completed';
+                                // Definimos la descripción según el código elegido
+                                $descripciones = [
+                                    '01' => 'Anulación de la operación',
+                                    '02' => 'Anulación por error en el RUC',
+                                    '03' => 'Corrección por error en la descripción',
+                                    '06' => 'Devolución total',
+                                    '07' => 'Devolución por ítem',
+                                    '10' => 'Otros Conceptos',
+                                ];
+                                $nota->cancel_reason_description = $descripciones[$data['credit_note_type']];
 
-                            // 3. Vinculamos el documento original (La Boleta/Factura que estamos anulando)
-                            $nota->affected_document_type = $record->document_type;
-                            $nota->affected_document_series = $record->series;
-                            $nota->affected_document_correlative = $record->correlative;
-                            $nota->credit_note_type = $data['credit_note_type'];
+                                // Guardamos el nuevo registro padre
+                                $nota->save();
 
-                            // Definimos la descripción según el código elegido
-                            $descripciones = [
-                                '01' => 'Anulación de la operación',
-                                '02' => 'Anulación por error en el RUC',
-                                '03' => 'Corrección por error en la descripción',
-                                '06' => 'Devolución total',
-                                '07' => 'Devolución por ítem',
-                                '10' => 'Otros Conceptos',
-                            ];
-                            $nota->cancel_reason_description = $descripciones[$data['credit_note_type']];
+                                // 4. Clonamos los ítems originales idénticos para que la contabilidad cuadre exacto
+                                foreach ($record->items as $item) {
+                                    $nuevoItem = $item->replicate(['sale_id']);
+                                    $nuevoItem->sale_id = $nota->id;
+                                    $nuevoItem->save();
+                                }
 
-                            // Guardamos el nuevo registro padre
-                            $nota->save();
+                                // 5. Enviamos la nueva Nota de Crédito a la SUNAT usando tu Service
+                                $service = new \Percy\Core\Services\SunatService();
+                                $result = $service->processAndSend($nota);
 
-                            // 4. Clonamos los ítems originales idénticos para que la contabilidad cuadre exacto
-                            foreach ($record->items as $item) {
-                                $nuevoItem = $item->replicate(['sale_id']);
-                                $nuevoItem->sale_id = $nota->id;
-                                $nuevoItem->save();
-                            }
-
-                            // 5. Enviamos la nueva Nota de Crédito a la SUNAT usando tu Service
-                            $service = new \Percy\Core\Services\SunatService();
-                            $result = $service->processAndSend($nota);
-
-                            if ($result->isSuccess()) {
+                                if ($result->isSuccess()) {
+                                    \Filament\Notifications\Notification::make()
+                                        ->title('Nota de Crédito Aceptada')
+                                        ->body('Se anuló el comprobante y se devolvió el stock correctamente.')
+                                        ->success()
+                                        ->send();
+                                } else {
+                                    \Filament\Notifications\Notification::make()
+                                        ->title('Error SUNAT ' . $result->getError()->getCode())
+                                        ->body($result->getError()->getMessage())
+                                        ->danger()
+                                        ->persistent()
+                                        ->send();
+                                }
+                            } catch (\Exception $e) {
                                 \Filament\Notifications\Notification::make()
-                                    ->title('Nota de Crédito Aceptada')
-                                    ->body('Se anuló el comprobante y se devolvió el stock correctamente.')
-                                    ->success()
-                                    ->send();
-                            } else {
-                                \Filament\Notifications\Notification::make()
-                                    ->title('Error SUNAT ' . $result->getError()->getCode())
-                                    ->body($result->getError()->getMessage())
+                                    ->title('Error Crítico')
+                                    ->body($e->getMessage())
                                     ->danger()
-                                    ->persistent()
                                     ->send();
                             }
+                        }),
 
-                        } catch (\Exception $e) {
-                            \Filament\Notifications\Notification::make()
-                                ->title('Error Crítico')
-                                ->body($e->getMessage())
-                                ->danger()
-                                ->send();
-                        }
-                    }),
-
-                Tables\Actions\Action::make('aumentarValor')
+                    Tables\Actions\Action::make('aumentarValor')
                         ->label('Nota de Débito')
                         ->icon('heroicon-o-document-plus')
                         ->color('warning')
@@ -1524,159 +1522,152 @@ class SaleResource extends Resource
 
                             return $isAdmin && $isAccepted && $isValidDocument && $isNotCanceled;
                         })
-                    ->form([
-                        Forms\Components\Select::make('serie_nota')
-                            ->label('Serie de Nota de Débito (Ej: BD01 o FD01)')
-                            ->options(function (Sale $record) {
-                                // Factura -> FD, Boleta -> BD
-                                $prefix = ($record->document_type === '01') ? 'FD' : 'BD';
+                        ->form([
+                            Forms\Components\Select::make('serie_nota')
+                                ->label('Serie de Nota de Débito (Ej: BD01 o FD01)')
+                                ->options(function (Sale $record) {
+                                    // Factura -> FD, Boleta -> BD
+                                    $prefix = ($record->document_type === '01') ? 'FD' : 'BD';
 
-                                return \Percy\Core\Models\Serie::where('document_type', '08')
-                                    ->where('serie', 'like', $prefix . '%')
-                                    ->where('active', true)
-                                    ->pluck('serie', 'serie');
-                            })
-                            ->required(),
+                                    return \Percy\Core\Models\Serie::where('tenant_id', $record->tenant_id)
+                                        ->where('document_type', '08')
+                                        ->where('serie', 'like', $prefix . '%')
+                                        ->where('active', true)
+                                        ->pluck('serie', 'serie');
+                                })
+                                ->required(),
 
-                        //Forms\Components\TextInput::make('correlativo_nota')
+                            //Forms\Components\TextInput::make('correlativo_nota')
                             //->label('Correlativo de la Nota (Ej: 1)')
                             //->numeric()
                             //->required(),
 
-                        Forms\Components\Select::make('debit_note_type')
-                            ->label('Motivo de Débito (SUNAT)')
-                            ->options([
-                                '01' => 'Intereses por mora',
-                                '02' => 'Aumento en el valor',
-                                '03' => 'Penalidades/otros conceptos',
-                            ])
-                            ->default('02')
-                            ->required(),
+                            Forms\Components\Select::make('debit_note_type')
+                                ->label('Motivo de Débito (SUNAT)')
+                                ->options([
+                                    '01' => 'Intereses por mora',
+                                    '02' => 'Aumento en el valor',
+                                    '03' => 'Penalidades/otros conceptos',
+                                ])
+                                ->default('02')
+                                ->required(),
 
-                        // NUEVO: Pedimos el producto (para que cuadre en tu BD) y el monto a cobrar
-                        Forms\Components\Select::make('product_id')
-                            ->label('Concepto a cobrar')
-                            ->options(\Percy\Core\Models\Product::where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id)->pluck('name', 'id'))
-                            ->required()
-                            ->searchable(),
+                            // NUEVO: Pedimos el producto (para que cuadre en tu BD) y el monto a cobrar
+                            Forms\Components\Select::make('product_id')
+                                ->label('Concepto a cobrar')
+                                ->options(\Percy\Core\Models\Product::where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id)->pluck('name', 'id'))
+                                ->required()
+                                ->searchable(),
 
-                        Forms\Components\TextInput::make('importe_adicional')
-                            ->label('Importe a Sumar (Inc. IGV)')
-                            ->numeric()
-                            ->required()
-                            ->prefix('S/'),
-                    ])
-                    ->action(function (array $data, Sale $record) {
-                        try {
-                            // --- LÓGICA DE CORRELATIVO AUTOMÁTICO ---
-                            $serieConfig = \Percy\Core\Models\Serie::where('document_type', '08')
-                                ->where('serie', $data['serie_nota'])
-                                ->first();
+                            Forms\Components\TextInput::make('importe_adicional')
+                                ->label('Importe a Sumar (Inc. IGV)')
+                                ->numeric()
+                                ->required()
+                                ->prefix('S/'),
+                        ])
+                        ->action(function (array $data, Sale $record) {
+                            try {
+                                // --- LÓGICA DE CORRELATIVO AUTOMÁTICO ---
+                                $nuevoCorrelativo = app(CorrelativeService::class)
+                                    ->next($record->tenant_id, '08', $data['serie_nota']);
 
-                            if (!$serieConfig) {
-                                throw new \Exception("Debe registrar la serie {$data['serie_nota']} en Configuración primero.");
-                            }
+                                // Clonamos la venta original limpia de estados
+                                $nota = $record->replicate([
+                                    'sunat_status',
+                                    'sunat_code',
+                                    'sunat_description',
+                                    'sunat_hash',
+                                    'sunat_xml_path',
+                                    'sunat_cdr_path',
+                                    'sunat_pdf_path',
+                                    'legend_text'
+                                ]);
+                                $nota->document_type = '08';
+                                $nota->series = $data['serie_nota'];
+                                $nota->correlative = $nuevoCorrelativo; // Número automático ✅
 
-                            $serieConfig->increment('correlative');
+                                $nota->status = 'completed';
 
-                            // Clonamos la venta original limpia de estados
-                            $nota = $record->replicate([
-                                'sunat_status',
-                                'sunat_code',
-                                'sunat_description',
-                                'sunat_hash',
-                                'sunat_xml_path',
-                                'sunat_cdr_path',
-                                'sunat_pdf_path',
-                                'legend_text'
-                            ]);
-                            $nota->document_type = '08';
-                            $nota->series = $data['serie_nota'];
-                            $nota->correlative = $serieConfig->correlative; // Número automático ✅
+                                // 3. Vinculamos el documento original
+                                $nota->affected_document_type = $record->document_type;
+                                $nota->affected_document_series = $record->series;
+                                $nota->affected_document_correlative = $record->correlative;
+                                $nota->credit_note_type = $data['debit_note_type']; // Usamos la misma columna de BD
 
-                            $nota->status = 'completed';
+                                // Definimos la descripción según el Catálogo 10
+                                $descripciones = [
+                                    '01' => 'Intereses por mora',
+                                    '02' => 'Aumento en el valor',
+                                    '03' => 'Penalidades/otros conceptos'
+                                ];
+                                $nota->cancel_reason_description = $descripciones[$data['debit_note_type']];
 
-                            // 3. Vinculamos el documento original
-                            $nota->affected_document_type = $record->document_type;
-                            $nota->affected_document_series = $record->series;
-                            $nota->affected_document_correlative = $record->correlative;
-                            $nota->credit_note_type = $data['debit_note_type']; // Usamos la misma columna de BD
+                                // NUEVA MATEMÁTICA: Calculamos todo en base al nuevo importe
+                                $total = (float) $data['importe_adicional'];
+                                $base = $total / 1.18; // Asumiendo que es gravado
+                                $igv = $total - $base;
 
-                            // Definimos la descripción según el Catálogo 10
-                            $descripciones = [
-                                '01' => 'Intereses por mora',
-                                '02' => 'Aumento en el valor',
-                                '03' => 'Penalidades/otros conceptos'
-                            ];
-                            $nota->cancel_reason_description = $descripciones[$data['debit_note_type']];
+                                $nota->op_gravadas = round($base, 2);
+                                $nota->igv = round($igv, 2);
+                                $nota->total = round($total, 2);
+                                $nota->op_exoneradas = 0;
+                                $nota->op_inafectas = 0;
 
-                            // NUEVA MATEMÁTICA: Calculamos todo en base al nuevo importe
-                            $total = (float) $data['importe_adicional'];
-                            $base = $total / 1.18; // Asumiendo que es gravado
-                            $igv = $total - $base;
+                                $nota->save();
 
-                            $nota->op_gravadas = round($base, 2);
-                            $nota->igv = round($igv, 2);
-                            $nota->total = round($total, 2);
-                            $nota->op_exoneradas = 0;
-                            $nota->op_inafectas = 0;
+                                // En lugar de clonar todos los ítems, creamos UNO SOLO con el cargo extra
+                                $producto = \Percy\Core\Models\Product::find($data['product_id']);
 
-                            $nota->save();
+                                $nota->items()->create([
+                                    'product_id' => $producto->id,
+                                    'item_name' => $producto->name . ' - ' . $nota->cancel_reason_description,
+                                    'quantity' => 1,
+                                    'unit_price' => round($total, 2),
+                                    'unit_value' => round($base, 2),
+                                    'igv_amount' => round($igv, 2),
+                                    'total' => round($total, 2),
+                                    'afectacion_igv_id' => $producto->afectacion_igv_id ?? 1,
+                                ]);
 
-                            // En lugar de clonar todos los ítems, creamos UNO SOLO con el cargo extra
-                            $producto = \Percy\Core\Models\Product::find($data['product_id']);
+                                // 5. Enviamos la Nota de Débito
+                                $service = new \Percy\Core\Services\SunatService();
+                                $result = $service->processAndSend($nota);
 
-                            $nota->items()->create([
-                                'product_id' => $producto->id,
-                                'item_name' => $producto->name . ' - ' . $nota->cancel_reason_description,
-                                'quantity' => 1,
-                                'unit_price' => round($total, 2),
-                                'unit_value' => round($base, 2),
-                                'igv_amount' => round($igv, 2),
-                                'total' => round($total, 2),
-                                'afectacion_igv_id' => $producto->afectacion_igv_id ?? 1,
-                            ]);
-
-                            // 5. Enviamos la Nota de Débito
-                            $service = new \Percy\Core\Services\SunatService();
-                            $result = $service->processAndSend($nota);
-
-                            if ($result->isSuccess()) {
+                                if ($result->isSuccess()) {
+                                    \Filament\Notifications\Notification::make()
+                                        ->title('Nota de Débito Aceptada')
+                                        ->body('Se generó el comprobante correctamente.')
+                                        ->success()
+                                        ->send();
+                                } else {
+                                    \Filament\Notifications\Notification::make()
+                                        ->title('Error SUNAT ' . $result->getError()->getCode())
+                                        ->body($result->getError()->getMessage())
+                                        ->danger()
+                                        ->persistent()
+                                        ->send();
+                                }
+                            } catch (\Exception $e) {
                                 \Filament\Notifications\Notification::make()
-                                    ->title('Nota de Débito Aceptada')
-                                    ->body('Se generó el comprobante correctamente.')
-                                    ->success()
-                                    ->send();
-                            } else {
-                                \Filament\Notifications\Notification::make()
-                                    ->title('Error SUNAT ' . $result->getError()->getCode())
-                                    ->body($result->getError()->getMessage())
+                                    ->title('Error Crítico')
+                                    ->body($e->getMessage())
                                     ->danger()
-                                    ->persistent()
                                     ->send();
                             }
+                        }),
 
-                        } catch (\Exception $e) {
-                            \Filament\Notifications\Notification::make()
-                                ->title('Error Crítico')
-                                ->body($e->getMessage())
-                                ->danger()
-                                ->send();
-                        }
-                    }),
+                ])
+                    ->label('Opciones')
+                    ->icon('heroicon-m-ellipsis-vertical')
+                    ->button()
+                    ->color('gray'),
 
             ])
-            ->label('Opciones')
-            ->icon('heroicon-m-ellipsis-vertical')
-            ->button()
-            ->color('gray'),
-
-        ])
-        ->bulkActions([
-            Tables\Actions\BulkActionGroup::make([
-                //Tables\Actions\DeleteBulkAction::make(),
-            ]),
-        ]);
+            ->bulkActions([
+                Tables\Actions\BulkActionGroup::make([
+                    //Tables\Actions\DeleteBulkAction::make(),
+                ]),
+            ]);
     }
 
     // =========================================================================

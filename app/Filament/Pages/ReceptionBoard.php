@@ -5,6 +5,7 @@ namespace App\Filament\Pages;
 use Filament\Pages\Page;
 use Percy\Core\Models\Room;
 use Percy\Core\Models\Reception;
+use Percy\Core\Services\Sales\CorrelativeService;
 use Illuminate\Support\Facades\Auth;
 use Filament\Actions\Action;
 use Filament\Forms;
@@ -56,7 +57,7 @@ class ReceptionBoard extends Page
     {
         return Action::make('checkIn')
             ->label('Realizar Check-In')
-            ->modalHeading(fn (array $arguments) => 'Check-In: ' . (Room::find($arguments['room_id'])?->name ?? 'Habitación'))
+            ->modalHeading(fn(array $arguments) => 'Check-In: ' . (Room::find($arguments['room_id'])?->name ?? 'Habitación'))
             ->modalDescription('Ingresa los datos del huésped para aperturar la cuenta.')
             ->modalWidth('lg')
             ->modalSubmitActionLabel('Registrar Ingreso')
@@ -95,9 +96,17 @@ class ReceptionBoard extends Page
 
                             Forms\Components\TextInput::make('document_number')
                                 ->label('Número')
-                                ->maxLength(fn (\Filament\Forms\Get $get) => match ($get('document_type')) { 'DNI' => 8, 'RUC' => 11, default => 15 })
-                                ->minLength(fn (\Filament\Forms\Get $get) => match ($get('document_type')) { 'DNI' => 8, 'RUC' => 11, default => null })
-                                ->numeric(fn (\Filament\Forms\Get $get) => in_array($get('document_type'), ['DNI', 'RUC']))
+                                ->maxLength(fn(\Filament\Forms\Get $get) => match ($get('document_type')) {
+                                    'DNI' => 8,
+                                    'RUC' => 11,
+                                    default => 15
+                                })
+                                ->minLength(fn(\Filament\Forms\Get $get) => match ($get('document_type')) {
+                                    'DNI' => 8,
+                                    'RUC' => 11,
+                                    default => null
+                                })
+                                ->numeric(fn(\Filament\Forms\Get $get) => in_array($get('document_type'), ['DNI', 'RUC']))
                                 ->required()
                                 ->columnSpan(1)
                                 ->suffixAction(
@@ -106,7 +115,7 @@ class ReceptionBoard extends Page
                                         ->color('primary')
                                         ->tooltip('Buscar RUC en SUNAT')
                                         // 🌟 AQUÍ ESTÁ LA MAGIA: Solo visible si elige RUC
-                                        ->visible(fn (\Filament\Forms\Get $get) => $get('document_type') === 'RUC')
+                                        ->visible(fn(\Filament\Forms\Get $get) => $get('document_type') === 'RUC')
                                         ->action(function ($state, \Filament\Forms\Set $set) {
                                             if (blank($state) || strlen($state) !== 11) {
                                                 \Filament\Notifications\Notification::make()->danger()->title('Error')->body('Ingrese un RUC válido de 11 dígitos.')->send();
@@ -247,12 +256,12 @@ class ReceptionBoard extends Page
                         ->live(onBlur: true)
 
                         // 🌟 UX VISUAL: Muestra el stock disponible arriba de la caja de texto
-                        ->hint(fn (Forms\Get $get) => $get('product_id') ? 'Disponible: ' . $get('max_stock') : null)
-                        ->hintColor(fn (Forms\Get $get) => (floatval($get('quantity')) > floatval($get('max_stock'))) ? 'danger' : 'success')
+                        ->hint(fn(Forms\Get $get) => $get('product_id') ? 'Disponible: ' . $get('max_stock') : null)
+                        ->hintColor(fn(Forms\Get $get) => (floatval($get('quantity')) > floatval($get('max_stock'))) ? 'danger' : 'success')
 
                         // 🌟 BLINDAJE 1: Reglas de validación en el formulario
                         ->rules([
-                            fn (Forms\Get $get) => function (string $attribute, $value, \Closure $fail) use ($get) {
+                            fn(Forms\Get $get) => function (string $attribute, $value, \Closure $fail) use ($get) {
                                 $maxStock = floatval($get('max_stock'));
                                 if (floatval($value) > $maxStock) {
                                     $fail("Solo hay {$maxStock} unidades en stock.");
@@ -262,7 +271,7 @@ class ReceptionBoard extends Page
                                 }
                             },
                         ])
-                        ->afterStateUpdated(fn ($state, Forms\Get $get, Forms\Set $set) => $set('total', floatval($state) * floatval($get('unit_price') ?? 0))),
+                        ->afterStateUpdated(fn($state, Forms\Get $get, Forms\Set $set) => $set('total', floatval($state) * floatval($get('unit_price') ?? 0))),
 
                     Forms\Components\TextInput::make('unit_price')
                         ->label('Precio Unit. (S/)')
@@ -358,7 +367,7 @@ class ReceptionBoard extends Page
             ->label('Ver Cuenta')
             ->icon('heroicon-o-clipboard-document-list')
             ->color('gray')
-            ->modalHeading(fn (array $arguments) => 'Estado de Cuenta: ' . (Room::find($arguments['room_id'])?->name ?? 'Habitación'))
+            ->modalHeading(fn(array $arguments) => 'Estado de Cuenta: ' . (Room::find($arguments['room_id'])?->name ?? 'Habitación'))
             ->modalWidth('lg')
             ->modalSubmitActionLabel('Guardar')
             ->fillForm(function (array $arguments) {
@@ -400,11 +409,11 @@ class ReceptionBoard extends Page
 
                         foreach ($items as $item) {
                             $html .= '<tr class="bg-white dark:bg-gray-900">';
-                            $html .= '<td class="px-3 py-2">'.number_format($item->quantity, 0).'x '.$item->item_name.'</td>';
-                            $html .= '<td class="px-3 py-2 text-right font-bold text-gray-900 dark:text-gray-100">S/ '.number_format($item->total, 2).'</td>';
+                            $html .= '<td class="px-3 py-2">' . number_format($item->quantity, 0) . 'x ' . $item->item_name . '</td>';
+                            $html .= '<td class="px-3 py-2 text-right font-bold text-gray-900 dark:text-gray-100">S/ ' . number_format($item->total, 2) . '</td>';
                             // El botón basurero que llama a nuestra función deleteExtra
                             $html .= '<td class="px-3 py-2 text-center">
-                                        <button wire:click="deleteExtra('.$item->id.')" type="button" class="text-red-500 hover:text-red-700 dark:hover:text-red-400 p-1 rounded-md hover:bg-red-50 dark:hover:bg-red-900/30 transition">
+                                        <button wire:click="deleteExtra(' . $item->id . ')" type="button" class="text-red-500 hover:text-red-700 dark:hover:text-red-400 p-1 rounded-md hover:bg-red-50 dark:hover:bg-red-900/30 transition">
                                             <svg class="w-4 h-4 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                                         </button>
                                       </td>';
@@ -449,20 +458,22 @@ class ReceptionBoard extends Page
                 }
             })
 
-            ->modalHeading(fn (array $arguments) => 'Check-Out: ' . (Room::find($arguments['room_id'])?->name ?? 'Habitación'))
+            ->modalHeading(fn(array $arguments) => 'Check-Out: ' . (Room::find($arguments['room_id'])?->name ?? 'Habitación'))
             ->modalDescription('Verifica los consumos, genera el comprobante y libera la habitación.')
             ->modalWidth('5xl')
 
-            ->modalSubmitAction(fn (\Filament\Actions\StaticAction $action) => $action
-                ->label('Confirmar Pago y Liberar Habitación')
-                ->color('success')
-                ->icon('heroicon-o-banknotes')
-                ->extraAttributes(['class' => 'w-full [&>button]:w-full [&>button]:justify-center text-lg'])
+            ->modalSubmitAction(
+                fn(\Filament\Actions\StaticAction $action) => $action
+                    ->label('Confirmar Pago y Liberar Habitación')
+                    ->color('success')
+                    ->icon('heroicon-o-banknotes')
+                    ->extraAttributes(['class' => 'w-full [&>button]:w-full [&>button]:justify-center text-lg'])
             )
-            ->modalCancelAction(fn (\Filament\Actions\StaticAction $action) => $action
-                ->label('Cancelar')
-                ->button()
-                ->color('gray')
+            ->modalCancelAction(
+                fn(\Filament\Actions\StaticAction $action) => $action
+                    ->label('Cancelar')
+                    ->button()
+                    ->color('gray')
             )
 
             ->mountUsing(function (Forms\ComponentContainer $form, array $arguments) {
@@ -553,8 +564,8 @@ class ReceptionBoard extends Page
                             ->searchable()
                             ->preload()
                             ->live()
-                            ->required(fn (\Filament\Forms\Get $get) => $get('document_type') === '01')
-                            ->helperText(fn (\Filament\Forms\Get $get) => $get('document_type') === '01' ? 'Factura: Solo se muestran clientes con RUC.' : 'Boleta: Clientes con DNI/CE o déjalo vacío para Público General.')
+                            ->required(fn(\Filament\Forms\Get $get) => $get('document_type') === '01')
+                            ->helperText(fn(\Filament\Forms\Get $get) => $get('document_type') === '01' ? 'Factura: Solo se muestran clientes con RUC.' : 'Boleta: Clientes con DNI/CE o déjalo vacío para Público General.')
                             ->manageOptionActions(function (\Filament\Forms\Components\Actions\Action $action) {
                                 return $action->icon('heroicon-o-user-plus')->color('success')->tooltip('Agregar Cliente Nuevo');
                             })
@@ -576,9 +587,17 @@ class ReceptionBoard extends Page
 
                                     Forms\Components\TextInput::make('document_number')
                                         ->label('Número')
-                                        ->maxLength(fn (\Filament\Forms\Get $get) => match ($get('document_type')) { 'DNI' => 8, 'RUC' => 11, default => 15 })
-                                        ->minLength(fn (\Filament\Forms\Get $get) => match ($get('document_type')) { 'DNI' => 8, 'RUC' => 11, default => null })
-                                        ->numeric(fn (\Filament\Forms\Get $get) => in_array($get('document_type'), ['DNI', 'RUC']))
+                                        ->maxLength(fn(\Filament\Forms\Get $get) => match ($get('document_type')) {
+                                            'DNI' => 8,
+                                            'RUC' => 11,
+                                            default => 15
+                                        })
+                                        ->minLength(fn(\Filament\Forms\Get $get) => match ($get('document_type')) {
+                                            'DNI' => 8,
+                                            'RUC' => 11,
+                                            default => null
+                                        })
+                                        ->numeric(fn(\Filament\Forms\Get $get) => in_array($get('document_type'), ['DNI', 'RUC']))
                                         ->required()
                                         ->columnSpan(1)
                                         ->suffixAction(
@@ -586,7 +605,7 @@ class ReceptionBoard extends Page
                                                 ->icon('heroicon-m-magnifying-glass')
                                                 ->color('primary')
                                                 ->tooltip('Buscar RUC en SUNAT')
-                                                ->visible(fn (\Filament\Forms\Get $get) => $get('document_type') === 'RUC')
+                                                ->visible(fn(\Filament\Forms\Get $get) => $get('document_type') === 'RUC')
                                                 ->action(function ($state, \Filament\Forms\Set $set) {
                                                     if (blank($state) || strlen($state) !== 11) {
                                                         \Filament\Notifications\Notification::make()->danger()->title('Error')->body('Ingrese un RUC válido de 11 dígitos.')->send();
@@ -646,8 +665,8 @@ class ReceptionBoard extends Page
 
                         Forms\Components\TextInput::make('payment_reference')
                             ->label('N° Operación')
-                            ->visible(fn (\Filament\Forms\Get $get) => \Percy\Core\Models\Sale::requiresReference($get('payment_method') ?? ''))
-                            ->required(fn (\Filament\Forms\Get $get) => \Percy\Core\Models\Sale::requiresReference($get('payment_method') ?? ''))
+                            ->visible(fn(\Filament\Forms\Get $get) => \Percy\Core\Models\Sale::requiresReference($get('payment_method') ?? ''))
+                            ->required(fn(\Filament\Forms\Get $get) => \Percy\Core\Models\Sale::requiresReference($get('payment_method') ?? ''))
                             ->columnSpan(1),
                     ])->columns(2)->columnSpan(2),
 
@@ -671,8 +690,8 @@ class ReceptionBoard extends Page
 
                                 foreach ($items as $item) {
                                     $html .= '<tr class="bg-white dark:bg-gray-900">';
-                                    $html .= '<td class="px-3 py-2">'.number_format($item->quantity, 0).'x '.$item->item_name.'</td>';
-                                    $html .= '<td class="px-3 py-2 text-right font-bold text-gray-900 dark:text-gray-100">S/ '.number_format($item->total, 2).'</td>';
+                                    $html .= '<td class="px-3 py-2">' . number_format($item->quantity, 0) . 'x ' . $item->item_name . '</td>';
+                                    $html .= '<td class="px-3 py-2 text-right font-bold text-gray-900 dark:text-gray-100">S/ ' . number_format($item->total, 2) . '</td>';
                                     $html .= '</tr>';
                                 }
                                 $html .= '</tbody></table></div>';
@@ -687,32 +706,29 @@ class ReceptionBoard extends Page
                 $room = Room::find($arguments['room_id']);
                 $reception = \Percy\Core\Models\Reception::where('room_id', $room->id)->where('status', 'active')->first();
 
-                $serieRecord = \Percy\Core\Models\Serie::where('tenant_id', Auth::user()->tenant_id)
-                    ->where('document_type', $data['document_type'])
-                    ->where('serie', $data['serie_documento'])
-                    ->first();
-
-                if (!$serieRecord) {
-                    \Filament\Notifications\Notification::make()->danger()->title('Falta Serie')->body('La serie seleccionada no es válida.')->send();
-                    return;
-                }
+                $tenantId = Auth::user()->tenant_id;
+                $userId = Auth::id();
+                $serieDocumento = $data['serie_documento'];
+                $documentType = $data['document_type'];
 
                 // 🌟 BLINDAJE 1: Iniciamos la transacción de BD. Si algo falla (ej. Stock), NADA se guarda.
                 \Illuminate\Support\Facades\DB::beginTransaction();
 
                 try {
-                    // 1. Incrementar correlativo (SOLO UNA VEZ)
-                    $serieRecord->increment('correlative');
+                    // 1. Obtener correlativo seguro
+                    $nuevoCorrelativo = app(CorrelativeService::class)
+                        ->next($tenantId, $documentType, $serieDocumento);
+
                     $formatter = new \Luecano\NumeroALetras\NumeroALetras();
                     $legendText = $formatter->toInvoice($data['total_to_pay'], 2, 'SOLES');
 
                     // 2. Crear Venta Principal
                     $sale = \Percy\Core\Models\Sale::create([
-                        'tenant_id' => Auth::user()->tenant_id,
-                        'user_id' => Auth::id(),
-                        'document_type' => $data['document_type'],
-                        'series' => $serieRecord->serie,
-                        'correlative' => $serieRecord->correlative,
+                        'tenant_id' => $tenantId,
+                        'user_id' => $userId,
+                        'document_type' => $documentType,
+                        'series' => $serieDocumento,
+                        'correlative' => $nuevoCorrelativo,
                         'customer_id' => $data['customer_id'],
                         'status' => 'completed',
                         'sold_at' => now(),
@@ -843,7 +859,6 @@ class ReceptionBoard extends Page
                         window.open('{$ticketUrl}', '_blank');
                         window.location.reload();
                     ");
-
                 } catch (\Exception $e) {
                     // 🌟 BLINDAJE 2: El Observer gritó "No hay stock". Deshacemos TODO (Rollback).
                     \Illuminate\Support\Facades\DB::rollBack();
@@ -947,6 +962,4 @@ class ReceptionBoard extends Page
                 ->send();
         }
     }
-
-
 }
