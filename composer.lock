@@ -4982,11 +4982,11 @@
         },
         {
             "name": "percy/core-business",
-            "version": "dev-develop",
+            "version": "dev-mejora-modular-ventas",
             "dist": {
                 "type": "path",
                 "url": "../core-business",
-                "reference": "42f465a28a413e22f1ef32f72e3a1e58d8643f56"
+                "reference": "5dec505ecb632f94e5a6c272419e758d9e37c9c2"
             },
             "require": {
                 "barryvdh/laravel-dompdf": "^3.1",

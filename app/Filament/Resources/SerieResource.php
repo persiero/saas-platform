@@ -134,7 +134,11 @@ class SerieResource extends Resource
 
                 Tables\Columns\TextColumn::make('next_number')
                     ->label('Siguiente comprobante')
-                    ->state(fn ($record) => $record->serie . '-' . str_pad($record->correlative + 1, 8, '0', STR_PAD_LEFT)),
+                    ->state(function ($record) {
+                        $nextCorrelative = $record->correlative + 1;
+
+                        return $record->serie . '-' . str_pad($nextCorrelative, 8, '0', STR_PAD_LEFT);
+                    }),
 
                 Tables\Columns\ToggleColumn::make('active')
                     ->label('Activa'),
