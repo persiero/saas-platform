@@ -10,6 +10,7 @@ use App\Filament\Resources\SaleResource\Support\SaleFormCalculations;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
 use Percy\Core\Models\Sale;
+use Percy\Core\Services\Tenants\TenantFeatureService;
 use Percy\Core\Models\Product;
 use Percy\Core\Models\AfectacionIgv;
 
@@ -250,30 +251,8 @@ class SaleForm
                             ->label('N° de Receta Médica / CMP')
                             ->placeholder('Ej: CMP 12345')
                             ->maxLength(255)
-                            ->visible(function (Forms\Get $get) {
-                                $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
-                                if (!($features['has_lots'] ?? false)) return false;
-                                $items = $get('items') ?? [];
-                                foreach ($items as $item) {
-                                    if (!empty($item['product_id'])) {
-                                        $product = \Percy\Core\Models\Product::find($item['product_id']);
-                                        if ($product && $product->requires_prescription) return true;
-                                    }
-                                }
-                                return false;
-                            })
-                            ->required(function (Forms\Get $get) {
-                                $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
-                                if (!($features['has_lots'] ?? false)) return false;
-                                $items = $get('items') ?? [];
-                                foreach ($items as $item) {
-                                    if (!empty($item['product_id'])) {
-                                        $product = \Percy\Core\Models\Product::find($item['product_id']);
-                                        if ($product && $product->requires_prescription) return true;
-                                    }
-                                }
-                                return false;
-                            })
+                            ->visible(fn (Forms\Get $get) => self::requiresPrescriptionForSelectedItems($get))
+                            ->required(fn (Forms\Get $get) => self::requiresPrescriptionForSelectedItems($get))
                             ->columnSpan(['default' => 1, 'md' => 1]),
 
                         Forms\Components\Select::make('status')
@@ -300,10 +279,9 @@ class SaleForm
 
                                 if ($product) {
                                     $items = $get('items') ?? [];
-                                    $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
                                     $batch = null;
 
-                                    if ($features['has_lots'] ?? false) {
+                                    if (app(TenantFeatureService::class)->has('has_lots')) {
                                         $batch = \Percy\Core\Models\ProductBatch::where('product_id', $product->id)
                                             ->where('current_quantity', '>', 0)
                                             ->whereDate('expiration_date', '>=', now())
@@ -428,9 +406,9 @@ class SaleForm
                                             $set('measurement_unit', 'box');
                                             $set('_is_weighable', $product->is_weighable);
 
-                                            $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
                                             $loteProximo = null;
-                                            if ($features['has_lots'] ?? false) {
+
+                                            if (app(TenantFeatureService::class)->has('has_lots')) {
                                                 $loteProximo = \Percy\Core\Models\ProductBatch::where('product_id', $state)
                                                     ->where('current_quantity', '>', 0)
                                                     ->whereDate('expiration_date', '>=', now())
@@ -438,6 +416,7 @@ class SaleForm
                                                     ->where('is_active', true)
                                                     ->first();
                                             }
+
                                             $set('product_batch_id', $loteProximo ? $loteProximo->id : null);
                                         }
                                         SaleFormCalculations::updateRow($get, $set);
@@ -485,8 +464,8 @@ class SaleForm
                                                 return [$batch->id => "{$batch->batch_number} (Vence: {$vence})"];
                                             });
                                     })
-                                    ->visible(fn() => \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features['has_lots'] ?? false)
-                                    ->required(fn() => \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features['has_lots'] ?? false)
+                                    ->visible(fn () => app(TenantFeatureService::class)->has('has_lots'))
+                                    ->required(fn () => app(TenantFeatureService::class)->has('has_lots'))
                                     ->searchable()
                                     ->preload()
                                     ->columnSpan(['default' => 1, 'md' => 2]),
@@ -673,6 +652,29 @@ class SaleForm
                 ])->columnSpan(['default' => 1, 'lg' => 4]), // 🌟 GRUPO DERECHO
             ])
             ->columns(['default' => 1, 'lg' => 4]);
+    }
+
+    private static function requiresPrescriptionForSelectedItems(Get $get): bool
+    {
+        if (!app(TenantFeatureService::class)->hasAny(['has_recipes', 'has_lots'])) {
+            return false;
+        }
+
+        $items = $get('items') ?? [];
+
+        foreach ($items as $item) {
+            if (empty($item['product_id'])) {
+                continue;
+            }
+
+            $product = Product::find($item['product_id']);
+
+            if ($product && $product->requires_prescription) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
 }

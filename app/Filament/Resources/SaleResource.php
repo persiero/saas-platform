@@ -105,14 +105,14 @@ class SaleResource extends Resource
         return SaleForm::configure($form);
     }
 
-    public static function infolist(Infolist $infolist): Infolist
-    {
-        return SaleInfolist::configure($infolist);
-    }
-
     public static function table(Table $table): Table
     {
         return SaleTable::configure($table);
+    }
+
+    public static function infolist(Infolist $infolist): Infolist
+    {
+        return SaleInfolist::configure($infolist);
     }
 
 

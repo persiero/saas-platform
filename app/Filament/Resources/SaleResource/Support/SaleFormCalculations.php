@@ -4,6 +4,8 @@ namespace App\Filament\Resources\SaleResource\Support;
 
 use Filament\Forms\Get;
 use Filament\Forms\Set;
+use Illuminate\Support\Facades\Auth;
+use Percy\Core\Models\AfectacionIgv;
 
 class SaleFormCalculations
 {
@@ -14,9 +16,9 @@ class SaleFormCalculations
         $afectacionId = $get('afectacion_igv_id') ?? 1;
 
         // 🌟 1. Obtenemos el IGV dinámico del Tenant
-        $tenantIgv = \Illuminate\Support\Facades\Auth::user()->tenant->igv_percentage ?? 18;
+        $tenantIgv = Auth::user()->tenant->igv_percentage ?? 18;
 
-        $afectacion = \Percy\Core\Models\AfectacionIgv::find($afectacionId);
+        $afectacion = AfectacionIgv::find($afectacionId);
 
         // 🌟 2. Si es gravado, usamos el IGV del negocio (18% o 10.5%)
         $porcentaje = ($afectacion && $afectacion->gravado) ? ($tenantIgv / 100) : 0;
@@ -52,7 +54,7 @@ class SaleFormCalculations
 
         // 🌟 1. Obtenemos el IGV dinámico UNA SOLA VEZ antes del bucle
         // (Hacerlo afuera hace que el sistema sea mucho más rápido)
-        $tenantIgv = \Illuminate\Support\Facades\Auth::user()->tenant->igv_percentage ?? 18;
+        $tenantIgv = Auth::user()->tenant->igv_percentage ?? 18;
 
         foreach ($items as $item) {
             // Recalculamos al vuelo para tener la matemática 100% fresca
@@ -60,7 +62,7 @@ class SaleFormCalculations
             $price = (float) ($item['unit_price'] ?? 0);
             $afecId = $item['afectacion_igv_id'] ?? 1;
 
-            $afectacion = \Percy\Core\Models\AfectacionIgv::find($afecId);
+            $afectacion = AfectacionIgv::find($afecId);
 
             // 🌟 2. Aplicamos el IGV dinámico
             $porcentaje = ($afectacion && $afectacion->gravado) ? ($tenantIgv / 100) : 0;
