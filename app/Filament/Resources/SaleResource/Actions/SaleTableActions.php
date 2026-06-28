@@ -448,13 +448,20 @@ class SaleTableActions
                                 $nota->cancel_reason_description = $descripciones[$data['debit_note_type']];
 
                                 // NUEVA MATEMÁTICA: Calculamos todo en base al nuevo importe
-                                $total = (float) $data['importe_adicional'];
-                                $base = $total / 1.18; // Asumiendo que es gravado
-                                $igv = $total - $base;
+                                $total = round((float) $data['importe_adicional'], 2);
 
-                                $nota->op_gravadas = round($base, 2);
-                                $nota->igv = round($igv, 2);
-                                $nota->total = round($total, 2);
+                                $tenantIgv = $record->tenant->igv_percentage ?? 18;
+                                $factorDivisor = 1 + ($tenantIgv / 100);
+
+                                // Calculamos la base igual como SUNAT espera: total / factor
+                                $base = round($total / $factorDivisor, 2);
+
+                                // El IGV debe cerrar contra el total, no recalcularse aparte
+                                $igv = round($total - $base, 2);
+
+                                $nota->op_gravadas = $base;
+                                $nota->igv = $igv;
+                                $nota->total = $total;
                                 $nota->op_exoneradas = 0;
                                 $nota->op_inafectas = 0;
 
@@ -464,14 +471,16 @@ class SaleTableActions
                                 $producto = \Percy\Core\Models\Product::find($data['product_id']);
 
                                 $nota->items()->create([
+                                    'tenant_id' => $record->tenant_id,
                                     'product_id' => $producto->id,
                                     'item_name' => $producto->name . ' - ' . $nota->cancel_reason_description,
                                     'quantity' => 1,
-                                    'unit_price' => round($total, 2),
-                                    'unit_value' => round($base, 2),
-                                    'igv_amount' => round($igv, 2),
-                                    'total' => round($total, 2),
+                                    'unit_price' => $total,
+                                    'unit_value' => $base,
+                                    'igv_amount' => $igv,
+                                    'total' => $total,
                                     'afectacion_igv_id' => $producto->afectacion_igv_id ?? 1,
+                                    'unit_code' => $producto->unidadSunat ? $producto->unidadSunat->codigo : 'NIU',
                                 ]);
 
                                 // 5. Enviamos la Nota de Débito
