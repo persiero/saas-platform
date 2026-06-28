@@ -6,6 +6,7 @@ use Filament\Forms\Get;
 use Filament\Forms\Set;
 use Illuminate\Support\Facades\Auth;
 use Percy\Core\Models\AfectacionIgv;
+use Percy\Core\Services\Tenants\TenantPricingService;
 
 class SaleFormCalculations
 {
@@ -15,22 +16,12 @@ class SaleFormCalculations
         $unitPrice = (float) ($get('unit_price') ?? 0);
         $afectacionId = $get('afectacion_igv_id') ?? 1;
 
-        // 🌟 1. Obtenemos el IGV dinámico del Tenant
-        $tenantIgv = Auth::user()->tenant->igv_percentage ?? 18;
+        $rowData = app(TenantPricingService::class)
+            ->rowData($quantity, $unitPrice, (int) $afectacionId);
 
-        $afectacion = AfectacionIgv::find($afectacionId);
-
-        // 🌟 2. Si es gravado, usamos el IGV del negocio (18% o 10.5%)
-        $porcentaje = ($afectacion && $afectacion->gravado) ? ($tenantIgv / 100) : 0;
-
-        $rowTotal = $quantity * $unitPrice;
-        $unitValue = $unitPrice / (1 + $porcentaje);
-        $igvAmount = ($unitPrice - $unitValue) * $quantity;
-
-        // Guarda en los campos de la fila (incluso los ocultos)
-        $set('unit_value', round($unitValue, 2));
-        $set('igv_amount', round($igvAmount, 2));
-        $set('total', round($rowTotal, 2));
+        $set('unit_value', $rowData['unit_value']);
+        $set('igv_amount', $rowData['igv_amount']);
+        $set('total', $rowData['total']);
     }
 
     public static function updateTotals(Get $get, Set $set): void
@@ -54,7 +45,7 @@ class SaleFormCalculations
 
         // 🌟 1. Obtenemos el IGV dinámico UNA SOLA VEZ antes del bucle
         // (Hacerlo afuera hace que el sistema sea mucho más rápido)
-        $tenantIgv = Auth::user()->tenant->igv_percentage ?? 18;
+        $pricingService = app(TenantPricingService::class);
 
         foreach ($items as $item) {
             // Recalculamos al vuelo para tener la matemática 100% fresca
@@ -65,7 +56,7 @@ class SaleFormCalculations
             $afectacion = AfectacionIgv::find($afecId);
 
             // 🌟 2. Aplicamos el IGV dinámico
-            $porcentaje = ($afectacion && $afectacion->gravado) ? ($tenantIgv / 100) : 0;
+            $porcentaje = $pricingService->afectacionRate((int) $afecId);
 
             $rowTotal = $qty * $price;
 

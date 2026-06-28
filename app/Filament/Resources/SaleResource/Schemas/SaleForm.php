@@ -10,8 +10,9 @@ use App\Filament\Resources\SaleResource\Support\SaleFormCalculations;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
 use Percy\Core\Models\Sale;
-use Percy\Core\Services\Tenants\TenantFeatureService;
 use Percy\Core\Models\Product;
+use Percy\Core\Services\Tenants\TenantFeatureService;
+use Percy\Core\Services\Tenants\TenantPricingService;
 use Percy\Core\Models\AfectacionIgv;
 
 class SaleForm
@@ -289,31 +290,12 @@ class SaleForm
                                             ->first();
                                     }
 
-                                    // 🌟 1. Obtenemos la configuración completa del Tenant
-                                    $tenant = \Illuminate\Support\Facades\Auth::user()->tenant;
-                                    $tenantIgv = $tenant->igv_percentage ?? 18;
-                                    $includesIgv = $tenant->prices_include_igv ?? true; // <-- Leemos el interruptor
+                                    $priceData = app(TenantPricingService::class)->priceDataForProduct($product);
 
-                                    $afectacion = \Percy\Core\Models\AfectacionIgv::find($product->afectacion_igv_id ?? 1);
-
-                                    //Si el producto está gravado, usamos el IGV del Tenant, no el de la tabla general
-                                    $porcentaje = ($afectacion && $afectacion->gravado) ? ($tenantIgv / 100) : 0;
-
-                                    // 🌟 2. LÓGICA DEL INTERRUPTOR
-                                    $precioCatalogo = $product->price;
-                                    $precioFraccionCatalogo = $product->unit_price ?? 0;
-
-                                    if ($includesIgv) {
-                                        // El catálogo ya es el precio final
-                                        $precioVentaFinal = $precioCatalogo;
-                                        $precioFraccionFinal = $precioFraccionCatalogo;
-                                        $unitValue = $precioCatalogo / (1 + $porcentaje);
-                                    } else {
-                                        // El catálogo es la base, debemos SUMARLE el IGV para el cliente
-                                        $unitValue = $precioCatalogo;
-                                        $precioVentaFinal = $precioCatalogo * (1 + $porcentaje);
-                                        $precioFraccionFinal = $precioFraccionCatalogo * (1 + $porcentaje);
-                                    }
+                                    $precioVentaFinal = $priceData['box_price'];
+                                    $precioFraccionFinal = $priceData['fraction_price'];
+                                    $unitValue = $priceData['unit_value'];
+                                    $igvAmount = $priceData['igv_amount'];
 
                                     $igvAmount = $precioVentaFinal - $unitValue;
 
@@ -380,22 +362,11 @@ class SaleForm
                                         if ($state) {
                                             $product = \Percy\Core\Models\Product::find($state);
 
-                                            // 1. Leemos el interruptor y la tasa
-                                            $tenant = \Illuminate\Support\Facades\Auth::user()->tenant;
-                                            $tenantIgv = $tenant->igv_percentage ?? 18;
-                                            $includesIgv = $tenant->prices_include_igv ?? true;
+                                            $priceData = app(TenantPricingService::class)->priceDataForProduct($product);
 
-                                            $afectacion = \Percy\Core\Models\AfectacionIgv::find($product->afectacion_igv_id ?? 1);
-                                            $porcentaje = ($afectacion && $afectacion->gravado) ? ($tenantIgv / 100) : 0;
-
-                                            // 2. Matemáticas según el interruptor
-                                            $precioVentaFinal = $includesIgv ? $product->price : ($product->price * (1 + $porcentaje));
-                                            $precioFraccionFinal = $includesIgv ? ($product->unit_price ?? 0) : (($product->unit_price ?? 0) * (1 + $porcentaje));
-
-                                            // 3. Asignamos los precios calculados
-                                            $set('unit_price', round($precioVentaFinal, 2));
-                                            $set('_box_price', round($precioVentaFinal, 2));
-                                            $set('_fraction_price', round($precioFraccionFinal, 2));
+                                            $set('unit_price', $priceData['box_price']);
+                                            $set('_box_price', $priceData['box_price']);
+                                            $set('_fraction_price', $priceData['fraction_price']);
 
                                             // Estos quedan igual
                                             $set('afectacion_igv_id', $product->afectacion_igv_id);
