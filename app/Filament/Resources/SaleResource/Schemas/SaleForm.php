@@ -13,6 +13,7 @@ use Percy\Core\Models\Sale;
 use Percy\Core\Models\Product;
 use Percy\Core\Services\Tenants\TenantFeatureService;
 use Percy\Core\Services\Tenants\TenantPricingService;
+use Percy\Core\Services\Inventory\ProductBatchService;
 use Percy\Core\Models\AfectacionIgv;
 
 class SaleForm
@@ -280,15 +281,9 @@ class SaleForm
 
                                 if ($product) {
                                     $items = $get('items') ?? [];
-                                    $batch = null;
-
-                                    if (app(TenantFeatureService::class)->has('has_lots')) {
-                                        $batch = \Percy\Core\Models\ProductBatch::where('product_id', $product->id)
-                                            ->where('current_quantity', '>', 0)
-                                            ->whereDate('expiration_date', '>=', now())
-                                            ->orderBy('expiration_date', 'asc')
-                                            ->first();
-                                    }
+                                    $batch = app(TenantFeatureService::class)->has('has_lots')
+                                        ? app(ProductBatchService::class)->nextAvailableForProduct($product)
+                                        : null;
 
                                     $priceData = app(TenantPricingService::class)->priceDataForProduct($product);
 
@@ -377,16 +372,9 @@ class SaleForm
                                             $set('measurement_unit', 'box');
                                             $set('_is_weighable', $product->is_weighable);
 
-                                            $loteProximo = null;
-
-                                            if (app(TenantFeatureService::class)->has('has_lots')) {
-                                                $loteProximo = \Percy\Core\Models\ProductBatch::where('product_id', $state)
-                                                    ->where('current_quantity', '>', 0)
-                                                    ->whereDate('expiration_date', '>=', now())
-                                                    ->orderBy('expiration_date', 'asc')
-                                                    ->where('is_active', true)
-                                                    ->first();
-                                            }
+                                            $loteProximo = app(TenantFeatureService::class)->has('has_lots')
+                                                ? app(ProductBatchService::class)->nextAvailableForProduct((int) $state)
+                                                : null;
 
                                             $set('product_batch_id', $loteProximo ? $loteProximo->id : null);
                                         }
@@ -422,18 +410,8 @@ class SaleForm
                                 Forms\Components\Select::make('product_batch_id')
                                     ->label('Lote')
                                     ->options(function (Get $get) {
-                                        $productId = $get('product_id');
-                                        if (!$productId) return [];
-                                        return \Percy\Core\Models\ProductBatch::where('product_id', $productId)
-                                            ->where('current_quantity', '>', 0)
-                                            ->whereDate('expiration_date', '>=', now())
-                                            ->orderBy('expiration_date', 'asc')
-                                            ->where('is_active', true)
-                                            ->get()
-                                            ->mapWithKeys(function ($batch) {
-                                                $vence = $batch->expiration_date ? $batch->expiration_date->format('d/m/Y') : 'N/A';
-                                                return [$batch->id => "{$batch->batch_number} (Vence: {$vence})"];
-                                            });
+                                        return app(ProductBatchService::class)
+                                            ->availableOptionsForProduct($get('product_id'));
                                     })
                                     ->visible(fn () => app(TenantFeatureService::class)->has('has_lots'))
                                     ->required(fn () => app(TenantFeatureService::class)->has('has_lots'))
