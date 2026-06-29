@@ -20,6 +20,7 @@ use Illuminate\Support\Facades\Auth;
 use Percy\Core\Models\Sale;
 use Percy\Core\Models\Expense;
 use Percy\Core\Services\Cash\CashRegisterService;
+use App\Filament\Resources\CashRegisterResource\RelationManagers;
 
 class CashRegisterResource extends Resource
 {
@@ -516,6 +517,13 @@ class CashRegisterResource extends Resource
             'index' => Pages\ListCashRegisters::route('/'),
             //'create' => Pages\CreateCashRegister::route('/create'),
             'view' => Pages\ViewCashRegister::route('/{record}'),
+        ];
+    }
+
+    public static function getRelations(): array
+    {
+        return [
+            RelationManagers\SalesRelationManager::class,
         ];
     }
 

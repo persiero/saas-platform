@@ -12,6 +12,21 @@ use Percy\Core\Services\Sales\CorrelativeService;
 
 class SaleInternalActions
 {
+    private static function saleBelongsToClosedCashRegister(Sale $sale): bool
+    {
+        $sale->loadMissing('cashRegister');
+
+        return $sale->cashRegister?->status === 'closed';
+    }
+
+    private static function saleBelongsToOpenCashRegister(Sale $sale): bool
+    {
+        $sale->loadMissing('cashRegister');
+
+        return $sale->cash_register_id !== null
+            && $sale->cashRegister?->status === 'open';
+    }
+
     public static function get(): array
     {
         return [
@@ -28,6 +43,7 @@ class SaleInternalActions
                     fn(Sale $record) =>
                     $record->document_type === '00' &&
                         $record->status !== 'canceled' &&
+                        self::saleBelongsToOpenCashRegister($record) &&
                         Auth::user()?->canConvertTicketsToInvoices()
                 )
                 ->form([
@@ -42,6 +58,16 @@ class SaleInternalActions
                         ->required(),
                 ])
                 ->action(function (array $data, Sale $record) {
+                    if (! self::saleBelongsToOpenCashRegister($record)) {
+                        Notification::make()
+                            ->danger()
+                            ->title('Acción no permitida')
+                            ->body('No puedes convertir una venta que pertenece a una caja cerrada o sin caja asociada.')
+                            ->send();
+
+                        return;
+                    }
+
                     $originalDocType = $record->document_type;
                     $originalSeries = $record->series;
                     $originalCorrelative = $record->correlative;
@@ -88,6 +114,7 @@ class SaleInternalActions
                     fn(Sale $record) =>
                     $record->document_type === '00' &&
                         $record->status !== 'canceled' &&
+                        self::saleBelongsToOpenCashRegister($record) &&
                         Auth::user()?->canCancelSales()
                 )
                 ->form([
@@ -97,6 +124,16 @@ class SaleInternalActions
                         ->maxLength(255),
                 ])
                 ->action(function (array $data, Sale $record) {
+                    if (! self::saleBelongsToOpenCashRegister($record)) {
+                        Notification::make()
+                            ->danger()
+                            ->title('Acción no permitida')
+                            ->body('No puedes anular una venta que pertenece a una caja cerrada o sin caja asociada.')
+                            ->send();
+
+                        return;
+                    }
+
                     foreach ($record->items as $item) {
                         app(InventoryService::class)->refundStock(
                             $item,

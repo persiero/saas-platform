@@ -9,6 +9,7 @@ use Percy\Core\Models\CashRegister;
 use Percy\Core\Services\Sales\CorrelativeService;
 use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\Auth;
+use Percy\Core\Services\Cash\CashRegisterService;
 
 class CreateSale extends CreateRecord
 {
@@ -23,10 +24,8 @@ class CreateSale extends CreateRecord
         parent::mount();
 
         // Validar que el usuario tenga una caja abierta
-        $openCash = CashRegister::where('tenant_id', Auth::user()->tenant_id)
-            ->where('user_id', Auth::id())
-            ->where('status', 'open')
-            ->exists();
+        $openCash = app(CashRegisterService::class)
+            ->openCashRegisterForTenant(Auth::user()->tenant_id);
 
         if (!$openCash) {
             Notification::make()
@@ -45,14 +44,8 @@ class CreateSale extends CreateRecord
         $tenantId = Auth::user()->tenant_id;
         $userId = Auth::id();
 
-        $cashRegister = CashRegister::where('tenant_id', $tenantId)
-            ->where('user_id', $userId)
-            ->where('status', 'open')
-            ->first();
-
-        if (!$cashRegister) {
-            throw new \Exception("Debes tener una caja abierta para registrar ventas.");
-        }
+        $cashRegister = app(CashRegisterService::class)
+            ->requireOpenCashRegisterForTenant($tenantId);
 
         $data['tenant_id'] = $tenantId;
         $data['user_id'] = $userId;

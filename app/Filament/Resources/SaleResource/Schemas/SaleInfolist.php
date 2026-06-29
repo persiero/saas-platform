@@ -7,6 +7,7 @@ use Filament\Infolists\Components\Section;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Infolists\Components\RepeatableEntry;
 use Filament\Infolists\Components\Grid;
+use App\Filament\Resources\CashRegisterResource;
 
 class SaleInfolist
 {
@@ -71,6 +72,48 @@ class SaleInfolist
                             ->dateTime('d/m/Y h:i A')
                             ->icon('heroicon-o-calendar'),
                     ])->columns(4), // Cambiado a 4 columnas para que no se vea tan apretado
+
+                Section::make('Caja Asociada')
+                    ->icon('heroicon-o-calculator')
+                    ->visible(fn ($record) => filled($record->cash_register_id))
+                    ->schema([
+                        TextEntry::make('cashRegister.id')
+                            ->label('Caja')
+                            ->formatStateUsing(fn ($state) => '#' . $state)
+                            ->badge()
+                            ->color('primary')
+                            ->url(fn ($record) => $record->cash_register_id
+                                ? CashRegisterResource::getUrl('view', ['record' => $record->cash_register_id])
+                                : null),
+
+                        TextEntry::make('cashRegister.status')
+                            ->label('Estado de Caja')
+                            ->formatStateUsing(fn ($state) => $state === 'open' ? 'Abierta' : 'Cerrada')
+                            ->badge()
+                            ->color(fn ($state) => $state === 'open' ? 'success' : 'gray'),
+
+                        TextEntry::make('cashRegister.user.name')
+                            ->label('Caja abierta por')
+                            ->icon('heroicon-o-user')
+                            ->placeholder('No registrado'),
+
+                        TextEntry::make('cashRegister.closedBy.name')
+                            ->label('Caja cerrada por')
+                            ->icon('heroicon-o-identification')
+                            ->placeholder('Aún abierta'),
+
+                        TextEntry::make('cashRegister.opened_at')
+                            ->label('Apertura')
+                            ->dateTime('d/m/Y h:i A')
+                            ->icon('heroicon-o-lock-open'),
+
+                        TextEntry::make('cashRegister.closed_at')
+                            ->label('Cierre')
+                            ->dateTime('d/m/Y h:i A')
+                            ->icon('heroicon-o-lock-closed')
+                            ->placeholder('Aún abierta'),
+                    ])
+                    ->columns(3),
 
                 // 🌟 DETALLE: La Comanda / Ticket
                 Section::make('Detalle de Productos')

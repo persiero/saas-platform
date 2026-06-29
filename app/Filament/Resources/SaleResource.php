@@ -42,8 +42,13 @@ class SaleResource extends Resource
             // Agregamos 'user' y 'cashRegister.user' para que la columna apilada
             // no tenga que buscar los nombres uno por uno.
             ->with([
+                'tenant',
                 'user',
+                'customer',
+                'table',
+                'cashRegister',
                 'cashRegister.user',
+                'cashRegister.closedBy',
                 'items.product',
                 'items.product.unidadSunat'
             ]);
@@ -88,7 +93,14 @@ class SaleResource extends Resource
     // Todos pueden crear ventas (Cajeros y Admins).
     public static function canCreate(): bool
     {
-        return true;
+        $user = Auth::user();
+
+        if (! $user) {
+            return false;
+        }
+
+        return $user->isAdmin()
+            || $user->hasAnyRole(['Cajero', 'Vendedor']);
     }
 
     // Asegurarnos de que toda nueva venta guarde el ID del cajero y el tenant

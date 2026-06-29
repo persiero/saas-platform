@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
 use Percy\Core\Models\Sale;
 use Percy\Core\Services\Sales\CorrelativeService;
+use Percy\Core\Services\Cash\CashRegisterService;
 
 class SaleEcommerceActions
 {
@@ -20,12 +21,17 @@ class SaleEcommerceActions
                 ->visible(fn(Sale $record) =>
                     $record->channel === 'ecommerce' &&
                     $record->status === 'pending_payment' &&
-                    Auth::user()?->canProcessWebOrders()
+                    Auth::user()?->canProcessWebOrders() &&
+                    app(CashRegisterService::class)->openCashRegisterForTenant($record->tenant_id)
                 )
                 ->using(function (Model $record, array $data): Model {
 
+                    $cashRegister = app(CashRegisterService::class)
+                        ->requireOpenCashRegisterForTenant($record->tenant_id);
+
                     $data['status'] = 'completed';
                     $data['user_id'] = Auth::id();
+                    $data['cash_register_id'] = $cashRegister->id;
 
                     $tipoDoc = $data['document_type'] ?? $record->document_type;
 
