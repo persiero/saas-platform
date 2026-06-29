@@ -9,6 +9,7 @@ use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\Auth;
 use Percy\Core\Models\Sale;
 use Percy\Core\Services\Sales\CorrelativeService;
+use Percy\Core\Services\Inventory\InventoryService;
 
 class SaleTableActions
 {
@@ -149,37 +150,11 @@ class SaleTableActions
                         ])
                         ->action(function (array $data, Sale $record) {
                             foreach ($record->items as $item) {
-                                $product = $item->product;
-                                if (!$product) continue;
-
-                                $quantityToReturn = $item->quantity;
-                                if ($product->is_fractionable && $item->measurement_unit === 'unit' && $product->units_per_box > 0) {
-                                    $quantityToReturn = $item->quantity / $product->units_per_box;
-                                }
-
-                                if ($item->product_batch_id) {
-                                    $batch = \Percy\Core\Models\ProductBatch::find($item->product_batch_id);
-                                    if ($batch) {
-                                        $batch->current_quantity += $quantityToReturn;
-                                        $batch->save();
-                                    }
-                                }
-
-                                $product->current_stock += $quantityToReturn;
-                                $product->save();
-
-                                \Percy\Core\Models\InventoryMovement::create([
-                                    'tenant_id'        => $record->tenant_id,
-                                    'product_id'       => $item->product_id,
-                                    'product_batch_id' => $item->product_batch_id,
-                                    'user_id'          => \Illuminate\Support\Facades\Auth::id(),
-                                    'type'             => 'IN',
-                                    'quantity'         => $quantityToReturn,
-                                    'balance_after'    => $product->current_stock,
-                                    'reason'           => "Anulación Ticket {$record->series}-{$record->correlative}: {$data['reason']}",
-                                    'reference_type'   => 'Percy\Core\Models\Sale',
-                                    'reference_id'     => $record->id,
-                                ]);
+                                app(InventoryService::class)->refundStock(
+                                    $item,
+                                    (float) $item->quantity,
+                                    "Anulación Ticket {$record->series}-{$record->correlative}: {$data['reason']}"
+                                );
                             }
 
                             $record->update([
