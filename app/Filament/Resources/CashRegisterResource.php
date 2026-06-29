@@ -250,13 +250,47 @@ class CashRegisterResource extends Resource
                                     </div>'
                                 );
                             }),
+
+                        Forms\Components\Textarea::make('closing_notes')
+                            ->label('Observación del cierre')
+                            ->rows(3)
+                            ->maxLength(500)
+                            ->helperText('Obligatorio si la caja tiene faltante o sobrante.')
+                            ->required(function (CashRegister $record, Forms\Get $get) {
+                                $closingAmount = $get('closing_amount');
+
+                                if ($closingAmount === null || $closingAmount === '') {
+                                    return false;
+                                }
+
+                                $difference = round((float) $closingAmount - self::expectedCash($record), 2);
+
+                                return abs($difference) >= 0.01;
+                            })
+                            ->visible(function (CashRegister $record, Forms\Get $get) {
+                                $closingAmount = $get('closing_amount');
+
+                                if ($closingAmount === null || $closingAmount === '') {
+                                    return false;
+                                }
+
+                                $difference = round((float) $closingAmount - self::expectedCash($record), 2);
+
+                                return abs($difference) >= 0.01;
+                            }),
                     ])
                     ->action(function (CashRegister $record, array $data) {
                         $expectedCash = self::expectedCash($record);
                         $closingAmount = (float) $data['closing_amount'];
                         $difference = round($closingAmount - $expectedCash, 2);
 
-                        $record->close($closingAmount);
+                        $record->close(
+                            $closingAmount,
+                            $expectedCash,
+                            $difference,
+                            $data['closing_notes'] ?? null,
+                            Auth::id()
+                        );
 
                         if (abs($difference) < 0.01) {
                             Notification::make()
@@ -420,7 +454,11 @@ class CashRegisterResource extends Resource
                                     ->money('PEN')
                                     ->weight('bold')
                                     ->size(TextEntry\TextEntrySize::Large)
-                                    ->state(fn (CashRegister $record) => self::expectedCash($record)),
+                                    ->state(fn (CashRegister $record) =>
+                                        $record->expected_cash !== null
+                                            ? (float) $record->expected_cash
+                                            : self::expectedCash($record)
+                                    ),
 
                                 TextEntry::make('closing_amount') // ESTA SÍ ES TU COLUMNA REAL
                                     ->label('Efectivo Contado')
@@ -433,7 +471,22 @@ class CashRegisterResource extends Resource
                                     ->money('PEN')
                                     ->weight('bold')
                                     ->color(fn ($state) => $state < 0 ? 'danger' : ($state > 0 ? 'warning' : 'success'))
-                                    ->state(fn (CashRegister $record) => self::cashDifference($record)),
+                                    ->state(fn (CashRegister $record) =>
+                                        $record->cash_difference !== null
+                                            ? (float) $record->cash_difference
+                                            : self::cashDifference($record)
+                                    ),
+
+                                TextEntry::make('closedBy.name')
+                                    ->label('Cerrado por')
+                                    ->icon('heroicon-o-identification')
+                                    ->placeholder('Pendiente de cierre'),
+
+                                TextEntry::make('closing_notes')
+                                    ->label('Observación del cierre')
+                                    ->placeholder('Sin observaciones')
+                                    ->columnSpanFull(),
+
                             ])->columns(2),
                     ])->columnSpan(2),
 
