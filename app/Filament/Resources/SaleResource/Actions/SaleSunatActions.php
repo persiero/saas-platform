@@ -7,7 +7,8 @@ use Filament\Tables;
 use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\Auth;
 use Percy\Core\Models\Sale;
-use Percy\Core\Services\Sales\CorrelativeService;
+use Percy\Core\Services\Sales\SaleNoteService;
+use Percy\Core\Services\SunatService;
 
 class SaleSunatActions
 {
@@ -100,65 +101,22 @@ class SaleSunatActions
                 ])
                 ->action(function (array $data, Sale $record) {
                     try {
-                        $nuevoCorrelativo = app(CorrelativeService::class)
-                            ->next($record->tenant_id, '07', $data['serie_nota']);
+                        $nota = app(SaleNoteService::class)->createCreditNote(
+                            $record,
+                            $data['serie_nota'],
+                            $data['credit_note_type']
+                        );
 
-                        // Clonamos la venta original pero vaciamos los datos de respuesta SUNAT anteriores
-                        $nota = $record->replicate([
-                            'sunat_status',
-                            'sunat_code',
-                            'sunat_description',
-                            'sunat_hash',
-                            'sunat_xml_path',
-                            'sunat_cdr_path',
-                            'sunat_pdf_path',
-                            'legend_text'
-                        ]);
-                        $nota->document_type = '07';
-                        $nota->series = $data['serie_nota'];
-                        $nota->correlative = $nuevoCorrelativo; // Asignamos el número automático ✅
-
-                        $nota->status = 'completed';
-
-                        // 3. Vinculamos el documento original (La Boleta/Factura que estamos anulando)
-                        $nota->affected_document_type = $record->document_type;
-                        $nota->affected_document_series = $record->series;
-                        $nota->affected_document_correlative = $record->correlative;
-                        $nota->credit_note_type = $data['credit_note_type'];
-
-                        // Definimos la descripción según el código elegido
-                        $descripciones = [
-                            '01' => 'Anulación de la operación',
-                            '02' => 'Anulación por error en el RUC',
-                            '03' => 'Corrección por error en la descripción',
-                            '06' => 'Devolución total',
-                            '07' => 'Devolución por ítem',
-                            '10' => 'Otros Conceptos',
-                        ];
-                        $nota->cancel_reason_description = $descripciones[$data['credit_note_type']];
-
-                        // Guardamos el nuevo registro padre
-                        $nota->save();
-
-                        // 4. Clonamos los ítems originales idénticos para que la contabilidad cuadre exacto
-                        foreach ($record->items as $item) {
-                            $nuevoItem = $item->replicate(['sale_id']);
-                            $nuevoItem->sale_id = $nota->id;
-                            $nuevoItem->save();
-                        }
-
-                        // 5. Enviamos la nueva Nota de Crédito a la SUNAT usando tu Service
-                        $service = new \Percy\Core\Services\SunatService();
-                        $result = $service->processAndSend($nota);
+                        $result = app(SunatService::class)->processAndSend($nota);
 
                         if ($result->isSuccess()) {
-                            \Filament\Notifications\Notification::make()
+                            Notification::make()
                                 ->title('Nota de Crédito Aceptada')
                                 ->body('Se anuló el comprobante y se devolvió el stock correctamente.')
                                 ->success()
                                 ->send();
                         } else {
-                            \Filament\Notifications\Notification::make()
+                            Notification::make()
                                 ->title('Error SUNAT ' . $result->getError()->getCode())
                                 ->body($result->getError()->getMessage())
                                 ->danger()
@@ -166,7 +124,7 @@ class SaleSunatActions
                                 ->send();
                         }
                     } catch (\Exception $e) {
-                        \Filament\Notifications\Notification::make()
+                        Notification::make()
                             ->title('Error Crítico')
                             ->body($e->getMessage())
                             ->danger()
@@ -231,92 +189,24 @@ class SaleSunatActions
                 ])
                 ->action(function (array $data, Sale $record) {
                     try {
-                        // --- LÓGICA DE CORRELATIVO AUTOMÁTICO ---
-                        $nuevoCorrelativo = app(CorrelativeService::class)
-                            ->next($record->tenant_id, '08', $data['serie_nota']);
+                        $nota = app(SaleNoteService::class)->createDebitNote(
+                            $record,
+                            $data['serie_nota'],
+                            $data['debit_note_type'],
+                            (int) $data['product_id'],
+                            (float) $data['importe_adicional']
+                        );
 
-                        // Clonamos la venta original limpia de estados
-                        $nota = $record->replicate([
-                            'sunat_status',
-                            'sunat_code',
-                            'sunat_description',
-                            'sunat_hash',
-                            'sunat_xml_path',
-                            'sunat_cdr_path',
-                            'sunat_pdf_path',
-                            'legend_text'
-                        ]);
-                        $nota->document_type = '08';
-                        $nota->series = $data['serie_nota'];
-                        $nota->correlative = $nuevoCorrelativo; // Número automático ✅
-
-                        $nota->status = 'completed';
-
-                        // 3. Vinculamos el documento original
-                        $nota->affected_document_type = $record->document_type;
-                        $nota->affected_document_series = $record->series;
-                        $nota->affected_document_correlative = $record->correlative;
-                        $nota->credit_note_type = $data['debit_note_type']; // Usamos la misma columna de BD
-
-                        // Definimos la descripción según el Catálogo 10
-                        $descripciones = [
-                            '01' => 'Intereses por mora',
-                            '02' => 'Aumento en el valor',
-                            '03' => 'Penalidades/otros conceptos'
-                        ];
-                        $nota->cancel_reason_description = $descripciones[$data['debit_note_type']];
-
-                        // NUEVA MATEMÁTICA: Calculamos todo en base al nuevo importe
-                        $total = round((float) $data['importe_adicional'], 2);
-
-                        $tenantIgv = $record->tenant->igv_percentage ?? 18;
-                        $factorDivisor = 1 + ($tenantIgv / 100);
-
-                        // Calculamos la base igual como SUNAT espera: total / factor
-                        $base = round($total / $factorDivisor, 2);
-
-                        // El IGV debe cerrar contra el total, no recalcularse aparte
-                        $igv = round($total - $base, 2);
-
-                        $nota->op_gravadas = $base;
-                        $nota->igv = $igv;
-                        $nota->total = $total;
-                        $nota->op_exoneradas = 0;
-                        $nota->op_inafectas = 0;
-
-                        $nota->save();
-
-                        // En lugar de clonar todos los ítems, creamos UNO SOLO con el cargo extra
-                        $producto = \Percy\Core\Models\Product::find($data['product_id']);
-
-                        $nota->items()->create([
-                            'tenant_id' => $record->tenant_id,
-                            'product_id' => $producto->id,
-                            'item_name' => $producto->name . ' - ' . $nota->cancel_reason_description,
-                            'quantity' => 1,
-                            'unit_price' => $total,
-                            'unit_value' => $base,
-                            'igv_amount' => $igv,
-                            'total' => $total,
-                            'afectacion_igv_id' => $producto->afectacion_igv_id ?? 1,
-                            'unit_code' => $producto->unidadSunat ? $producto->unidadSunat->codigo : 'NIU',
-                        ]);
-
-                        $nota->unsetRelations();
-                        $nota->refresh();
-
-                        // 5. Enviamos la Nota de Débito
-                        $service = new \Percy\Core\Services\SunatService();
-                        $result = $service->processAndSend($nota);
+                        $result = app(SunatService::class)->processAndSend($nota);
 
                         if ($result->isSuccess()) {
-                            \Filament\Notifications\Notification::make()
+                            Notification::make()
                                 ->title('Nota de Débito Aceptada')
                                 ->body('Se generó el comprobante correctamente.')
                                 ->success()
                                 ->send();
                         } else {
-                            \Filament\Notifications\Notification::make()
+                            Notification::make()
                                 ->title('Error SUNAT ' . $result->getError()->getCode())
                                 ->body($result->getError()->getMessage())
                                 ->danger()
@@ -324,7 +214,7 @@ class SaleSunatActions
                                 ->send();
                         }
                     } catch (\Exception $e) {
-                        \Filament\Notifications\Notification::make()
+                        Notification::make()
                             ->title('Error Crítico')
                             ->body($e->getMessage())
                             ->danger()
