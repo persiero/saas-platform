@@ -21,6 +21,9 @@ use Filament\Tables\Actions\RestoreAction;
 use Filament\Tables\Actions\ForceDeleteAction;
 use Filament\Tables\Actions\RestoreBulkAction;
 use Filament\Tables\Actions\ForceDeleteBulkAction;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Validation\Rules\Unique;
+use Percy\Core\Services\Tenants\TenantFeatureService;
 
 class ProductResource extends Resource
 {
@@ -35,70 +38,75 @@ class ProductResource extends Resource
     // Filtro global para asegurar que solo se vean productos del tenant actual
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()
-            ->where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id) // 1. Mantiene tu filtro de seguridad SaaS
-            ->with(['category']) // 2. Soluciona el error N+1 (Carga ansiosa)
+        $user = Auth::user();
+
+        $query = parent::getEloquentQuery()
+            ->with(['category', 'unidadSunat'])
             ->withoutGlobalScopes([
-                SoftDeletingScope::class, // 3. Permite que la papelera (TrashedFilter) funcione correctamente
+                SoftDeletingScope::class,
             ]);
+
+        if (!$user?->isSuperAdmin()) {
+            $query->where('tenant_id', $user?->tenant_id);
+        }
+
+        return $query;
     }
 
-    // 🌟 MAGIA SAAS: Ocultar este menú a los Mozos (Vendedores)
     public static function canViewAny(): bool
     {
-        /** @var \Percy\Core\Models\User $user */
-        $user = \Illuminate\Support\Facades\Auth::user();
-
-        // Si el usuario NO tiene el rol de Vendedor, puede ver el menú
-        return !$user->hasRole('Vendedor');
+        return Auth::user()?->canViewProducts() ?? false;
     }
 
     public static function canCreate(): bool
     {
-        /** @var \Percy\Core\Models\User $user */
-        $user = \Illuminate\Support\Facades\Auth::user();
-        return $user->isAdmin();
+        return Auth::user()?->canCreateProducts() ?? false;
     }
 
-    public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
+    public static function canEdit(Model $record): bool
     {
-        /** @var \Percy\Core\Models\User $user */
-        $user = \Illuminate\Support\Facades\Auth::user();
-        return $user->isAdmin();
+        return Auth::user()?->canEditProducts() ?? false;
     }
 
-    public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    public static function canDelete(Model $record): bool
     {
-        /** @var \Percy\Core\Models\User $user */
-        $user = \Illuminate\Support\Facades\Auth::user();
-        return $user->isAdmin();
+        return Auth::user()?->canDeleteProducts() ?? false;
     }
 
-    public static function canRestore(\Illuminate\Database\Eloquent\Model $record): bool
+    public static function canRestore(Model $record): bool
     {
-        /** @var \Percy\Core\Models\User $user */
-        $user = \Illuminate\Support\Facades\Auth::user();
-        return $user->isAdmin(); // Solo el Admin puede restaurar
+        return Auth::user()?->canRestoreProducts() ?? false;
     }
 
-    public static function canForceDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    public static function canForceDelete(Model $record): bool
     {
         return false;
     }
 
-    // 5. Restricción general para Bulk Actions (Aplica para eliminar/restaurar masivamente)
     public static function canDeleteAny(): bool
     {
-        /** @var \Percy\Core\Models\User $user */
-        $user = \Illuminate\Support\Facades\Auth::user();
-        return $user->isAdmin();
+        return Auth::user()?->canDeleteProducts() ?? false;
     }
 
     public static function canRestoreAny(): bool
     {
-        /** @var \Percy\Core\Models\User $user */
-        $user = \Illuminate\Support\Facades\Auth::user();
-        return $user->isAdmin();
+        return Auth::user()?->canRestoreProducts() ?? false;
+    }
+
+    private static function tenantFeatures(): array
+    {
+        return app(TenantFeatureService::class)->features();
+    }
+
+    private static function scopeToCurrentTenant(Builder $query): Builder
+    {
+        $user = Auth::user();
+
+        if ($user?->isSuperAdmin()) {
+            return $query;
+        }
+
+        return $query->where('tenant_id', $user?->tenant_id);
     }
 
     public static function form(Form $form): Form
@@ -127,10 +135,13 @@ class ProductResource extends Resource
                             ->label('Código de Barras')
                             ->prefixIcon('heroicon-o-qr-code')
                             ->placeholder('Escanea o digita el código')
-                            ->unique(ignoreRecord: true) // Evita que dos productos tengan el mismo código
+                            ->unique(
+                                ignoreRecord: true,
+                                modifyRuleUsing: fn (Unique $rule) => $rule->where('tenant_id', Auth::user()?->tenant_id)
+                            ) // Evita que dos productos tengan el mismo código
                             // 🌟 OCULTAR SEGÚN EL SEEDER
                             ->hidden(function () {
-                                $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                                $features = self::tenantFeatures();
                                 // Oculta el campo si 'has_barcode_scanner' es false. (Si no existe, asume true por defecto).
                                 return !($features['has_barcode_scanner'] ?? true);
                             }),
@@ -174,7 +185,11 @@ class ProductResource extends Resource
                             ->default('product'),
 
                         Forms\Components\Select::make('category_id')
-                            ->relationship('category', 'name') // Solo mostrará categorías de ESTE tenant
+                            ->relationship(
+                                'category',
+                                'name',
+                                modifyQueryUsing: fn (Builder $query) => self::scopeToCurrentTenant($query)
+                            ) // Solo mostrará categorías de ESTE tenant
                             ->label('Categoría')
                             ->searchable()
                             ->preload(),
@@ -187,7 +202,7 @@ class ProductResource extends Resource
                     Forms\Components\Section::make('Datos Farmacéuticos')
                         // 🌟 MAGIA SAAS: Leemos la característica 'has_recipes' del JSON
                         ->visible(function () {
-                            $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                            $features = self::tenantFeatures();
                             return $features['has_recipes'] ?? false;
                         })
                         ->schema([
@@ -205,7 +220,7 @@ class ProductResource extends Resource
                         ->description('Define si este producto se puede vender por blíster o por unidad suelta.')
                         // 🌟 MAGIA SAAS: Vinculamos las fracciones a los negocios que manejan lotes
                         ->visible(function () {
-                            $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                            $features = self::tenantFeatures();
                             return $features['has_lots'] ?? false;
                         })
                         ->schema([
@@ -245,7 +260,7 @@ class ProductResource extends Resource
                         ->description('Define si este producto se pesa en balanza o se mide en litros, en lugar de venderse por unidades enteras.')
                         ->icon('heroicon-o-scale')
                         ->visible(function () {
-                            $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                            $features = self::tenantFeatures();
                             return $features['sells_by_weight'] ?? false;
                         })
                         ->schema([
@@ -264,7 +279,7 @@ class ProductResource extends Resource
                         Forms\Components\TextInput::make('price')
                             // 🌟 MAGIA SAAS: Label dinámico según el tipo de negocio
                             ->label(function () {
-                                $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                                $features = self::tenantFeatures();
                                 $isPharmacy = ($features['has_lots'] ?? false) && ($features['has_expiry_dates'] ?? false);
 
                                 return $isPharmacy ? 'Precio de Venta (Caja)' : 'Precio de Venta';
@@ -276,14 +291,15 @@ class ProductResource extends Resource
                         Forms\Components\TextInput::make('cost')
                             // 🌟 MAGIA SAAS: Label dinámico según el tipo de negocio
                             ->label(function () {
-                                $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                                $features = self::tenantFeatures();
                                 $isPharmacy = ($features['has_lots'] ?? false) && ($features['has_expiry_dates'] ?? false);
 
                                 return $isPharmacy ? 'Costo Referencial (Caja)' : 'Costo Referencial';
                             })
                             ->numeric()
                             ->prefix('S/')
-                            ->default(0),
+                            ->default(0)
+                            ->visible(fn () => Auth::user()?->canViewProductCosts() ?? false),
 
                         Forms\Components\Select::make('afectacion_igv_id')
                             ->relationship('afectacionIgv', 'descripcion')
@@ -326,7 +342,7 @@ class ProductResource extends Resource
                     ->searchable() // ¡Esto automáticamente agrega la búsqueda general por código!
                     // 🌟 OCULTAR LA COLUMNA SEGÚN EL SEEDER DEL NEGOCIO
                     ->hidden(function () {
-                        $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                        $features = self::tenantFeatures();
                         return !($features['has_barcode_scanner'] ?? true);
                     })
                     ->sortable()
@@ -406,13 +422,18 @@ class ProductResource extends Resource
 
                 Tables\Columns\ToggleColumn::make('active')
                     ->label('Activo')
-                    ->sortable(),
+                    ->sortable()
+                    ->disabled(fn () => !(Auth::user()?->canEditProducts() ?? false)),
             ])
             ->defaultSort('name', 'asc')
             ->filters([
                 Tables\Filters\SelectFilter::make('category_id')
                     ->label('Categoría')
-                    ->relationship('category', 'name')
+                    ->relationship(
+                        'category',
+                        'name',
+                        modifyQueryUsing: fn (Builder $query) => self::scopeToCurrentTenant($query)
+                    )
                     ->multiple()
                     ->preload(),
 
@@ -476,13 +497,9 @@ class ProductResource extends Resource
                         ->label('Ajuste de Inventario')
                         ->icon('heroicon-o-scale')
                         ->color('warning')
-                        ->visible(function () {
-                            /** @var \Percy\Core\Models\User $user */
-                            $user = \Illuminate\Support\Facades\Auth::user();
-                            return $user->isAdmin();
-                        })
+                        ->visible(fn () => Auth::user()?->canManageStock() ?? false)
                         ->form(function ($record) {
-                            $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                            $features = self::tenantFeatures();
                             $hasLots = $features['has_lots'] ?? false;
                             $hasExpiry = $features['has_expiry_dates'] ?? false;
                             $usesBatches = $hasLots || $hasExpiry;
@@ -604,7 +621,7 @@ class ProductResource extends Resource
                             $cantidadIngresada = abs((float) $data['quantity']);
                             $tipoAjuste = $data['type'];
 
-                            $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                            $features = self::tenantFeatures();
                             $hasLots = $features['has_lots'] ?? false;
                             $hasExpiry = $features['has_expiry_dates'] ?? false;
                             $usesBatches = $hasLots || $hasExpiry;
@@ -720,7 +737,7 @@ class ProductResource extends Resource
         $relations = [];
 
         // MAGIA DEL SAAS: Encendemos el módulo leyendo el JSON de características
-        $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+        $features = self::tenantFeatures();
 
         $hasLots = $features['has_lots'] ?? false;
         $hasExpiry = $features['has_expiry_dates'] ?? false;
