@@ -19,6 +19,7 @@ use Filament\Infolists\Components\Grid;
 use Illuminate\Support\Facades\Auth;
 use Percy\Core\Models\Sale;
 use Percy\Core\Models\Expense;
+use Percy\Core\Services\Cash\CashRegisterService;
 
 class CashRegisterResource extends Resource
 {
@@ -280,17 +281,16 @@ class CashRegisterResource extends Resource
                             }),
                     ])
                     ->action(function (CashRegister $record, array $data) {
-                        $expectedCash = self::expectedCash($record);
                         $closingAmount = (float) $data['closing_amount'];
-                        $difference = round($closingAmount - $expectedCash, 2);
 
-                        $record->close(
+                        $closedCashRegister = self::cashRegisterService()->closeCashRegister(
+                            $record,
                             $closingAmount,
-                            $expectedCash,
-                            $difference,
                             $data['closing_notes'] ?? null,
                             Auth::id()
                         );
+
+                        $difference = (float) $closedCashRegister->cash_difference;
 
                         if (abs($difference) < 0.01) {
                             Notification::make()
@@ -334,64 +334,54 @@ class CashRegisterResource extends Resource
             ->emptyStateIcon('heroicon-o-calculator');
     }
 
+    private static function cashRegisterService(): CashRegisterService
+    {
+        return app(CashRegisterService::class);
+    }
+
     private static function salesTotalByMethod(CashRegister $record, string $paymentMethod): float
     {
-        return (float) Sale::query()
-            ->where('cash_register_id', $record->id)
-            ->where('payment_method', $paymentMethod)
-            ->sum('total');
+        return self::cashRegisterService()->salesTotalByMethod($record, $paymentMethod);
     }
 
     private static function salesTotal(CashRegister $record): float
     {
-        return (float) Sale::query()
-            ->where('cash_register_id', $record->id)
-            ->sum('total');
+        return self::cashRegisterService()->salesTotal($record);
     }
 
     private static function salesCount(CashRegister $record): int
     {
-        return Sale::query()
-            ->where('cash_register_id', $record->id)
-            ->count();
+        return self::cashRegisterService()->salesCount($record);
     }
 
     private static function expensesTotal(CashRegister $record): float
     {
-        $endDate = $record->closed_at ?? now();
-
-        return (float) Expense::query()
-            ->where('tenant_id', $record->tenant_id)
-            ->whereBetween('created_at', [$record->opened_at, $endDate])
-            ->sum('amount');
+        return self::cashRegisterService()->expensesTotal($record);
     }
 
     private static function expectedCash(CashRegister $record): float
     {
-        $cashSales = self::salesTotalByMethod($record, 'Efectivo');
-        $expenses = self::expensesTotal($record);
+        return self::cashRegisterService()->expectedCash($record);
+    }
 
-        return (float) $record->opening_amount + $cashSales - $expenses;
+    private static function expectedCashForDisplay(CashRegister $record): float
+    {
+        return self::cashRegisterService()->expectedCashForDisplay($record);
     }
 
     private static function cashDifference(CashRegister $record): float
     {
-        if ($record->status === 'open') {
-            return 0;
-        }
+        return self::cashRegisterService()->cashDifference($record);
+    }
 
-        return (float) $record->closing_amount - self::expectedCash($record);
+    private static function cashDifferenceForDisplay(CashRegister $record): float
+    {
+        return self::cashRegisterService()->cashDifferenceForDisplay($record);
     }
 
     private static function averageTicket(CashRegister $record): float
     {
-        $count = self::salesCount($record);
-
-        if ($count === 0) {
-            return 0;
-        }
-
-        return self::salesTotal($record) / $count;
+        return self::cashRegisterService()->averageTicket($record);
     }
 
     public static function infolist(Infolist $infolist): Infolist
@@ -454,11 +444,7 @@ class CashRegisterResource extends Resource
                                     ->money('PEN')
                                     ->weight('bold')
                                     ->size(TextEntry\TextEntrySize::Large)
-                                    ->state(fn (CashRegister $record) =>
-                                        $record->expected_cash !== null
-                                            ? (float) $record->expected_cash
-                                            : self::expectedCash($record)
-                                    ),
+                                    ->state(fn (CashRegister $record) => self::expectedCashForDisplay($record)),
 
                                 TextEntry::make('closing_amount') // ESTA SÍ ES TU COLUMNA REAL
                                     ->label('Efectivo Contado')
@@ -471,11 +457,7 @@ class CashRegisterResource extends Resource
                                     ->money('PEN')
                                     ->weight('bold')
                                     ->color(fn ($state) => $state < 0 ? 'danger' : ($state > 0 ? 'warning' : 'success'))
-                                    ->state(fn (CashRegister $record) =>
-                                        $record->cash_difference !== null
-                                            ? (float) $record->cash_difference
-                                            : self::cashDifference($record)
-                                    ),
+                                    ->state(fn (CashRegister $record) => self::cashDifferenceForDisplay($record)),
 
                                 TextEntry::make('closedBy.name')
                                     ->label('Cerrado por')
