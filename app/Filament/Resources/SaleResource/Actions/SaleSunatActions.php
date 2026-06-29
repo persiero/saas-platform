@@ -19,7 +19,12 @@ class SaleSunatActions
                         ->label('Enviar a SUNAT')
                         ->icon('heroicon-o-paper-airplane')
                         ->color('success')
-                        ->visible(fn(Sale $record) => $record->sunat_status !== 'accepted' && $record->document_type !== '00' && $record->status !== 'canceled')
+                        ->visible(fn(Sale $record) =>
+                            $record->sunat_status !== 'accepted' &&
+                            $record->document_type !== '00' &&
+                            $record->status !== 'canceled' &&
+                            Auth::user()?->canSendSunat()
+                        )
                         ->disabled(fn(Sale $record) => in_array($record->document_type, ['07', '08']) && empty($record->credit_note_type))
                         ->requiresConfirmation()
                         ->action(function (Sale $record) {
@@ -45,25 +50,35 @@ class SaleSunatActions
                 ->label('Descargar XML')
                 ->icon('heroicon-o-code-bracket')
                 ->url(fn(Sale $record) => route('sales.download-xml', $record))
-                ->visible(fn(Sale $record) => !empty($record->sunat_xml_path) && $record->status !== 'canceled'),
+                ->visible(fn(Sale $record) =>
+                    !empty($record->sunat_xml_path) &&
+                    $record->status !== 'canceled' &&
+                    Auth::user()?->canDownloadSunatFiles()
+                ),
 
             Tables\Actions\Action::make('downloadCdr')
                 ->label('Descargar CDR')
                 ->icon('heroicon-o-archive-box')
                 ->url(fn(Sale $record) => route('sales.download-cdr', $record))
-                ->visible(fn(Sale $record) => !empty($record->sunat_cdr_path) && $record->status !== 'canceled'),
+                ->visible(fn(Sale $record) =>
+                    !empty($record->sunat_cdr_path) &&
+                    $record->status !== 'canceled' &&
+                    Auth::user()?->canDownloadSunatFiles()
+                ),
 
             Tables\Actions\Action::make('anularVenta')
                 ->label('Nota de Crédito')
                 ->icon('heroicon-o-document-minus')
                 ->color('danger')
                 ->visible(function (Sale $record) {
-                    $isAdmin = \Illuminate\Support\Facades\Auth::user()->isAdmin();
                     $isAccepted = $record->sunat_status === 'accepted';
-                    $isValidDocument = in_array($record->document_type, ['01', '03']);
-                    $isNotCanceled = $record->status !== 'canceled'; // Bloquea si ya está anulada
+                    $isValidDocument = in_array($record->document_type, ['01', '03'], true);
+                    $isNotCanceled = $record->status !== 'canceled';
 
-                    return $isAdmin && $isAccepted && $isValidDocument && $isNotCanceled;
+                    return Auth::user()?->canCreateCreditNotes()
+                        && $isAccepted
+                        && $isValidDocument
+                        && $isNotCanceled;
                 })
 
                 ->form([
@@ -137,12 +152,14 @@ class SaleSunatActions
                 ->icon('heroicon-o-document-plus')
                 ->color('warning')
                 ->visible(function (Sale $record) {
-                    $isAdmin = \Illuminate\Support\Facades\Auth::user()->isAdmin();
                     $isAccepted = $record->sunat_status === 'accepted';
-                    $isValidDocument = in_array($record->document_type, ['01', '03']);
+                    $isValidDocument = in_array($record->document_type, ['01', '03'], true);
                     $isNotCanceled = $record->status !== 'canceled';
 
-                    return $isAdmin && $isAccepted && $isValidDocument && $isNotCanceled;
+                    return Auth::user()?->canCreateDebitNotes()
+                        && $isAccepted
+                        && $isValidDocument
+                        && $isNotCanceled;
                 })
                 ->form([
                     Forms\Components\Select::make('serie_nota')

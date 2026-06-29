@@ -28,7 +28,7 @@ class SaleInternalActions
                     fn(Sale $record) =>
                     $record->document_type === '00' &&
                         $record->status !== 'canceled' &&
-                        !Auth::user()->hasRole('Vendedor')
+                        Auth::user()?->canConvertTicketsToInvoices()
                 )
                 ->form([
                     Forms\Components\Select::make('serie_boleta')
@@ -88,7 +88,7 @@ class SaleInternalActions
                     fn(Sale $record) =>
                     $record->document_type === '00' &&
                         $record->status !== 'canceled' &&
-                        !Auth::user()->hasRole('Vendedor')
+                        Auth::user()?->canCancelSales()
                 )
                 ->form([
                     Forms\Components\TextInput::make('reason')

@@ -17,7 +17,11 @@ class SaleEcommerceActions
                 ->label('Procesar Pedido')
                 ->icon('heroicon-o-pencil-square')
                 ->color('warning')
-                ->visible(fn(Sale $record) => $record->channel === 'ecommerce' && $record->status === 'pending_payment')
+                ->visible(fn(Sale $record) =>
+                    $record->channel === 'ecommerce' &&
+                    $record->status === 'pending_payment' &&
+                    Auth::user()?->canProcessWebOrders()
+                )
                 ->using(function (Model $record, array $data): Model {
 
                     $data['status'] = 'completed';
