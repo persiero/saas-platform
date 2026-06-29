@@ -54,22 +54,73 @@ class StorefrontController extends Controller
     // 🌟 LA NUEVA FUNCIÓN POST (Crea el ticket en la BD y descuenta el stock)
     public function processWebOrder(Request $request, $tenant_domain)
     {
+        $validated = $request->validate([
+            'customer_name' => ['required', 'string', 'max:120'],
+            'customer_dni' => ['nullable', 'string', 'max:20'],
+            'order_type' => ['required', 'in:delivery,pickup'],
+            'address' => ['nullable', 'string', 'max:255'],
+            'district' => ['nullable', 'string', 'max:120'],
+            'notes' => ['nullable', 'string', 'max:500'],
+
+            'cart' => ['required', 'array', 'min:1'],
+            'cart.*.name' => ['required', 'string', 'max:255'],
+            'cart.*.quantity' => ['required', 'numeric', 'min:1'],
+        ]);
+
         try {
             DB::beginTransaction();
 
-            $tenant = Tenant::where('domain', $tenant_domain)->firstOrFail();
+            $tenant = Tenant::query()
+                ->where('domain', $tenant_domain)
+                ->where('is_active', true)
+                ->firstOrFail();
+
+            if (!$tenant->is_open_for_orders) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'La tienda no está disponible para pedidos en este momento.',
+                ], 422);
+            }
 
             // 🌟 NUEVO: Leer el IGV del Tenant (o usar 18% por defecto)
             $porcentajeIgv = $tenant->igv_percentage ?? 18;
             $factorIgv = 1 + ($porcentajeIgv / 100);
 
             // 1. Calcular Totales en el servidor (Por seguridad)
+            $cartProducts = [];
             $subtotal = 0;
-            foreach ($request->cart as $item) {
-                $subtotal += ($item['price'] * $item['quantity']);
+
+            foreach ($validated['cart'] as $item) {
+                $producto = Product::query()
+                    ->where('tenant_id', $tenant->id)
+                    ->where('name', $item['name'])
+                    ->where('active', true)
+                    ->firstOrFail();
+
+                $quantity = (float) $item['quantity'];
+                $price = (float) $producto->price;
+
+                if ($producto->type !== 'service' && $producto->current_stock < $quantity) {
+                    throw new \Exception("Stock insuficiente para {$producto->name}.");
+                }
+
+                $itemTotal = $price * $quantity;
+                $subtotal += $itemTotal;
+
+                $cartProducts[] = [
+                    'product' => $producto,
+                    'quantity' => $quantity,
+                    'price' => $price,
+                    'total' => $itemTotal,
+                ];
             }
 
-            $deliveryFee = $request->delivery_fee ?? 0;
+            $deliveryFee = 0;
+
+            if ($validated['order_type'] === 'delivery') {
+                $deliveryFee = (float) ($tenant->delivery_fee ?? 0);
+            }
+
             $total = $subtotal + $deliveryFee;
 
             // 🌟 NUEVO: Calculamos el IGV global usando el factor dinámico
@@ -77,17 +128,26 @@ class StorefrontController extends Controller
 
             // 2. Construir la Nota para el Cajero
             $notasDelivery = "=== DATOS WEB ===\n";
-            $notasDelivery .= "Nombre: " . $request->customer_name . "\n";
-            if ($request->customer_dni) $notasDelivery .= "DNI: " . $request->customer_dni . "\n";
+            $notasDelivery .= "Nombre: " . $validated['customer_name'] . "\n";
 
-            if ($request->order_type === 'delivery') {
-                $notasDelivery .= "Distrito: " . $request->district . "\n";
-                $notasDelivery .= "Dirección: " . $request->address . "\n";
-                if ($deliveryFee > 0) $notasDelivery .= "Tarifa Envío: S/ " . number_format($deliveryFee, 2) . "\n";
+            if (!empty($validated['customer_dni'])) {
+                $notasDelivery .= "DNI: " . $validated['customer_dni'] . "\n";
+            }
+
+            if ($validated['order_type'] === 'delivery') {
+                $notasDelivery .= "Distrito: " . ($validated['district'] ?? '-') . "\n";
+                $notasDelivery .= "Dirección: " . ($validated['address'] ?? '-') . "\n";
+
+                if ($deliveryFee > 0) {
+                    $notasDelivery .= "Tarifa Envío: S/ " . number_format($deliveryFee, 2) . "\n";
+                }
             } else {
                 $notasDelivery .= "=> RECOJO EN TIENDA\n";
             }
-            if ($request->notes) $notasDelivery .= "\nNotas: " . $request->notes;
+
+            if (!empty($validated['notes'])) {
+                $notasDelivery .= "\nNotas: " . $validated['notes'];
+            }
 
             // 3. Crear el Ticket Interno (Borrador)
             $sale = new Sale();
@@ -112,33 +172,24 @@ class StorefrontController extends Controller
             $sale->save();
 
             // 4. Crear los Items y Descontar Stock
-            foreach ($request->cart as $cartItem) {
-                $producto = Product::where('tenant_id', $tenant->id)
-                                   ->where('name', $cartItem['name'])
-                                   ->first();
+            foreach ($cartProducts as $cartItem) {
+                $producto = $cartItem['product'];
+                $itemTotal = $cartItem['total'];
+                $base = $itemTotal / $factorIgv;
 
-                if ($producto) {
-                    $itemTotal = $cartItem['price'] * $cartItem['quantity'];
-
-                    // 🌟 NUEVO: Usamos el factor dinámico para los ítems
-                    $base = $itemTotal / $factorIgv;
-
-                    SaleItem::create([
-                        'tenant_id' => $tenant->id,
-                        'sale_id' => $sale->id,
-                        'product_id' => $producto->id,
-                        'item_name' => $producto->name,
-                        'quantity' => $cartItem['quantity'],
-                        'unit_price' => $cartItem['price'],
-                        'unit_value' => round($base, 2),
-                        'igv_amount' => round($itemTotal - $base, 2),
-                        'total' => round($itemTotal, 2),
-                        'afectacion_igv_id' => $producto->afectacion_igv_id ?? 1,
-                    ]);
-
-                    // Descuento de Stock Básico
-                    $producto->decrement('current_stock', $cartItem['quantity']);
-                }
+                SaleItem::create([
+                    'tenant_id' => $tenant->id,
+                    'sale_id' => $sale->id,
+                    'product_id' => $producto->id,
+                    'item_name' => $producto->name,
+                    'quantity' => $cartItem['quantity'],
+                    'unit_price' => $cartItem['price'],
+                    'unit_value' => round($base, 2),
+                    'igv_amount' => round($itemTotal - $base, 2),
+                    'total' => round($itemTotal, 2),
+                    'afectacion_igv_id' => $producto->afectacion_igv_id ?? 1,
+                    'unit_code' => $producto->unidadSunat ? $producto->unidadSunat->codigo : 'NIU',
+                ]);
             }
 
             // 🌟 5. LA MAGIA: Agregar el Costo de Envío como un ítem extra dinámico
