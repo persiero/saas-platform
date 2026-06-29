@@ -13,6 +13,11 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Auth;
+use Percy\Core\Models\Supplier;
+use Percy\Core\Services\Tenants\TenantFeatureService;
+use Percy\Core\Services\Tenants\TenantPricingService;
 
 class PurchaseResource extends Resource
 {
@@ -24,40 +29,60 @@ class PurchaseResource extends Resource
     protected static ?string $pluralModelLabel = 'Compras';
     protected static ?int $navigationSort = 1;
 
+    private static function tenantFeatures(): array
+    {
+        return app(TenantFeatureService::class)->features();
+    }
+
+    private static function scopeToCurrentTenant(Builder $query): Builder
+    {
+        $user = Auth::user();
+
+        if ($user?->isSuperAdmin()) {
+            return $query;
+        }
+
+        return $query->where('tenant_id', $user?->tenant_id);
+    }
+
     public static function canViewAny(): bool
     {
-        /** @var \Percy\Core\Models\User $user */
-        $user = \Illuminate\Support\Facades\Auth::user();
-
-        // Bloquea a los cajeros, permite el paso a los Admins (tanto al Súper Admin como al Dueño local)
-        return $user->isAdmin();
+        return Auth::user()?->canViewPurchases() ?? false;
     }
 
-    public static function getEloquentQuery(): Builder
+    public static function canCreate(): bool
     {
-        return parent::getEloquentQuery()->where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id);
+        return Auth::user()?->canCreatePurchases() ?? false;
     }
 
-    // 🔒 NUEVOS CANDADOS PARA COMPRAS
-    public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
+    public static function canEdit(Model $record): bool
     {
-        return false; // Las compras finalizadas no se editan (o cámbialo a $user->isAdmin() si el dueño puede corregir errores)
+        return Auth::user()?->canEditPurchases() ?? false;
     }
 
-    public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    public static function canDelete(Model $record): bool
     {
-        return false; // Se anulan, no se borran
+        return Auth::user()?->canDeletePurchases() ?? false;
     }
 
     public static function canDeleteAny(): bool
     {
-        return false;
+        return Auth::user()?->canDeletePurchases() ?? false;
     }
 
-    public static function canForceDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    public static function canForceDelete(Model $record): bool
     {
         return false;
     }
+
+    public static function getEloquentQuery(): Builder
+    {
+        $query = parent::getEloquentQuery()
+            ->with(['supplier']);
+
+        return self::scopeToCurrentTenant($query);
+    }
+
 
     public static function form(Form $form): Form
     {
@@ -72,7 +97,12 @@ class PurchaseResource extends Resource
                             ->icon('heroicon-o-building-office-2')
                             ->schema([
                                 Forms\Components\Select::make('supplier_id')
-                                    ->relationship('supplier', 'name', fn (Builder $query) => $query->where('active', true))
+                                    ->relationship(
+                                        'supplier',
+                                        'name',
+                                        modifyQueryUsing: fn (Builder $query) => self::scopeToCurrentTenant($query)
+                                            ->where('active', true)
+                                    )
                                     ->label('Proveedor')
                                     ->required()
                                     ->searchable()
@@ -99,6 +129,11 @@ class PurchaseResource extends Resource
                                             ->label('Activo')
                                             ->default(true),
                                     ])
+                                    ->createOptionUsing(function (array $data): int {
+                                        $data['tenant_id'] = Auth::user()?->tenant_id;
+
+                                        return Supplier::create($data)->getKey();
+                                    })
                                     ->columnSpanFull(),
                             ]),
 
@@ -208,7 +243,12 @@ class PurchaseResource extends Resource
                             })
                             ->schema([
                                 Forms\Components\Select::make('product_id')
-                                    ->relationship('product', 'name')
+                                    ->relationship(
+                                        'product',
+                                        'name',
+                                        modifyQueryUsing: fn (Builder $query) => self::scopeToCurrentTenant($query)
+                                            ->where('active', true)
+                                    )
                                     ->label('Producto')
                                     ->required()
                                     ->searchable()
@@ -217,13 +257,19 @@ class PurchaseResource extends Resource
                                     ->live()
                                     ->afterStateUpdated(function ($state, \Filament\Forms\Set $set, \Filament\Forms\Get $get) {
                                         if ($state) {
-                                            $product = \Percy\Core\Models\Product::with('unidadSunat')->find($state);
-                                            $set('unit_cost', $product->cost ?? 0);
+                                            $product = self::scopeToCurrentTenant(
+                                                Product::query()->with('unidadSunat')
+                                            )->find($state);
 
+                                            if (!$product) {
+                                                return;
+                                            }
+
+                                            $set('unit_cost', $product->cost ?? 0);
                                             $set('_is_fractionable', $product->is_fractionable);
                                             $set('_is_weighable', $product->is_weighable ?? false);
                                             $set('unit_code', $product->unidadSunat ? $product->unidadSunat->codigo : 'NIU');
-                                            $set('measurement_unit', 'box'); // Por defecto compramos por caja
+                                            $set('measurement_unit', 'box');
                                         }
                                         self::updateRow($get, $set);
                                         self::updateTotals($get, $set);
@@ -232,7 +278,7 @@ class PurchaseResource extends Resource
                                     ->columnSpan([
                                         'default' => 12, // En celular ocupa el 100%
                                         'md' => function (\Filament\Forms\Get $get) {
-                                            $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                                            $features = self::tenantFeatures();
                                             $isPharmacy = ($features['has_lots'] ?? false) || ($features['has_expiry_dates'] ?? false);
 
                                             if ($isPharmacy) {
@@ -252,7 +298,7 @@ class PurchaseResource extends Resource
                                     ->live()
                                     ->afterStateUpdated(function ($state, Set $set, Get $get) {
                                         if ($productId = $get('product_id')) {
-                                            $product = \Percy\Core\Models\Product::find($productId);
+                                            $product = self::scopeToCurrentTenant(Product::query())->find($productId);
                                             if ($product) {
                                                 if ($state === 'unit' && $product->units_per_box > 0) {
                                                     // Calcula el costo de la pastilla individual
@@ -271,7 +317,7 @@ class PurchaseResource extends Resource
                                 Forms\Components\TextInput::make('batch_number')
                                     ->label('N° de Lote')
                                     ->visible(function () {
-                                        $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                                        $features = self::tenantFeatures();
                                         return $features['has_lots'] ?? false;
                                     })
                                     ->required(fn () => \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features['has_lots'] ?? false)
@@ -283,7 +329,7 @@ class PurchaseResource extends Resource
                                     ->native(false)
                                     ->displayFormat('d/m/Y')
                                     ->visible(function () {
-                                        $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                                        $features = self::tenantFeatures();
                                         return $features['has_expiry_dates'] ?? false;
                                     })
                                     ->required(fn () => \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features['has_expiry_dates'] ?? false)
@@ -317,7 +363,7 @@ class PurchaseResource extends Resource
                                     ->columnSpan([
                                         'default' => 12,
                                         'md' => function () {
-                                            $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                                            $features = self::tenantFeatures();
                                             $isPharmacy = ($features['has_lots'] ?? false) || ($features['has_expiry_dates'] ?? false);
                                             return $isPharmacy ? 4 : 2;
                                         }
@@ -336,7 +382,7 @@ class PurchaseResource extends Resource
                                     ->columnSpan([
                                         'default' => 12,
                                         'md' => function () {
-                                            $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                                            $features = self::tenantFeatures();
                                             $isPharmacy = ($features['has_lots'] ?? false) || ($features['has_expiry_dates'] ?? false);
                                             return $isPharmacy ? 4 : 2;
                                         }
@@ -352,7 +398,7 @@ class PurchaseResource extends Resource
                                     ->columnSpan([
                                         'default' => 12,
                                         'md' => function () {
-                                            $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                                            $features = self::tenantFeatures();
                                             $isPharmacy = ($features['has_lots'] ?? false) || ($features['has_expiry_dates'] ?? false);
                                             return $isPharmacy ? 4 : 2;
                                         }
@@ -368,7 +414,14 @@ class PurchaseResource extends Resource
                             ->addActionLabel('+ Agregar Producto')
                             ->reorderableWithButtons()
                             ->collapsible()
-                            ->itemLabel(fn (array $state): ?string => $state['product_id'] ? \Percy\Core\Models\Product::find($state['product_id'])?->name : 'Nuevo producto'),
+                            ->itemLabel(function (array $state): ?string {
+                                if (empty($state['product_id'])) {
+                                    return 'Nuevo producto';
+                                }
+
+                                return self::scopeToCurrentTenant(Product::query())
+                                    ->find($state['product_id'])?->name ?? 'Producto no disponible';
+                            }),
                     ]),
 
                 // =========================================================
@@ -567,7 +620,10 @@ class PurchaseResource extends Resource
 
         // 🌟 MATEMÁTICA INVERSA
         // 1. Calculamos la base (Subtotal sin IGV) dividiendo entre 1.18
-        $subtotal = $totalGeneral / 1.18;
+        $igvRate = app(TenantPricingService::class)->igvRate();
+        $factor = 1 + $igvRate;
+
+        $subtotal = $factor > 0 ? ($totalGeneral / $factor) : $totalGeneral;
 
         // 2. El IGV es la diferencia entre el Total y la Base (así evitamos descuadres de céntimos)
         $igv = $totalGeneral - $subtotal;

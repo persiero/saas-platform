@@ -5,6 +5,7 @@ namespace App\Filament\Resources\PurchaseResource\Pages;
 use App\Filament\Resources\PurchaseResource;
 use Filament\Actions;
 use Filament\Resources\Pages\ListRecords;
+use Illuminate\Support\Facades\Auth;
 
 class ListPurchases extends ListRecords
 {
@@ -21,7 +22,8 @@ class ListPurchases extends ListRecords
             Actions\CreateAction::make()
                 ->label('Nueva Compra')
                 ->icon('heroicon-o-plus')
-                ->color('primary'),
+                ->color('primary')
+                ->visible(fn () => Auth::user()?->canCreatePurchases() ?? false),
         ];
     }
 }

@@ -29,13 +29,26 @@ class AdminPanelProvider extends PanelProvider
             ->login()
             // 🌟 REDIRECCIÓN INTELIGENTE
             ->homeUrl(function () {
+                /** @var \Percy\Core\Models\User|null $user */
                 $user = \Illuminate\Support\Facades\Auth::user();
-                // Si es mozo/vendedor, apenas entra se va a las mesas
-                if ($user && $user->hasRole('Vendedor')) {
-                    return \App\Filament\Pages\PosRestaurant::getUrl();
+
+                if (!$user) {
+                    return url('/panel/login');
                 }
-                // Si es cajero o admin, se va al Escritorio normal
-                return url('/admin');
+
+                if ($user->hasRole('Vendedor')) {
+                    if ($user->canAccessRestaurantPos()) {
+                        return \App\Filament\Pages\PosRestaurant::getUrl();
+                    }
+
+                    return \App\Filament\Resources\SaleResource::getUrl('index');
+                }
+
+                if ($user->hasRole('Cajero')) {
+                    return \App\Filament\Resources\SaleResource::getUrl('index');
+                }
+
+                return \App\Filament\Pages\Dashboard::getUrl();
             })
             // 🚀 CONFIGURACIÓN DE BRANDING CON LOGOS PARA MODO CLARO Y OSCURO
             ->brandLogo(asset('images/logo.png')) // Logo para modo claro
