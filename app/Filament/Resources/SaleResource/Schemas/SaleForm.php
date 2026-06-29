@@ -282,7 +282,10 @@ class SaleForm
                                 if ($product) {
                                     $items = $get('items') ?? [];
                                     $batch = app(TenantFeatureService::class)->has('has_lots')
-                                        ? app(ProductBatchService::class)->nextAvailableForProduct($product)
+                                        ? app(ProductBatchService::class)->nextAvailableForProduct(
+                                            $product,
+                                            Auth::user()->tenant_id
+                                        )
                                         : null;
 
                                     $priceData = app(TenantPricingService::class)->priceDataForProduct($product);
@@ -355,7 +358,19 @@ class SaleForm
                                     )
                                     ->afterStateUpdated(function ($state, Set $set, Get $get) {
                                         if ($state) {
-                                            $product = \Percy\Core\Models\Product::find($state);
+                                            $product = \Percy\Core\Models\Product::query()
+                                                ->where('tenant_id', Auth::user()->tenant_id)
+                                                ->find($state);
+
+                                            if (!$product) {
+                                                \Filament\Notifications\Notification::make()
+                                                    ->title('Producto no disponible')
+                                                    ->body('El producto seleccionado no pertenece a este negocio o no existe.')
+                                                    ->danger()
+                                                    ->send();
+
+                                                return;
+                                            }
 
                                             $priceData = app(TenantPricingService::class)->priceDataForProduct($product);
 
@@ -373,7 +388,10 @@ class SaleForm
                                             $set('_is_weighable', $product->is_weighable);
 
                                             $loteProximo = app(TenantFeatureService::class)->has('has_lots')
-                                                ? app(ProductBatchService::class)->nextAvailableForProduct((int) $state)
+                                                ? app(ProductBatchService::class)->nextAvailableForProduct(
+                                                    (int) $state,
+                                                    Auth::user()->tenant_id
+                                                )
                                                 : null;
 
                                             $set('product_batch_id', $loteProximo ? $loteProximo->id : null);
@@ -411,7 +429,10 @@ class SaleForm
                                     ->label('Lote')
                                     ->options(function (Get $get) {
                                         return app(ProductBatchService::class)
-                                            ->availableOptionsForProduct($get('product_id'));
+                                                    ->availableOptionsForProduct(
+                                                        $get('product_id'),
+                                                        Auth::user()->tenant_id
+                                                    );
                                     })
                                     ->visible(fn () => app(TenantFeatureService::class)->has('has_lots'))
                                     ->required(fn () => app(TenantFeatureService::class)->has('has_lots'))
@@ -444,10 +465,15 @@ class SaleForm
                                     ->maxValue(function (\Filament\Forms\Get $get) {
                                         $stock = null;
                                         if ($batchId = $get('product_batch_id')) {
-                                            $batch = \Percy\Core\Models\ProductBatch::find($batchId);
+                                            $batch = \Percy\Core\Models\ProductBatch::query()
+                                                ->where('tenant_id', Auth::user()->tenant_id)
+                                                ->where('product_id', $get('product_id'))
+                                                ->find($batchId);
                                             $stock = $batch ? $batch->current_quantity : null;
                                         } elseif ($productId = $get('product_id')) {
-                                            $product = \Percy\Core\Models\Product::find($productId);
+                                            $product = \Percy\Core\Models\Product::query()
+                                                ->where('tenant_id', Auth::user()->tenant_id)
+                                                ->find($productId);
                                             $stock = $product ? $product->current_stock : null;
                                         }
                                         if ($stock === null) return null;
@@ -498,14 +524,19 @@ class SaleForm
                                         $isWeighable = $get('_is_weighable') ?? false;
                                         $unitCode = $get('unit_code') ?? 'NIU';
 
-                                        $producto = \Percy\Core\Models\Product::find($get('product_id'));
+                                        $producto = \Percy\Core\Models\Product::query()
+                                            ->where('tenant_id', Auth::user()->tenant_id)
+                                            ->find($get('product_id'));
                                         $unitsPerBox = $producto ? $producto->units_per_box : 0;
 
                                         $totalStockDecimal = $get('_stock_disponible') ?? 0;
                                         $textoTotal = $traducirStock($totalStockDecimal, $isFractionable, $isWeighable, $unitCode, $unitsPerBox);
 
                                         if ($batchId = $get('product_batch_id')) {
-                                            $batch = \Percy\Core\Models\ProductBatch::find($batchId);
+                                            $batch = \Percy\Core\Models\ProductBatch::query()
+                                                ->where('tenant_id', Auth::user()->tenant_id)
+                                                ->where('product_id', $get('product_id'))
+                                                ->find($batchId);
                                             $loteStockDecimal = $batch ? $batch->current_quantity : 0;
                                             $textoLote = $traducirStock($loteStockDecimal, $isFractionable, $isWeighable, $unitCode, $unitsPerBox);
 
