@@ -464,22 +464,39 @@ class SaleForm
                                     ])
                                     ->maxValue(function (\Filament\Forms\Get $get) {
                                         $stock = null;
+
                                         if ($batchId = $get('product_batch_id')) {
                                             $batch = \Percy\Core\Models\ProductBatch::query()
                                                 ->where('tenant_id', Auth::user()->tenant_id)
                                                 ->where('product_id', $get('product_id'))
                                                 ->find($batchId);
+
                                             $stock = $batch ? $batch->current_quantity : null;
                                         } elseif ($productId = $get('product_id')) {
                                             $product = \Percy\Core\Models\Product::query()
                                                 ->where('tenant_id', Auth::user()->tenant_id)
                                                 ->find($productId);
+
                                             $stock = $product ? $product->current_stock : null;
                                         }
-                                        if ($stock === null) return null;
-                                        if ($get('measurement_unit') === 'unit') return 99999;
+
+                                        if ($stock === null) {
+                                            return null;
+                                        }
+
+                                        if ($get('measurement_unit') === 'unit') {
+                                            return 99999;
+                                        }
+
                                         return $stock;
                                     })
+                                    ->validationMessages([
+                                        'max' => 'Stock insuficiente. La cantidad ingresada supera el stock disponible.',
+                                        'max.numeric' => 'Stock insuficiente. La cantidad ingresada supera el stock disponible.',
+                                        'min' => 'La cantidad debe ser mayor a cero.',
+                                        'numeric' => 'La cantidad debe ser un número válido.',
+                                        'required' => 'Debes ingresar una cantidad.',
+                                    ])
                                     ->required()
                                     ->columnSpan(['default' => 1, 'md' => 2])
                                     ->live(onBlur: true)
