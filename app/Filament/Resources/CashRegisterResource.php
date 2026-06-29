@@ -17,6 +17,8 @@ use Filament\Infolists\Components\Section;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Infolists\Components\Grid;
 use Illuminate\Support\Facades\Auth;
+use Percy\Core\Models\Sale;
+use Percy\Core\Models\Expense;
 
 class CashRegisterResource extends Resource
 {
@@ -30,7 +32,16 @@ class CashRegisterResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()->where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id);
+        $user = Auth::user();
+
+        $query = parent::getEloquentQuery()
+            ->with(['user']);
+
+        if (!$user?->isSuperAdmin()) {
+            $query->where('tenant_id', $user?->tenant_id);
+        }
+
+        return $query;
     }
 
     /**
@@ -38,11 +49,7 @@ class CashRegisterResource extends Resource
      */
     public static function canViewAny(): bool
     {
-        /** @var \Percy\Core\Models\User $user */
-        $user = \Illuminate\Support\Facades\Auth::user();
-
-        // 🌟 COMBINADO: Debe pertenecer a una empresa Y NO ser Vendedor
-        return $user->tenant_id !== null && !$user->hasRole('Vendedor');
+        return Auth::user()?->canViewCashRegisters() ?? false;
     }
 
     public static function form(Form $form): Form
@@ -137,7 +144,10 @@ class CashRegisterResource extends Resource
                     ->color('danger')
                     ->button()
                     // 🌟 MAGIA DE SEGURIDAD: Solo el dueño de la caja ve el botón
-                    ->visible(fn (CashRegister $record) => $record->status === 'open' && $record->user_id === Auth::id())
+                    ->visible(fn (CashRegister $record) =>
+                        $record->status === 'open' &&
+                        (Auth::user()?->canCloseCashRegisterRecord($record) ?? false)
+                    )
                     ->modalHeading('Cerrar Turno de Caja')
                     ->modalWidth('md') // Le damos un ancho mediano al modal
                     ->form([
@@ -146,23 +156,16 @@ class CashRegisterResource extends Resource
                             ->label('Resumen del Turno')
                             ->content(function (CashRegister $record) {
                                 // 🌟 1. VENTAS: Traemos TODO lo que se haya registrado bajo el ID de esta caja (Adiós a los filtros de fecha y usuario)
-                                $sales = \Percy\Core\Models\Sale::where('cash_register_id', $record->id)->get();
+                                $expenses = self::expensesTotal($record);
 
-                                // 🌟 2. GASTOS: Los gastos sí los buscamos por fecha en el local, sin importar qué usuario lo registró
-                                $endDate = $record->closed_at ?? now();
-                                $expenses = \Percy\Core\Models\Expense::where('tenant_id', $record->tenant_id)
-                                    ->whereBetween('created_at', [$record->opened_at, $endDate])
-                                    ->sum('amount');
+                                $cashSales = self::salesTotalByMethod($record, 'Efectivo');
+                                $yapeSales = self::salesTotalByMethod($record, 'Yape');
+                                $plinSales = self::salesTotalByMethod($record, 'Plin');
+                                $cardSales = self::salesTotalByMethod($record, 'Tarjeta');
+                                $transferSales = self::salesTotalByMethod($record, 'Transferencia');
 
-                                // Desglosamos por método de pago usando tu catálogo de opciones
-                                $cashSales = $sales->where('payment_method', 'Efectivo')->sum('total');
-                                $yapeSales = $sales->where('payment_method', 'Yape')->sum('total');
-                                $plinSales = $sales->where('payment_method', 'Plin')->sum('total');
-                                $cardSales = $sales->where('payment_method', 'Tarjeta')->sum('total');
-                                $transferSales = $sales->where('payment_method', 'Transferencia')->sum('total');
-
-                                // La matemática clave:
-                                $expectedCash = $record->opening_amount + $cashSales - $expenses;
+                                $totalSales = self::salesTotal($record);
+                                $expectedCash = self::expectedCash($record);
 
                                 // Armamos el diseño visual directamente en HTML con clases de Tailwind
                                 $html = '
@@ -182,7 +185,12 @@ class CashRegisterResource extends Resource
                                         <div class="flex justify-between"><span>Yape:</span> <span class="font-medium">S/ ' . number_format($yapeSales, 2) . '</span></div>
                                         <div class="flex justify-between"><span>Plin:</span> <span class="font-medium">S/ ' . number_format($plinSales, 2) . '</span></div>
                                         <div class="flex justify-between"><span>Tarjetas:</span> <span class="font-medium">S/ ' . number_format($cardSales, 2) . '</span></div>
-                                        <div class="flex justify-between"><span>Transferencias:</span> <span class="font-medium">S/ ' . number_format($transferSales, 2) . '</span></div>
+                                        <div class="flex justify-between border-b border-gray-300 dark:border-gray-600 pb-2"><span>Transferencias:</span> <span class="font-medium">S/ ' . number_format($transferSales, 2) . '</span></div>
+
+                                        <div class="flex justify-between text-base pt-3 text-gray-900 dark:text-white">
+                                            <span class="font-bold">Total Ventas del Turno:</span>
+                                            <span class="font-black text-primary-600 dark:text-primary-400">S/ ' . number_format($totalSales, 2) . '</span>
+                                        </div>
                                     </div>
                                 </div>
                                 ';
@@ -196,12 +204,87 @@ class CashRegisterResource extends Resource
                             ->required()
                             ->numeric()
                             ->prefix('S/')
+                            ->live(onBlur: true)
                             ->helperText('Ingresa cuánto dinero físico hay realmente en la gaveta.')
                             ->extraInputAttributes(['class' => 'text-xl font-bold']), // Hace que el número se vea más grande al escribir
+
+                        Forms\Components\Placeholder::make('cash_difference_preview')
+                            ->label('Resultado del Arqueo')
+                            ->content(function (CashRegister $record, Forms\Get $get) {
+                                $closingAmount = $get('closing_amount');
+
+                                if ($closingAmount === null || $closingAmount === '') {
+                                    return new HtmlString(
+                                        '<div class="text-sm text-gray-500 dark:text-gray-400">
+                                            Ingresa el efectivo contado para calcular si la caja cuadra.
+                                        </div>'
+                                    );
+                                }
+
+                                $expectedCash = self::expectedCash($record);
+                                $countedCash = (float) $closingAmount;
+                                $difference = round($countedCash - $expectedCash, 2);
+
+                                if (abs($difference) < 0.01) {
+                                    return new HtmlString(
+                                        '<div class="rounded-xl border border-success-300 bg-success-50 p-3 text-success-700 dark:bg-success-900/20 dark:text-success-300">
+                                            <strong>✓ Caja cuadrada.</strong><br>
+                                            No existe diferencia entre el efectivo esperado y el efectivo contado.
+                                        </div>'
+                                    );
+                                }
+
+                                if ($difference < 0) {
+                                    return new HtmlString(
+                                        '<div class="rounded-xl border border-danger-300 bg-danger-50 p-3 text-danger-700 dark:bg-danger-900/20 dark:text-danger-300">
+                                            <strong>⚠ Faltante de caja:</strong> S/ ' . number_format(abs($difference), 2) . '<br>
+                                            El efectivo contado es menor al efectivo esperado.
+                                        </div>'
+                                    );
+                                }
+
+                                return new HtmlString(
+                                    '<div class="rounded-xl border border-warning-300 bg-warning-50 p-3 text-warning-700 dark:bg-warning-900/20 dark:text-warning-300">
+                                        <strong>⚠ Sobrante de caja:</strong> S/ ' . number_format($difference, 2) . '<br>
+                                        El efectivo contado es mayor al efectivo esperado.
+                                    </div>'
+                                );
+                            }),
                     ])
                     ->action(function (CashRegister $record, array $data) {
-                        $record->close($data['closing_amount']);
-                        \Filament\Notifications\Notification::make()->title('Caja Cerrada Correctamente')->success()->send();
+                        $expectedCash = self::expectedCash($record);
+                        $closingAmount = (float) $data['closing_amount'];
+                        $difference = round($closingAmount - $expectedCash, 2);
+
+                        $record->close($closingAmount);
+
+                        if (abs($difference) < 0.01) {
+                            Notification::make()
+                                ->title('Caja Cerrada Correctamente')
+                                ->body('La caja cuadró sin diferencias.')
+                                ->success()
+                                ->send();
+
+                            return;
+                        }
+
+                        if ($difference < 0) {
+                            Notification::make()
+                                ->title('Caja cerrada con faltante')
+                                ->body('Faltante detectado: S/ ' . number_format(abs($difference), 2))
+                                ->danger()
+                                ->persistent()
+                                ->send();
+
+                            return;
+                        }
+
+                        Notification::make()
+                            ->title('Caja cerrada con sobrante')
+                            ->body('Sobrante detectado: S/ ' . number_format($difference, 2))
+                            ->warning()
+                            ->persistent()
+                            ->send();
                     })
                     ->requiresConfirmation()
                     ->modalHeading('Cerrar Turno de Caja'),
@@ -215,6 +298,66 @@ class CashRegisterResource extends Resource
             ->emptyStateHeading('Sin cajas registradas')
             ->emptyStateDescription('Abre tu primera caja para comenzar a registrar ventas')
             ->emptyStateIcon('heroicon-o-calculator');
+    }
+
+    private static function salesTotalByMethod(CashRegister $record, string $paymentMethod): float
+    {
+        return (float) Sale::query()
+            ->where('cash_register_id', $record->id)
+            ->where('payment_method', $paymentMethod)
+            ->sum('total');
+    }
+
+    private static function salesTotal(CashRegister $record): float
+    {
+        return (float) Sale::query()
+            ->where('cash_register_id', $record->id)
+            ->sum('total');
+    }
+
+    private static function salesCount(CashRegister $record): int
+    {
+        return Sale::query()
+            ->where('cash_register_id', $record->id)
+            ->count();
+    }
+
+    private static function expensesTotal(CashRegister $record): float
+    {
+        $endDate = $record->closed_at ?? now();
+
+        return (float) Expense::query()
+            ->where('tenant_id', $record->tenant_id)
+            ->whereBetween('created_at', [$record->opened_at, $endDate])
+            ->sum('amount');
+    }
+
+    private static function expectedCash(CashRegister $record): float
+    {
+        $cashSales = self::salesTotalByMethod($record, 'Efectivo');
+        $expenses = self::expensesTotal($record);
+
+        return (float) $record->opening_amount + $cashSales - $expenses;
+    }
+
+    private static function cashDifference(CashRegister $record): float
+    {
+        if ($record->status === 'open') {
+            return 0;
+        }
+
+        return (float) $record->closing_amount - self::expectedCash($record);
+    }
+
+    private static function averageTicket(CashRegister $record): float
+    {
+        $count = self::salesCount($record);
+
+        if ($count === 0) {
+            return 0;
+        }
+
+        return self::salesTotal($record) / $count;
     }
 
     public static function infolist(Infolist $infolist): Infolist
@@ -264,40 +407,20 @@ class CashRegisterResource extends Resource
                                     ->label('(+) Ventas en Efectivo')
                                     ->money('PEN')
                                     ->color('success')
-                                    ->state(function (CashRegister $record) {
-                                        // 🌟 MAGIA: Filtro directo a la caja
-                                        return \Percy\Core\Models\Sale::where('cash_register_id', $record->id)
-                                            ->where('payment_method', 'Efectivo')
-                                            ->sum('total');
-                                    }),
+                                    ->state(fn (CashRegister $record) => self::salesTotalByMethod($record, 'Efectivo')),
 
                                 TextEntry::make('calc_expenses')
                                     ->label('(-) Gastos Registrados')
                                     ->money('PEN')
                                     ->color('danger')
-                                    ->state(function (CashRegister $record) {
-                                        $endDate = $record->closed_at ?? now();
-                                        return \Percy\Core\Models\Expense::where('tenant_id', $record->tenant_id)
-                                            ->whereBetween('created_at', [$record->opened_at, $endDate])
-                                            ->sum('amount');
-                                    }),
+                                    ->state(fn (CashRegister $record) => self::expensesTotal($record)),
 
                                 TextEntry::make('calc_expected')
                                     ->label('Efectivo Esperado')
                                     ->money('PEN')
                                     ->weight('bold')
                                     ->size(TextEntry\TextEntrySize::Large)
-                                    ->state(function (CashRegister $record) {
-                                        $endDate = $record->closed_at ?? now();
-                                        $cashSales = \Percy\Core\Models\Sale::where('cash_register_id', $record->id)->where('payment_method', 'Efectivo')->sum('total');
-
-                                        $expenses = \Percy\Core\Models\Expense::where('tenant_id', $record->tenant_id)
-                                            ->where('user_id', $record->user_id)
-                                            ->whereBetween('created_at', [$record->opened_at, $endDate])
-                                            ->sum('amount');
-
-                                        return $record->opening_amount + $cashSales - $expenses;
-                                    }),
+                                    ->state(fn (CashRegister $record) => self::expectedCash($record)),
 
                                 TextEntry::make('closing_amount') // ESTA SÍ ES TU COLUMNA REAL
                                     ->label('Efectivo Contado')
@@ -310,19 +433,7 @@ class CashRegisterResource extends Resource
                                     ->money('PEN')
                                     ->weight('bold')
                                     ->color(fn ($state) => $state < 0 ? 'danger' : ($state > 0 ? 'warning' : 'success'))
-                                    ->state(function (CashRegister $record) {
-                                        if ($record->status === 'open') return 0;
-
-                                        $cashSales = \Percy\Core\Models\Sale::where('cash_register_id', $record->id)->where('payment_method', 'Efectivo')->sum('total');
-
-                                        $expenses = \Percy\Core\Models\Expense::where('tenant_id', $record->tenant_id)
-                                            ->where('user_id', $record->user_id)
-                                            ->whereBetween('created_at', [$record->opened_at, $record->closed_at])
-                                            ->sum('amount');
-
-                                        $expected = $record->opening_amount + $cashSales - $expenses;
-                                        return $record->closing_amount - $expected;
-                                    }),
+                                    ->state(fn (CashRegister $record) => self::cashDifference($record)),
                             ])->columns(2),
                     ])->columnSpan(2),
 
@@ -335,12 +446,7 @@ class CashRegisterResource extends Resource
                                     return TextEntry::make("calc_sales_{$method}")
                                         ->label($method)
                                         ->money('PEN')
-                                        ->state(function (CashRegister $record) use ($method) {
-                                            // 🌟 MAGIA DIRECTA
-                                            return \Percy\Core\Models\Sale::where('cash_register_id', $record->id)
-                                                ->where('payment_method', $method)
-                                                ->sum('total');
-                                        });
+                                        ->state(fn (CashRegister $record) => self::salesTotalByMethod($record, $method));
                                 }),
 
                                 TextEntry::make('calc_total_sales')
@@ -349,13 +455,7 @@ class CashRegisterResource extends Resource
                                     ->weight('black')
                                     ->color('primary')
                                     ->size(TextEntry\TextEntrySize::Large)
-                                    ->state(function (CashRegister $record) {
-                                        $endDate = $record->closed_at ?? now();
-                                        return \Percy\Core\Models\Sale::where('tenant_id', $record->tenant_id)
-                                            ->where('user_id', $record->user_id)
-                                            ->whereBetween('sold_at', [$record->opened_at, $endDate])
-                                            ->sum('total');
-                                    }),
+                                    ->state(fn (CashRegister $record) => self::salesTotal($record)),
                             ])->columns(2),
 
                         Section::make('Rendimiento del Turno')
@@ -363,33 +463,12 @@ class CashRegisterResource extends Resource
                                 TextEntry::make('calc_sales_count')
                                     ->label('Ventas Realizadas')
                                     ->badge()
-                                    ->state(function (CashRegister $record) {
-                                        $endDate = $record->closed_at ?? now();
-                                        return \Percy\Core\Models\Sale::where('tenant_id', $record->tenant_id)
-                                            ->where('user_id', $record->user_id)
-                                            ->whereBetween('sold_at', [$record->opened_at, $endDate])
-                                            ->count();
-                                    }),
+                                    ->state(fn (CashRegister $record) => self::salesCount($record)),
 
                                 TextEntry::make('calc_average_ticket')
                                     ->label('Ticket Promedio')
                                     ->money('PEN')
-                                    ->state(function (CashRegister $record) {
-                                        $endDate = $record->closed_at ?? now();
-                                        $count = \Percy\Core\Models\Sale::where('tenant_id', $record->tenant_id)
-                                            ->where('user_id', $record->user_id)
-                                            ->whereBetween('sold_at', [$record->opened_at, $endDate])
-                                            ->count();
-
-                                        if ($count === 0) return 0;
-
-                                        $total = \Percy\Core\Models\Sale::where('tenant_id', $record->tenant_id)
-                                            ->where('user_id', $record->user_id)
-                                            ->whereBetween('sold_at', [$record->opened_at, $endDate])
-                                            ->sum('total');
-
-                                        return $total / $count;
-                                    }),
+                                    ->state(fn (CashRegister $record) => self::averageTicket($record)),
                             ])->columns(2),
                     ])->columnSpan(1),
                 ]),
