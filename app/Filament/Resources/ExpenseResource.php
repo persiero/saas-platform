@@ -10,6 +10,8 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Auth;
 
 class ExpenseResource extends Resource
 {
@@ -23,7 +25,16 @@ class ExpenseResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()->where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id);
+        $user = Auth::user();
+
+        $query = parent::getEloquentQuery()
+            ->with(['user', 'cashRegister']);
+
+        if (! $user?->isSuperAdmin()) {
+            $query->where('tenant_id', $user?->tenant_id);
+        }
+
+        return $query;
     }
 
     /**
@@ -31,35 +42,54 @@ class ExpenseResource extends Resource
      */
     public static function canViewAny(): bool
     {
-        /** @var \Percy\Core\Models\User $user */
-        $user = \Illuminate\Support\Facades\Auth::user();
-
-        // 🌟 COMBINADO: Debe pertenecer a una empresa Y NO ser Vendedor
-        return $user->tenant_id !== null && !$user->hasRole('Vendedor');
+        return Auth::user()?->canManageCashRegister() ?? false;
     }
 
     // 🔒 1. Solo el Admin puede editar un gasto registrado
-    public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
+    public static function canEdit(Model $record): bool
     {
-        /** @var \Percy\Core\Models\User $user */
-        $user = \Illuminate\Support\Facades\Auth::user();
-        return $user->isAdmin();
+        $user = Auth::user();
+
+        if (! $user?->isAdmin()) {
+            return false;
+        }
+
+        $record->loadMissing('cashRegister');
+
+        if ($record instanceof Expense && $record->cashRegister?->status === 'closed') {
+            return false;
+        }
+
+        return true;
     }
 
     // 🔒 2. Solo el Admin puede eliminar un gasto individualmente
-    public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    public static function canDelete(Model $record): bool
     {
-        /** @var \Percy\Core\Models\User $user */
-        $user = \Illuminate\Support\Facades\Auth::user();
-        return $user->isAdmin();
+        $user = Auth::user();
+
+        if (! $user?->isAdmin()) {
+            return false;
+        }
+
+        $record->loadMissing('cashRegister');
+
+        if ($record instanceof Expense && $record->cashRegister?->status === 'closed') {
+            return false;
+        }
+
+        return true;
     }
 
     // 🔒 3. Solo el Admin puede usar el botón rojo de borrado masivo
     public static function canDeleteAny(): bool
     {
-        /** @var \Percy\Core\Models\User $user */
-        $user = \Illuminate\Support\Facades\Auth::user();
-        return $user->isAdmin();
+        return Auth::user()?->isAdmin() ?? false;
+    }
+
+    public static function canCreate(): bool
+    {
+        return Auth::user()?->canManageCashRegister() ?? false;
     }
 
     public static function form(Form $form): Form
@@ -135,6 +165,13 @@ class ExpenseResource extends Resource
                     ->icon('heroicon-o-identification')
                     ->sortable()
                     ->searchable()
+                    ->toggleable(),
+
+                Tables\Columns\TextColumn::make('cashRegister.id')
+                    ->label('Caja')
+                    ->formatStateUsing(fn ($state) => $state ? '#' . $state : 'Sin caja')
+                    ->badge()
+                    ->color(fn ($state) => $state ? 'success' : 'gray')
                     ->toggleable(),
 
                 Tables\Columns\TextColumn::make('category')
