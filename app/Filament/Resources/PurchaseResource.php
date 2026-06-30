@@ -24,6 +24,7 @@ use Percy\Core\Models\ProductBatch;
 use Illuminate\Support\Facades\DB;
 use Percy\Core\Services\Inventory\InventoryService;
 use Illuminate\Validation\ValidationException;
+use Percy\Core\Services\Purchases\PurchaseService;
 
 class PurchaseResource extends Resource
 {
@@ -187,7 +188,7 @@ class PurchaseResource extends Resource
                                     ->relationship(
                                         'supplier',
                                         'name',
-                                        modifyQueryUsing: fn (Builder $query) => self::scopeToCurrentTenant($query)
+                                        modifyQueryUsing: fn(Builder $query) => self::scopeToCurrentTenant($query)
                                             ->where('active', true)
                                     )
                                     ->label('Proveedor')
@@ -246,25 +247,27 @@ class PurchaseResource extends Resource
 
                                 Forms\Components\Select::make('status')
                                     ->label('Estado')
-                                    ->options(fn (?Purchase $record): array => $record
-                                        ? [
-                                            'pending' => 'Pendiente',
-                                            'completed' => 'Completado',
-                                            'canceled' => 'Cancelado',
-                                        ]
-                                        : [
-                                            'pending' => 'Pendiente',
-                                            'completed' => 'Completado',
-                                        ]
+                                    ->options(
+                                        fn(?Purchase $record): array => $record
+                                            ? [
+                                                'pending' => 'Pendiente',
+                                                'completed' => 'Completado',
+                                                'canceled' => 'Cancelado',
+                                            ]
+                                            : [
+                                                'pending' => 'Pendiente',
+                                                'completed' => 'Completado',
+                                            ]
                                     )
                                     ->default('completed')
                                     ->required()
                                     ->native(false)
-                                    ->disabled(fn (?Purchase $record): bool => filled($record))
-                                    ->dehydrated(fn (?Purchase $record): bool => blank($record))
-                                    ->helperText(fn (?Purchase $record): string => $record
-                                        ? 'El estado se cambia mediante acciones controladas.'
-                                        : 'Completado suma stock. Pendiente queda como borrador y no mueve inventario.'
+                                    ->disabled(fn(?Purchase $record): bool => filled($record))
+                                    ->dehydrated(fn(?Purchase $record): bool => blank($record))
+                                    ->helperText(
+                                        fn(?Purchase $record): string => $record
+                                            ? 'El estado se cambia mediante acciones controladas.'
+                                            : 'Completado suma stock. Pendiente queda como borrador y no mueve inventario.'
                                     )
                                     ->columnSpan(1),
                             ]),
@@ -276,17 +279,17 @@ class PurchaseResource extends Resource
                             ->schema([
                                 Forms\Components\Placeholder::make('subtotal_label')
                                     ->label('Subtotal (Op. Gravadas)')
-                                    ->content(fn (\Filament\Forms\Get $get): string => 'S/ ' . number_format((float)($get('subtotal') ?? 0), 2))
+                                    ->content(fn(\Filament\Forms\Get $get): string => 'S/ ' . number_format((float)($get('subtotal') ?? 0), 2))
                                     ->extraAttributes(['class' => 'flex justify-between border-b pb-2']),
 
                                 Forms\Components\Placeholder::make('igv_label')
                                     ->label('IGV (18%)')
-                                    ->content(fn (\Filament\Forms\Get $get): string => 'S/ ' . number_format((float)($get('igv') ?? 0), 2))
+                                    ->content(fn(\Filament\Forms\Get $get): string => 'S/ ' . number_format((float)($get('igv') ?? 0), 2))
                                     ->extraAttributes(['class' => 'flex justify-between border-b pb-2']),
 
                                 Forms\Components\Placeholder::make('total_label')
                                     ->label('TOTAL A PAGAR')
-                                    ->content(fn (\Filament\Forms\Get $get): string => 'S/ ' . number_format((float)($get('total') ?? 0), 2))
+                                    ->content(fn(\Filament\Forms\Get $get): string => 'S/ ' . number_format((float)($get('total') ?? 0), 2))
                                     ->extraAttributes(['class' => 'flex justify-between text-2xl font-black text-primary-600 pt-2']),
 
                                 Forms\Components\Hidden::make('subtotal'),
@@ -308,9 +311,9 @@ class PurchaseResource extends Resource
                             ->relationship()
                             ->label('')
                             ->live()
-                            ->afterStateUpdated(fn (\Filament\Forms\Get $get, \Filament\Forms\Set $set) => self::updateTotals($get, $set))
+                            ->afterStateUpdated(fn(\Filament\Forms\Get $get, \Filament\Forms\Set $set) => self::updateTotals($get, $set))
                             ->deleteAction(
-                                fn (Forms\Components\Actions\Action $action) => $action
+                                fn(Forms\Components\Actions\Action $action) => $action
                                     ->after(fn(\Filament\Forms\Get $get, \Filament\Forms\Set $set) => self::updateTotals($get, $set))
                                     ->requiresConfirmation()
                                     ->modalHeading('Eliminar Producto')
@@ -353,7 +356,7 @@ class PurchaseResource extends Resource
                                     ->relationship(
                                         'product',
                                         'name',
-                                        modifyQueryUsing: fn (Builder $query) => self::scopeToCurrentTenant($query)
+                                        modifyQueryUsing: fn(Builder $query) => self::scopeToCurrentTenant($query)
                                             ->where('active', true)
                                     )
                                     ->label('Producto')
@@ -399,8 +402,8 @@ class PurchaseResource extends Resource
                                 Forms\Components\Select::make('measurement_unit')
                                     ->label('Presentación')
                                     ->options(['box' => 'Caja', 'unit' => 'Unidad'])
-                                    ->visible(fn (Get $get) => $get('_is_fractionable'))
-                                    ->required(fn (Get $get) => $get('_is_fractionable'))
+                                    ->visible(fn(Get $get) => $get('_is_fractionable'))
+                                    ->required(fn(Get $get) => $get('_is_fractionable'))
                                     ->default('box')
                                     ->live()
                                     ->afterStateUpdated(function ($state, Set $set, Get $get) {
@@ -428,7 +431,7 @@ class PurchaseResource extends Resource
 
                                         return $features['has_lots'] ?? false;
                                     })
-                                    ->required(fn () => Auth::user()->tenant->businessSector->features['has_lots'] ?? false)
+                                    ->required(fn() => Auth::user()->tenant->businessSector->features['has_lots'] ?? false)
                                     ->datalist(function (Get $get): array {
                                         $productId = $get('product_id');
 
@@ -508,14 +511,14 @@ class PurchaseResource extends Resource
 
                                         return $features['has_expiry_dates'] ?? false;
                                     })
-                                    ->required(fn () => Auth::user()->tenant->businessSector->features['has_expiry_dates'] ?? false)
+                                    ->required(fn() => Auth::user()->tenant->businessSector->features['has_expiry_dates'] ?? false)
                                     ->afterStateUpdated(function ($state, Set $set, Get $get) {
                                         $message = self::batchExpirationMismatchMessage($get, $state);
 
                                         $set('_batch_expiration_warning_message', $message);
                                     })
                                     ->rules([
-                                        fn (Get $get) => function (string $attribute, $value, \Closure $fail) use ($get) {
+                                        fn(Get $get) => function (string $attribute, $value, \Closure $fail) use ($get) {
                                             $message = self::batchExpirationMismatchMessage($get, $value);
 
                                             if ($message) {
@@ -534,13 +537,13 @@ class PurchaseResource extends Resource
 
                                 Forms\Components\Placeholder::make('batch_expiration_warning')
                                     ->label('')
-                                    ->visible(fn (Get $get): bool => filled($get('_batch_expiration_warning_message')))
+                                    ->visible(fn(Get $get): bool => filled($get('_batch_expiration_warning_message')))
                                     ->content(function (Get $get) {
                                         return new HtmlString(
                                             '<div class="rounded-xl border border-danger-300 bg-danger-50 p-3 text-sm text-danger-700 dark:bg-danger-900/20 dark:text-danger-300">
                                                 <strong>⚠ Lote con fecha diferente</strong><br>' .
                                                 e($get('_batch_expiration_warning_message')) .
-                                            '</div>'
+                                                '</div>'
                                         );
                                     })
                                     ->columnSpan(['default' => 12, 'md' => 6]),
@@ -549,17 +552,22 @@ class PurchaseResource extends Resource
                                     ->label('Cantidad')
                                     ->numeric()
                                     ->default(1)
-                                    ->minValue(fn (\Filament\Forms\Get $get) => $get('_is_weighable') ? 0.001 : 1)
-                                    ->step(fn (\Filament\Forms\Get $get) => $get('_is_weighable') ? 0.001 : 1)
+                                    ->minValue(fn(\Filament\Forms\Get $get) => $get('_is_weighable') ? 0.001 : 1)
+                                    ->step(fn(\Filament\Forms\Get $get) => $get('_is_weighable') ? 0.001 : 1)
                                     ->suffix(function (\Filament\Forms\Get $get) {
                                         if ($get('_is_fractionable')) {
                                             return $get('measurement_unit') === 'unit' ? 'Und' : 'Caj';
                                         }
                                         if (!$get('_is_weighable')) return 'Und';
-                                        return match($get('unit_code')) { 'KGM' => 'Kg', 'LTR' => 'Lt', 'GLL' => 'Gal', default => $get('unit_code') ?? 'Und' };
+                                        return match ($get('unit_code')) {
+                                            'KGM' => 'Kg',
+                                            'LTR' => 'Lt',
+                                            'GLL' => 'Gal',
+                                            default => $get('unit_code') ?? 'Und'
+                                        };
                                     })
                                     ->rules([
-                                        fn (\Filament\Forms\Get $get) => function (string $attribute, $value, \Closure $fail) use ($get) {
+                                        fn(\Filament\Forms\Get $get) => function (string $attribute, $value, \Closure $fail) use ($get) {
                                             if (!$get('_is_weighable') && fmod((float) $value, 1) !== 0.0) {
                                                 $fail('Este producto solo admite cantidades enteras.');
                                             }
@@ -679,7 +687,7 @@ class PurchaseResource extends Resource
                     ->date('d/m/Y')
                     ->sortable()
                     ->icon('heroicon-o-calendar')
-                    ->description(fn (Purchase $record): string => $record->purchase_date->diffForHumans()),
+                    ->description(fn(Purchase $record): string => $record->purchase_date->diffForHumans()),
 
                 Tables\Columns\TextColumn::make('supplier.name')
                     ->label('Proveedor')
@@ -687,7 +695,7 @@ class PurchaseResource extends Resource
                     ->sortable()
                     ->icon('heroicon-o-building-office-2')
                     ->weight('bold')
-                    ->description(fn (Purchase $record): ?string => $record->document_number ? "Doc: {$record->document_number}" : null),
+                    ->description(fn(Purchase $record): ?string => $record->document_number ? "Doc: {$record->document_number}" : null),
 
                 Tables\Columns\TextColumn::make('items_count')
                     ->label('Productos')
@@ -707,20 +715,20 @@ class PurchaseResource extends Resource
                 Tables\Columns\TextColumn::make('status')
                     ->label('Estado')
                     ->badge()
-                    ->formatStateUsing(fn (string $state): string => match ($state) {
+                    ->formatStateUsing(fn(string $state): string => match ($state) {
                         'pending' => 'Pendiente',
                         'completed' => 'Completado',
                         'canceled' => 'Cancelado',
                         default => $state,
                     })
 
-                    ->color(fn (string $state): string => match ($state) {
+                    ->color(fn(string $state): string => match ($state) {
                         'pending' => 'warning',
                         'completed' => 'success',
                         'canceled' => 'danger',
                         default => 'gray',
                     })
-                    ->icon(fn (string $state): string => match ($state) {
+                    ->icon(fn(string $state): string => match ($state) {
                         'pending' => 'heroicon-o-clock',
                         'completed' => 'heroicon-o-check-circle',
                         'canceled' => 'heroicon-o-x-circle',
@@ -767,8 +775,8 @@ class PurchaseResource extends Resource
                     ->columns(2) //
                     ->query(function (Builder $query, array $data): Builder {
                         return $query
-                            ->when($data['from'], fn (Builder $query, $date) => $query->whereDate('purchase_date', '>=', $date))
-                            ->when($data['until'], fn (Builder $query, $date) => $query->whereDate('purchase_date', '<=', $date));
+                            ->when($data['from'], fn(Builder $query, $date) => $query->whereDate('purchase_date', '>=', $date))
+                            ->when($data['until'], fn(Builder $query, $date) => $query->whereDate('purchase_date', '<=', $date));
                     })
                     ->indicateUsing(function (array $data): array {
                         $indicators = [];
@@ -796,18 +804,20 @@ class PurchaseResource extends Resource
                         ->label('Editar')
                         ->icon('heroicon-o-pencil')
                         ->color('warning')
-                        ->visible(fn (Purchase $record): bool =>
+                        ->visible(
+                            fn(Purchase $record): bool =>
                             $record->status === 'pending' &&
-                            (Auth::user()?->canEditPurchases() ?? false)
+                                (Auth::user()?->canEditPurchases() ?? false)
                         ),
 
                     Tables\Actions\Action::make('confirmPendingPurchase')
                         ->label('Confirmar compra')
                         ->icon('heroicon-o-check-circle')
                         ->color('success')
-                        ->visible(fn (Purchase $record): bool =>
+                        ->visible(
+                            fn(Purchase $record): bool =>
                             $record->status === 'pending' &&
-                            (Auth::user()?->canEditPurchases() ?? false)
+                                (Auth::user()?->canEditPurchases() ?? false)
                         )
                         ->requiresConfirmation()
                         ->modalHeading('Confirmar compra pendiente')
@@ -815,38 +825,32 @@ class PurchaseResource extends Resource
                         ->modalSubmitActionLabel('Sí, confirmar')
                         ->modalCancelActionLabel('Cancelar')
                         ->action(function (Purchase $record): void {
-                            DB::transaction(function () use ($record) {
-                                $record->refresh();
+                            try {
+                                app(PurchaseService::class)->confirmPendingPurchase($record);
 
-                                if ($record->status !== 'pending') {
-                                    return;
-                                }
-
-                                $record->loadMissing('items.product');
-
-                                foreach ($record->items as $item) {
-                                    app(InventoryService::class)->addStockFromPurchaseItem($item);
-                                }
-
-                                $record->update([
-                                    'status' => 'completed',
-                                ]);
-                            });
-
-                            Notification::make()
-                                ->success()
-                                ->title('Compra confirmada')
-                                ->body('La compra fue confirmada y el stock ingresó correctamente al inventario.')
-                                ->send();
+                                Notification::make()
+                                    ->success()
+                                    ->title('Compra confirmada')
+                                    ->body('La compra fue confirmada y el stock ingresó correctamente al inventario.')
+                                    ->send();
+                            } catch (ValidationException $e) {
+                                Notification::make()
+                                    ->danger()
+                                    ->title('No se pudo confirmar la compra')
+                                    ->body(collect($e->errors())->flatten()->first() ?? 'Verifica la compra antes de confirmar.')
+                                    ->persistent()
+                                    ->send();
+                            }
                         }),
 
                     Tables\Actions\Action::make('cancelPendingPurchase')
                         ->label('Cancelar compra')
                         ->icon('heroicon-o-x-circle')
                         ->color('danger')
-                        ->visible(fn (Purchase $record): bool =>
+                        ->visible(
+                            fn(Purchase $record): bool =>
                             $record->status === 'pending' &&
-                            (Auth::user()?->canEditPurchases() ?? false)
+                                (Auth::user()?->canEditPurchases() ?? false)
                         )
                         ->requiresConfirmation()
                         ->modalHeading('Cancelar compra pendiente')
@@ -854,24 +858,32 @@ class PurchaseResource extends Resource
                         ->modalSubmitActionLabel('Sí, cancelar compra')
                         ->modalCancelActionLabel('Volver')
                         ->action(function (Purchase $record): void {
-                            $record->update([
-                                'status' => 'canceled',
-                            ]);
+                            try {
+                                app(PurchaseService::class)->cancelPendingPurchase($record);
 
-                            Notification::make()
-                                ->success()
-                                ->title('Compra cancelada')
-                                ->body('La compra pendiente fue cancelada correctamente.')
-                                ->send();
+                                Notification::make()
+                                    ->success()
+                                    ->title('Compra cancelada')
+                                    ->body('La compra pendiente fue cancelada correctamente.')
+                                    ->send();
+                            } catch (ValidationException $e) {
+                                Notification::make()
+                                    ->danger()
+                                    ->title('No se pudo cancelar la compra')
+                                    ->body(collect($e->errors())->flatten()->first() ?? 'Verifica la compra antes de cancelar.')
+                                    ->persistent()
+                                    ->send();
+                            }
                         }),
 
                     Tables\Actions\Action::make('voidCompletedPurchase')
                         ->label('Anular compra')
                         ->icon('heroicon-o-exclamation-triangle')
                         ->color('danger')
-                        ->visible(fn (Purchase $record): bool =>
+                        ->visible(
+                            fn(Purchase $record): bool =>
                             $record->status === 'completed' &&
-                            (Auth::user()?->canVoidCompletedPurchases() ?? false)
+                                (Auth::user()?->canVoidCompletedPurchases() ?? false)
                         )
                         ->requiresConfirmation()
                         ->modalHeading('Anular compra completada')
@@ -888,7 +900,7 @@ class PurchaseResource extends Resource
                         ])
                         ->action(function (Purchase $record, array $data): void {
                             try {
-                                app(InventoryService::class)->voidCompletedPurchase(
+                                app(PurchaseService::class)->voidCompletedPurchase(
                                     $record,
                                     $data['void_reason'] ?? null
                                 );
@@ -912,9 +924,10 @@ class PurchaseResource extends Resource
                         ->label('Eliminar borrador')
                         ->icon('heroicon-o-trash')
                         ->color('danger')
-                        ->visible(fn (Purchase $record): bool =>
+                        ->visible(
+                            fn(Purchase $record): bool =>
                             $record->status === 'pending' &&
-                            (Auth::user()?->canDeletePurchases() ?? false)
+                                (Auth::user()?->canDeletePurchases() ?? false)
                         )
                         ->requiresConfirmation()
                         ->modalHeading('Eliminar compra pendiente')
