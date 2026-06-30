@@ -24,6 +24,8 @@ use Filament\Tables\Actions\ForceDeleteBulkAction;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Validation\Rules\Unique;
 use Percy\Core\Services\Tenants\TenantFeatureService;
+use Illuminate\Validation\ValidationException;
+use Percy\Core\Services\Inventory\InventoryService;
 
 class ProductResource extends Resource
 {
@@ -137,7 +139,7 @@ class ProductResource extends Resource
                             ->placeholder('Escanea o digita el código')
                             ->unique(
                                 ignoreRecord: true,
-                                modifyRuleUsing: fn (Unique $rule) => $rule->where('tenant_id', Auth::user()?->tenant_id)
+                                modifyRuleUsing: fn(Unique $rule) => $rule->where('tenant_id', Auth::user()?->tenant_id)
                             ) // Evita que dos productos tengan el mismo código
                             // 🌟 OCULTAR SEGÚN EL SEEDER
                             ->hidden(function () {
@@ -155,7 +157,7 @@ class ProductResource extends Resource
                             ->preload()
                             ->live() // 🌟 IMPORTANTE: Permite que el sistema sepa al instante qué unidad eligió
                             ->rules([ // 🌟 VALIDACIÓN DE DOBLE VÍA
-                                fn (\Filament\Forms\Get $get) => function (string $attribute, $value, \Closure $fail) use ($get) {
+                                fn(\Filament\Forms\Get $get) => function (string $attribute, $value, \Closure $fail) use ($get) {
                                     $unidad = \Percy\Core\Models\UnidadSunat::find($value);
                                     if (!$unidad) return;
 
@@ -188,7 +190,7 @@ class ProductResource extends Resource
                             ->relationship(
                                 'category',
                                 'name',
-                                modifyQueryUsing: fn (Builder $query) => self::scopeToCurrentTenant($query)
+                                modifyQueryUsing: fn(Builder $query) => self::scopeToCurrentTenant($query)
                             ) // Solo mostrará categorías de ESTE tenant
                             ->label('Categoría')
                             ->searchable()
@@ -231,7 +233,7 @@ class ProductResource extends Resource
 
                             // Este Grid SOLO aparece si el Toggle de arriba está encendido (true)
                             Forms\Components\Grid::make(3)
-                                ->visible(fn (Forms\Get $get) => $get('is_fractionable'))
+                                ->visible(fn(Forms\Get $get) => $get('is_fractionable'))
                                 ->schema([
                                     Forms\Components\TextInput::make('units_per_box')
                                         ->label('Total de pastillas por Caja')
@@ -299,7 +301,7 @@ class ProductResource extends Resource
                             ->numeric()
                             ->prefix('S/')
                             ->default(0)
-                            ->visible(fn () => Auth::user()?->canViewProductCosts() ?? false),
+                            ->visible(fn() => Auth::user()?->canViewProductCosts() ?? false),
 
                         Forms\Components\Select::make('afectacion_igv_id')
                             ->relationship('afectacionIgv', 'descripcion')
@@ -318,7 +320,7 @@ class ProductResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
-            ->modifyQueryUsing(fn (\Illuminate\Database\Eloquent\Builder $query) => $query->with('category'))
+            ->modifyQueryUsing(fn(\Illuminate\Database\Eloquent\Builder $query) => $query->with('category'))
             ->columns([
                 // 🌟 AQUÍ COLOCAMOS LA MINIATURA
                 Tables\Columns\ImageColumn::make('image')
@@ -334,7 +336,7 @@ class ProductResource extends Resource
                     ->sortable()
                     ->weight('bold')
                     ->icon('heroicon-o-cube')
-                    ->description(fn (Product $record): ?string => $record->category?->name),
+                    ->description(fn(Product $record): ?string => $record->category?->name),
 
                 Tables\Columns\TextColumn::make('barcode')
                     ->label('Cód. Barras')
@@ -388,7 +390,12 @@ class ProductResource extends Resource
                         // 2. Granel (Peso/Volumen)
                         if ($record->is_weighable) {
                             $codigoUnidad = $record->unidadSunat ? $record->unidadSunat->codigo : '';
-                            $sufijo = match($codigoUnidad) { 'KGM' => 'Kg', 'LTR' => 'Lt', 'GLL' => 'Gal', default => 'Und' };
+                            $sufijo = match ($codigoUnidad) {
+                                'KGM' => 'Kg',
+                                'LTR' => 'Lt',
+                                'GLL' => 'Gal',
+                                default => 'Und'
+                            };
                             return number_format($state, 2) . " {$sufijo}";
                         }
 
@@ -423,7 +430,7 @@ class ProductResource extends Resource
                 Tables\Columns\ToggleColumn::make('active')
                     ->label('Activo')
                     ->sortable()
-                    ->disabled(fn () => !(Auth::user()?->canEditProducts() ?? false)),
+                    ->disabled(fn() => !(Auth::user()?->canEditProducts() ?? false)),
             ])
             ->defaultSort('name', 'asc')
             ->filters([
@@ -432,7 +439,7 @@ class ProductResource extends Resource
                     ->relationship(
                         'category',
                         'name',
-                        modifyQueryUsing: fn (Builder $query) => self::scopeToCurrentTenant($query)
+                        modifyQueryUsing: fn(Builder $query) => self::scopeToCurrentTenant($query)
                     )
                     ->multiple()
                     ->preload(),
@@ -450,13 +457,13 @@ class ProductResource extends Resource
                     ->trueLabel('Con código')
                     ->falseLabel('Sin código')
                     ->queries(
-                        true: fn (Builder $query) => $query->whereNotNull('barcode'),
-                        false: fn (Builder $query) => $query->whereNull('barcode'),
+                        true: fn(Builder $query) => $query->whereNotNull('barcode'),
+                        false: fn(Builder $query) => $query->whereNull('barcode'),
                     ),
 
                 Tables\Filters\Filter::make('low_stock')
                     ->label('Stock bajo')
-                    ->query(fn (Builder $query): Builder => $query->whereHas('inventoryMovements', function ($q) {
+                    ->query(fn(Builder $query): Builder => $query->whereHas('inventoryMovements', function ($q) {
                         // Filtro personalizado para stock bajo
                     }))
                     ->toggle(),
@@ -497,7 +504,7 @@ class ProductResource extends Resource
                         ->label('Ajuste de Inventario')
                         ->icon('heroicon-o-scale')
                         ->color('warning')
-                        ->visible(fn () => Auth::user()?->canManageStock() ?? false)
+                        ->visible(fn() => Auth::user()?->canManageStock() ?? false)
                         ->form(function ($record) {
                             $features = self::tenantFeatures();
                             $hasLots = $features['has_lots'] ?? false;
@@ -520,7 +527,12 @@ class ProductResource extends Resource
 
                                 if ($record->is_weighable) {
                                     $codigoUnidad = $record->unidadSunat ? $record->unidadSunat->codigo : '';
-                                    $sufijo = match($codigoUnidad) { 'KGM' => 'kg', 'LTR' => 'lt', 'GLL' => 'gal', default => 'und' };
+                                    $sufijo = match ($codigoUnidad) {
+                                        'KGM' => 'kg',
+                                        'LTR' => 'lt',
+                                        'GLL' => 'gal',
+                                        default => 'und'
+                                    };
                                     return number_format($stock, 2) . " {$sufijo}";
                                 }
 
@@ -541,7 +553,9 @@ class ProductResource extends Resource
                                 Forms\Components\Select::make('product_batch_id')
                                     ->label($hasLots ? 'Lote a afectar' : 'Fecha de Vencimiento a afectar')
                                     ->options(function () use ($record, $hasLots, $traducirStock) {
-                                        return \Percy\Core\Models\ProductBatch::where('product_id', $record->id)
+                                        return \Percy\Core\Models\ProductBatch::query()
+                                            ->where('tenant_id', Auth::user()?->tenant_id)
+                                            ->where('product_id', $record->id)
                                             ->where('is_active', true)
                                             ->get()
                                             ->mapWithKeys(function ($b) use ($hasLots, $traducirStock) {
@@ -557,8 +571,8 @@ class ProductResource extends Resource
                                                 return [$b->id => $texto];
                                             });
                                     })
-                                    ->visible(fn () => $usesBatches)
-                                    ->required(fn () => $usesBatches)
+                                    ->visible(fn() => $usesBatches)
+                                    ->required(fn() => $usesBatches)
                                     ->searchable()
                                     ->preload(),
 
@@ -568,8 +582,8 @@ class ProductResource extends Resource
                                         'box' => 'Caja Entera',
                                         'unit' => 'Unidad Suelta (Pastilla/Blíster)',
                                     ])
-                                    ->visible(fn () => $hasLots && $record->is_fractionable && $record->units_per_box > 0)
-                                    ->required(fn () => $hasLots && $record->is_fractionable && $record->units_per_box > 0)
+                                    ->visible(fn() => $hasLots && $record->is_fractionable && $record->units_per_box > 0)
+                                    ->required(fn() => $hasLots && $record->is_fractionable && $record->units_per_box > 0)
                                     ->default('box')
                                     ->live(),
 
@@ -607,7 +621,7 @@ class ProductResource extends Resource
                                         }
                                         return '';
                                     })
-                                    ->visible(fn (Forms\Get $get) => $get('type') === 'OUT'),
+                                    ->visible(fn(Forms\Get $get) => $get('type') === 'OUT'),
 
                                 Forms\Components\TextInput::make('reason')
                                     ->label('Detalle / Observación')
@@ -616,75 +630,33 @@ class ProductResource extends Resource
                                     ->placeholder('Ej: 3 tomates podridos, 1 caja rota...'),
                             ];
                         })
-                        ->action(function (array $data, $record) {
-                            $stockActual = (float) $record->current_stock;
-                            $cantidadIngresada = abs((float) $data['quantity']);
-                            $tipoAjuste = $data['type'];
+                        ->action(function (array $data, Product $record) {
+                            try {
+                                app(InventoryService::class)->manualAdjustStock(
+                                    product: $record,
+                                    type: $data['type'],
+                                    quantity: abs((float) $data['quantity']),
+                                    productBatchId: $data['product_batch_id'] ?? null,
+                                    measurementUnit: $data['measurement_unit'] ?? null,
+                                    reason: $data['reason'] ?? null
+                                );
 
-                            $features = self::tenantFeatures();
-                            $hasLots = $features['has_lots'] ?? false;
-                            $hasExpiry = $features['has_expiry_dates'] ?? false;
-                            $usesBatches = $hasLots || $hasExpiry;
-
-                            // 1. MATEMÁTICA DE FRACCIONES
-                            $cantidadAjuste = $cantidadIngresada;
-                            if ($hasLots && $record->is_fractionable && ($data['measurement_unit'] ?? null) === 'unit' && $record->units_per_box > 0) {
-                                $cantidadAjuste = $cantidadIngresada / $record->units_per_box;
+                                Notification::make()
+                                    ->title('Inventario ajustado')
+                                    ->body('El ajuste fue registrado correctamente en el Kardex.')
+                                    ->success()
+                                    ->send();
+                            } catch (ValidationException $e) {
+                                Notification::make()
+                                    ->title('No se pudo ajustar el inventario')
+                                    ->body(collect($e->errors())->flatten()->first() ?? 'Verifica el stock antes de continuar.')
+                                    ->danger()
+                                    ->persistent()
+                                    ->send();
                             }
-
-                            // 2. BUSCAR EL LOTE O VENCIMIENTO AFECTADO
-                            $batch = null;
-                            if ($usesBatches && isset($data['product_batch_id'])) {
-                                $batch = \Percy\Core\Models\ProductBatch::find($data['product_batch_id']);
-                            }
-
-                            // 3. VALIDACIONES DE STOCK NEGATIVO
-                            if ($tipoAjuste === 'OUT') {
-                                if ($stockActual < $cantidadAjuste) {
-                                    \Filament\Notifications\Notification::make()
-                                        ->title('Stock Global Insuficiente')
-                                        ->danger()->send();
-                                    return;
-                                }
-                                if ($batch && $batch->current_quantity < $cantidadAjuste) {
-                                    \Filament\Notifications\Notification::make()
-                                        ->title('Stock de Vencimiento Insuficiente')
-                                        ->danger()->send();
-                                    return;
-                                }
-                            }
-
-                            // 4. CALCULAR SALDOS
-                            $saldoFinal = $tipoAjuste === 'OUT' ? $stockActual - $cantidadAjuste : $stockActual + $cantidadAjuste;
-
-                            // 5. AFECTAR EL LOTE
-                            if ($batch) {
-                                $batch->current_quantity = $tipoAjuste === 'OUT'
-                                    ? $batch->current_quantity - $cantidadAjuste
-                                    : $batch->current_quantity + $cantidadAjuste;
-                                $batch->save();
-                            } else {
-                                $record->update(['current_stock' => $saldoFinal]);
-                            }
-
-                            // 6. CREAR REGISTRO EN KARDEX
-                            \Percy\Core\Models\InventoryMovement::create([
-                                'tenant_id' => \Illuminate\Support\Facades\Auth::user()->tenant_id,
-                                'product_id' => $record->id,
-                                'product_batch_id' => $batch ? $batch->id : null,
-                                'user_id' => \Illuminate\Support\Facades\Auth::id(),
-                                'type' => $tipoAjuste,
-                                'quantity' => $cantidadAjuste,
-                                'reason' => 'Ajuste Manual: ' . $data['reason'],
-                                'balance_after' => $saldoFinal,
-                            ]);
-
-                            \Filament\Notifications\Notification::make()
-                                ->title('Inventario Ajustado')
-                                ->success()->send();
                         })
                         ->requiresConfirmation()
-                        ->modalHeading(fn ($record) => 'Ajuste de Inventario: ' . $record->name)
+                        ->modalHeading(fn($record) => 'Ajuste de Inventario: ' . $record->name)
                         ->modalDescription(function ($record) {
                             // 🌟 TRADUCIMOS LA DESCRIPCIÓN DEL MODAL
                             $stock = (float) $record->current_stock;
@@ -700,7 +672,12 @@ class ProductResource extends Resource
                                 $textoStock = empty($t) ? '0 und' : implode(' y ', $t);
                             } elseif ($record->is_weighable) {
                                 $cu = $record->unidadSunat ? $record->unidadSunat->codigo : '';
-                                $su = match($cu) { 'KGM' => 'kg', 'LTR' => 'lt', 'GLL' => 'gal', default => 'und' };
+                                $su = match ($cu) {
+                                    'KGM' => 'kg',
+                                    'LTR' => 'lt',
+                                    'GLL' => 'gal',
+                                    default => 'und'
+                                };
                                 $textoStock = number_format($stock, 2) . " {$su}";
                             } else {
                                 $textoStock = number_format($stock, 0) . ' und';
@@ -712,10 +689,10 @@ class ProductResource extends Resource
                         })
                         ->modalWidth('lg'),
                 ])
-                ->label('Acciones')
-                ->icon('heroicon-o-ellipsis-vertical')
-                ->button()
-                ->color('gray'),
+                    ->label('Acciones')
+                    ->icon('heroicon-o-ellipsis-vertical')
+                    ->button()
+                    ->color('gray'),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
@@ -759,6 +736,4 @@ class ProductResource extends Resource
             'edit' => Pages\EditProduct::route('/{record}/edit'),
         ];
     }
-
-
 }
