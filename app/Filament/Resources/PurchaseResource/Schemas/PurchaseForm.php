@@ -1,0 +1,650 @@
+<?php
+
+namespace App\Filament\Resources\PurchaseResource\Schemas;
+
+use Filament\Forms;
+use Filament\Forms\Form;
+use Filament\Forms\Get;
+use Filament\Forms\Set;
+use Filament\Notifications\Notification;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\HtmlString;
+use Percy\Core\Models\Product;
+use Percy\Core\Models\ProductBatch;
+use Percy\Core\Models\Purchase;
+use Percy\Core\Models\Supplier;
+use Percy\Core\Services\Tenants\TenantFeatureService;
+use Percy\Core\Services\Tenants\TenantPricingService;
+
+class PurchaseForm
+{
+    public static function configure(Form $form): Form
+    {
+        return $form
+            ->schema([
+                // =========================================================
+                // 🌟 CABECERA (Top): Proveedor, Documento y Resumen
+                // =========================================================
+                Forms\Components\Grid::make(4)->schema([
+                    Forms\Components\Group::make()->schema([
+                        Forms\Components\Section::make('Datos del Proveedor')
+                            ->icon('heroicon-o-building-office-2')
+                            ->schema([
+                                Forms\Components\Select::make('supplier_id')
+                                    ->relationship(
+                                        'supplier',
+                                        'name',
+                                        modifyQueryUsing: fn(Builder $query) => self::scopeToCurrentTenant($query)
+                                            ->where('active', true)
+                                    )
+                                    ->label('Proveedor')
+                                    ->required()
+                                    ->searchable()
+                                    ->preload()
+                                    ->native(false)
+                                    ->helperText('Selecciona el proveedor de esta compra')
+                                    // 🌟 AQUÍ ESTÁ EL TRUCO PARA EL BOTÓN BONITO
+                                    ->manageOptionActions(function (\Filament\Forms\Components\Actions\Action $action) {
+                                        return $action
+                                            ->icon('heroicon-o-user-plus') // Un icono de "Agregar Usuario/Empresa"
+                                            ->color('info') // Le da color verde para que resalte
+                                            ->tooltip('Agregar Nuevo Proveedor'); // Texto al pasar el mouse
+                                    })
+                                    ->createOptionModalHeading('Registrar Nuevo Proveedor')
+                                    ->createOptionForm([
+                                        Forms\Components\TextInput::make('name')
+                                            ->label('Nombre / Razón Social')
+                                            ->required(),
+                                        Forms\Components\TextInput::make('ruc')
+                                            ->label('RUC')
+                                            ->length(11)
+                                            ->numeric(), // Siempre es bueno forzar a que sean solo números
+                                        Forms\Components\Toggle::make('active')
+                                            ->label('Activo')
+                                            ->default(true),
+                                    ])
+                                    ->createOptionUsing(function (array $data): int {
+                                        $data['tenant_id'] = Auth::user()?->tenant_id;
+
+                                        return Supplier::create($data)->getKey();
+                                    })
+                                    ->columnSpanFull(),
+                            ]),
+
+                        Forms\Components\Section::make('Detalles del Documento')
+                            ->icon('heroicon-o-document-text')
+                            ->columns(3)
+                            ->schema([
+                                Forms\Components\TextInput::make('document_number')
+                                    ->label('N° de Documento')
+                                    ->placeholder('Ej: F001-00123')
+                                    ->prefixIcon('heroicon-o-hashtag')
+                                    ->columnSpan(1),
+
+                                Forms\Components\DatePicker::make('purchase_date')
+                                    ->label('Fecha de Compra')
+                                    ->default(now())
+                                    ->required()
+                                    ->native(false)
+                                    ->displayFormat('d/m/Y')
+                                    ->maxDate(now())
+                                    ->prefixIcon('heroicon-o-calendar')
+                                    ->columnSpan(1),
+
+                                Forms\Components\Select::make('status')
+                                    ->label('Estado')
+                                    ->options(
+                                        fn(?Purchase $record): array => $record
+                                            ? [
+                                                'pending' => 'Pendiente',
+                                                'completed' => 'Completado',
+                                                'canceled' => 'Cancelado',
+                                            ]
+                                            : [
+                                                'pending' => 'Pendiente',
+                                                'completed' => 'Completado',
+                                            ]
+                                    )
+                                    ->default('completed')
+                                    ->required()
+                                    ->native(false)
+                                    ->disabled(fn(?Purchase $record): bool => filled($record))
+                                    ->dehydrated(fn(?Purchase $record): bool => blank($record))
+                                    ->helperText(
+                                        fn(?Purchase $record): string => $record
+                                            ? 'El estado se cambia mediante acciones controladas.'
+                                            : 'Completado suma stock. Pendiente queda como borrador y no mueve inventario.'
+                                    )
+                                    ->columnSpan(1),
+                            ]),
+                    ])->columnSpan(['lg' => 3]),
+
+                    Forms\Components\Group::make()->schema([
+                        Forms\Components\Section::make('Resumen Financiero')
+                            ->icon('heroicon-o-calculator')
+                            ->schema([
+                                Forms\Components\Placeholder::make('subtotal_label')
+                                    ->label('Subtotal (Op. Gravadas)')
+                                    ->content(fn(\Filament\Forms\Get $get): string => 'S/ ' . number_format((float)($get('subtotal') ?? 0), 2))
+                                    ->extraAttributes(['class' => 'flex justify-between border-b pb-2']),
+
+                                Forms\Components\Placeholder::make('igv_label')
+                                    ->label('IGV (18%)')
+                                    ->content(fn(\Filament\Forms\Get $get): string => 'S/ ' . number_format((float)($get('igv') ?? 0), 2))
+                                    ->extraAttributes(['class' => 'flex justify-between border-b pb-2']),
+
+                                Forms\Components\Placeholder::make('total_label')
+                                    ->label('TOTAL A PAGAR')
+                                    ->content(fn(\Filament\Forms\Get $get): string => 'S/ ' . number_format((float)($get('total') ?? 0), 2))
+                                    ->extraAttributes(['class' => 'flex justify-between text-2xl font-black text-primary-600 pt-2']),
+
+                                Forms\Components\Hidden::make('subtotal'),
+                                Forms\Components\Hidden::make('igv'),
+                                Forms\Components\Hidden::make('total'),
+                            ]),
+                    ])->columnSpan(['lg' => 1]),
+                ]), // Fin del Grid Principal
+
+                // =========================================================
+                // 🌟 CUERPO (Medio): Tabla de Productos a 100% de Ancho
+                // =========================================================
+                Forms\Components\Section::make('Detalle de Productos')
+                    ->description('Agrega los productos comprados')
+                    ->icon('heroicon-o-cube')
+                    ->columnSpanFull() // 🚀 TRUCO DE DISEÑO: Esto le da el 100% del ancho de la pantalla
+                    ->schema([
+                        Forms\Components\Repeater::make('items')
+                            ->relationship()
+                            ->label('')
+                            ->live()
+                            ->afterStateUpdated(fn(\Filament\Forms\Get $get, \Filament\Forms\Set $set) => self::updateTotals($get, $set))
+                            ->deleteAction(
+                                fn(Forms\Components\Actions\Action $action) => $action
+                                    ->after(fn(\Filament\Forms\Get $get, \Filament\Forms\Set $set) => self::updateTotals($get, $set))
+                                    ->requiresConfirmation()
+                                    ->modalHeading('Eliminar Producto')
+                            )
+                            // 🌟 LA MAGIA CORREGIDA: Leemos, calculamos y luego BORRAMOS la evidencia
+                            ->mutateRelationshipDataBeforeCreateUsing(function (array $data) {
+                                $isFractionable = $data['_is_fractionable'] ?? false;
+                                $presentacion = $data['measurement_unit'] ?? 'box';
+
+                                // 1. Hacemos la matemática si eligieron Unidad
+                                if ($isFractionable && $presentacion === 'unit') {
+                                    $product = self::scopeToCurrentTenant(Product::query())
+                                        ->find($data['product_id']);
+                                    if ($product && $product->units_per_box > 0) {
+                                        // Convertimos (Ej: 50 unidades / 100 = 0.5 cajas)
+                                        $data['quantity'] = $data['quantity'] / $product->units_per_box;
+                                        $data['unit_cost'] = $data['unit_cost'] * $product->units_per_box;
+                                    }
+                                }
+
+                                // 2. 🚨 LIMPIEZA DE SEGURIDAD 🚨
+                                // Borramos todos los campos temporales del formulario para que
+                                // Laravel no intente guardarlos en la tabla purchase_items y lance error SQL
+
+                                if (!empty($data['batch_number'])) {
+                                    $data['batch_number'] = strtoupper(trim($data['batch_number']));
+                                }
+
+                                unset($data['_is_fractionable']);
+                                unset($data['_is_weighable']);
+                                unset($data['unit_code']);
+                                unset($data['measurement_unit']);
+                                unset($data['_existing_batch_id']);
+                                unset($data['_existing_batch_expiration_date']);
+                                unset($data['_batch_expiration_warning_message']);
+
+                                return $data;
+                            })
+                            ->schema([
+                                Forms\Components\Select::make('product_id')
+                                    ->relationship(
+                                        'product',
+                                        'name',
+                                        modifyQueryUsing: fn(Builder $query) => self::scopeToCurrentTenant($query)
+                                            ->where('active', true)
+                                    )
+                                    ->label('Producto')
+                                    ->required()
+                                    ->searchable()
+                                    ->preload()
+                                    ->native(false)
+                                    ->live()
+                                    ->afterStateUpdated(function ($state, \Filament\Forms\Set $set, \Filament\Forms\Get $get) {
+                                        if ($state) {
+                                            $product = self::scopeToCurrentTenant(
+                                                Product::query()->with('unidadSunat')
+                                            )->find($state);
+
+                                            if (!$product) {
+                                                return;
+                                            }
+
+                                            $set('unit_cost', $product->cost ?? 0);
+                                            $set('_is_fractionable', $product->is_fractionable);
+                                            $set('_is_weighable', $product->is_weighable ?? false);
+                                            $set('unit_code', $product->unidadSunat ? $product->unidadSunat->codigo : 'NIU');
+                                            $set('measurement_unit', 'box');
+                                        }
+                                        self::updateRow($get, $set);
+                                        self::updateTotals($get, $set);
+                                    })
+                                    // 🌟 MEJORA: Ancho dinámico inteligente
+                                    ->columnSpan([
+                                        'default' => 12, // En celular ocupa el 100%
+                                        'md' => function (\Filament\Forms\Get $get) {
+                                            $features = self::tenantFeatures();
+                                            $isPharmacy = ($features['has_lots'] ?? false) || ($features['has_expiry_dates'] ?? false);
+
+                                            if ($isPharmacy) {
+                                                return $get('_is_fractionable') ? 4 : 6;
+                                            }
+                                            return 6; // Tienda general
+                                        }
+                                    ]),
+
+                                // 🌟 NUEVO CAMPO: Selector de Presentación para Compras
+                                Forms\Components\Select::make('measurement_unit')
+                                    ->label('Presentación')
+                                    ->options(['box' => 'Caja', 'unit' => 'Unidad'])
+                                    ->visible(fn(Get $get) => $get('_is_fractionable'))
+                                    ->required(fn(Get $get) => $get('_is_fractionable'))
+                                    ->default('box')
+                                    ->live()
+                                    ->afterStateUpdated(function ($state, Set $set, Get $get) {
+                                        if ($productId = $get('product_id')) {
+                                            $product = self::scopeToCurrentTenant(Product::query())->find($productId);
+                                            if ($product) {
+                                                if ($state === 'unit' && $product->units_per_box > 0) {
+                                                    // Calcula el costo de la pastilla individual
+                                                    $set('unit_cost', round($product->cost / $product->units_per_box, 4));
+                                                } else {
+                                                    $set('unit_cost', $product->cost);
+                                                }
+                                            }
+                                        }
+                                        self::updateRow($get, $set);
+                                        self::updateTotals($get, $set);
+                                    })
+                                    // 🌟 Fijo de 2 columnas
+                                    ->columnSpan(['default' => 12, 'md' => 2]),
+
+                                Forms\Components\TextInput::make('batch_number')
+                                    ->label('N° de Lote')
+                                    ->visible(function () {
+                                        $features = self::tenantFeatures();
+
+                                        return $features['has_lots'] ?? false;
+                                    })
+                                    ->required(fn() => Auth::user()->tenant->businessSector->features['has_lots'] ?? false)
+                                    ->datalist(function (Get $get): array {
+                                        $productId = $get('product_id');
+
+                                        if (!$productId) {
+                                            return [];
+                                        }
+
+                                        return ProductBatch::query()
+                                            ->where('tenant_id', Auth::user()?->tenant_id)
+                                            ->where('product_id', $productId)
+                                            ->where('is_active', true)
+                                            ->orderBy('expiration_date')
+                                            ->pluck('batch_number')
+                                            ->filter()
+                                            ->unique()
+                                            ->values()
+                                            ->toArray();
+                                    })
+                                    ->live(onBlur: true)
+                                    ->afterStateUpdated(function ($state, Set $set, Get $get) {
+                                        $batchNumber = strtoupper(trim((string) $state));
+
+                                        $set('_batch_expiration_warning_message', null);
+
+                                        if ($batchNumber === '') {
+                                            $set('_existing_batch_id', null);
+                                            $set('_existing_batch_expiration_date', null);
+
+                                            return;
+                                        }
+
+                                        $set('batch_number', $batchNumber);
+
+                                        $batch = self::findExistingBatchForCurrentTenant(
+                                            (int) $get('product_id'),
+                                            $batchNumber
+                                        );
+
+                                        if (!$batch) {
+                                            $set('_existing_batch_id', null);
+                                            $set('_existing_batch_expiration_date', null);
+
+                                            return;
+                                        }
+
+                                        $set('_existing_batch_id', $batch->id);
+
+                                        if ($batch->expiration_date) {
+                                            $expirationDate = $batch->expiration_date->format('Y-m-d');
+
+                                            $set('_existing_batch_expiration_date', $expirationDate);
+                                            $set('expiration_date', $expirationDate);
+                                        }
+
+                                        Notification::make()
+                                            ->title('Lote existente encontrado')
+                                            ->body('El stock se sumará al lote ' . $batch->batch_number . '.')
+                                            ->success()
+                                            ->send();
+                                    })
+                                    ->helperText(function (Get $get): string {
+                                        if ($get('_existing_batch_id')) {
+                                            return 'Lote existente seleccionado. La compra sumará stock a este lote.';
+                                        }
+
+                                        return 'Puedes seleccionar un lote existente o escribir uno nuevo.';
+                                    })
+                                    ->columnSpan(['default' => 12, 'md' => 3]),
+
+                                Forms\Components\DatePicker::make('expiration_date')
+                                    ->label('Vencimiento')
+                                    ->native(false)
+                                    ->displayFormat('d/m/Y')
+                                    ->live()
+                                    ->visible(function () {
+                                        $features = self::tenantFeatures();
+
+                                        return $features['has_expiry_dates'] ?? false;
+                                    })
+                                    ->required(fn() => Auth::user()->tenant->businessSector->features['has_expiry_dates'] ?? false)
+                                    ->afterStateUpdated(function ($state, Set $set, Get $get) {
+                                        $message = self::batchExpirationMismatchMessage($get, $state);
+
+                                        $set('_batch_expiration_warning_message', $message);
+                                    })
+                                    ->rules([
+                                        fn(Get $get) => function (string $attribute, $value, \Closure $fail) use ($get) {
+                                            $message = self::batchExpirationMismatchMessage($get, $value);
+
+                                            if ($message) {
+                                                $fail($message);
+                                            }
+                                        },
+                                    ])
+                                    ->helperText(function (Get $get): string {
+                                        if ($get('_existing_batch_expiration_date')) {
+                                            return 'Fecha tomada del lote existente.';
+                                        }
+
+                                        return 'Ingresa la fecha de vencimiento del lote nuevo.';
+                                    })
+                                    ->columnSpan(['default' => 12, 'md' => 3]),
+
+                                Forms\Components\Placeholder::make('batch_expiration_warning')
+                                    ->label('')
+                                    ->visible(fn(Get $get): bool => filled($get('_batch_expiration_warning_message')))
+                                    ->content(function (Get $get) {
+                                        return new HtmlString(
+                                            '<div class="rounded-xl border border-danger-300 bg-danger-50 p-3 text-sm text-danger-700 dark:bg-danger-900/20 dark:text-danger-300">
+                                                <strong>⚠ Lote con fecha diferente</strong><br>' .
+                                                e($get('_batch_expiration_warning_message')) .
+                                                '</div>'
+                                        );
+                                    })
+                                    ->columnSpan(['default' => 12, 'md' => 6]),
+
+                                Forms\Components\TextInput::make('quantity')
+                                    ->label('Cantidad')
+                                    ->numeric()
+                                    ->default(1)
+                                    ->minValue(fn(\Filament\Forms\Get $get) => $get('_is_weighable') ? 0.001 : 1)
+                                    ->step(fn(\Filament\Forms\Get $get) => $get('_is_weighable') ? 0.001 : 1)
+                                    ->suffix(function (\Filament\Forms\Get $get) {
+                                        if ($get('_is_fractionable')) {
+                                            return $get('measurement_unit') === 'unit' ? 'Und' : 'Caj';
+                                        }
+                                        if (!$get('_is_weighable')) return 'Und';
+                                        return match ($get('unit_code')) {
+                                            'KGM' => 'Kg',
+                                            'LTR' => 'Lt',
+                                            'GLL' => 'Gal',
+                                            default => $get('unit_code') ?? 'Und'
+                                        };
+                                    })
+                                    ->rules([
+                                        fn(\Filament\Forms\Get $get) => function (string $attribute, $value, \Closure $fail) use ($get) {
+                                            if (!$get('_is_weighable') && fmod((float) $value, 1) !== 0.0) {
+                                                $fail('Este producto solo admite cantidades enteras.');
+                                            }
+                                        },
+                                    ])
+                                    ->required()
+                                    ->live(onBlur: true)
+                                    ->afterStateUpdated(fn(\Filament\Forms\Get $get, \Filament\Forms\Set $set) => [self::updateRow($get, $set), self::updateTotals($get, $set)])
+                                    // 🌟 MEJORA: Mucho más espacio para respirar
+                                    ->columnSpan([
+                                        'default' => 12,
+                                        'md' => function () {
+                                            $features = self::tenantFeatures();
+                                            $isPharmacy = ($features['has_lots'] ?? false) || ($features['has_expiry_dates'] ?? false);
+                                            return $isPharmacy ? 4 : 2;
+                                        }
+                                    ]),
+
+                                Forms\Components\TextInput::make('unit_cost')
+                                    ->label('Costo Inc. IGV')
+                                    ->numeric()
+                                    ->required()
+                                    ->prefix('S/')
+                                    ->step(0.01)
+                                    ->minValue(0)
+                                    ->live(onBlur: true)
+                                    ->afterStateUpdated(fn(\Filament\Forms\Get $get, \Filament\Forms\Set $set) => [self::updateRow($get, $set), self::updateTotals($get, $set)])
+                                    // 🌟 MEJORA: Suficiente espacio para el prefijo "S/" y los decimales
+                                    ->columnSpan([
+                                        'default' => 12,
+                                        'md' => function () {
+                                            $features = self::tenantFeatures();
+                                            $isPharmacy = ($features['has_lots'] ?? false) || ($features['has_expiry_dates'] ?? false);
+                                            return $isPharmacy ? 4 : 2;
+                                        }
+                                    ]),
+
+                                Forms\Components\TextInput::make('subtotal')
+                                    ->label('Subtotal')
+                                    ->numeric()
+                                    ->readonly()
+                                    ->prefix('S/')
+                                    ->dehydrated()
+                                    // 🌟 MEJORA: Ancho equitativo con los otros dos
+                                    ->columnSpan([
+                                        'default' => 12,
+                                        'md' => function () {
+                                            $features = self::tenantFeatures();
+                                            $isPharmacy = ($features['has_lots'] ?? false) || ($features['has_expiry_dates'] ?? false);
+                                            return $isPharmacy ? 4 : 2;
+                                        }
+                                    ]),
+
+                                // CAMPOS OCULTOS
+                                Forms\Components\Hidden::make('_is_fractionable'),
+                                Forms\Components\Hidden::make('_is_weighable')->default(false),
+                                Forms\Components\Hidden::make('unit_code')->default('NIU'),
+                                Forms\Components\Hidden::make('_existing_batch_id'),
+                                Forms\Components\Hidden::make('_existing_batch_expiration_date'),
+                                Forms\Components\Hidden::make('_batch_expiration_warning_message'),
+                            ])
+                            ->columns(12)
+                            ->defaultItems(1)
+                            ->addActionLabel('+ Agregar Producto')
+                            ->reorderableWithButtons()
+                            ->collapsible()
+                            ->itemLabel(function (array $state): ?string {
+                                if (empty($state['product_id'])) {
+                                    return 'Nuevo producto';
+                                }
+
+                                return self::scopeToCurrentTenant(Product::query())
+                                    ->find($state['product_id'])?->name ?? 'Producto no disponible';
+                            }),
+                    ]),
+
+                // =========================================================
+                // 🌟 PIE (Bottom): Notas Adicionales
+                // =========================================================
+                Forms\Components\Section::make('Notas Adicionales')
+                    ->icon('heroicon-o-document-text')
+                    ->columnSpanFull()
+                    ->schema([
+                        Forms\Components\Textarea::make('notes')
+                            ->label('Observaciones')
+                            ->rows(3)
+                            ->placeholder('Agrega notas o comentarios sobre esta compra...')
+                    ])->collapsible(),
+            ]);
+    }
+
+    private static function tenantFeatures(): array
+    {
+        return app(TenantFeatureService::class)->features();
+    }
+
+    private static function scopeToCurrentTenant(Builder $query): Builder
+    {
+        $user = Auth::user();
+
+        if ($user?->isSuperAdmin()) {
+            return $query;
+        }
+
+        return $query->where('tenant_id', $user?->tenant_id);
+    }
+
+    private static function normalizeDateForComparison(mixed $value): ?string
+    {
+        if (blank($value)) {
+            return null;
+        }
+
+        try {
+            if ($value instanceof \DateTimeInterface) {
+                return \Carbon\Carbon::instance($value)->format('Y-m-d');
+            }
+
+            $value = trim((string) $value);
+
+            // Formato normal del DatePicker: 2026-11-30
+            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
+                return \Carbon\Carbon::createFromFormat('Y-m-d', $value)->format('Y-m-d');
+            }
+
+            // Formato que está llegando desde Livewire: 2026-11-30 00:00:00
+            if (preg_match('/^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}$/', $value)) {
+                return \Carbon\Carbon::createFromFormat('Y-m-d H:i:s', $value)->format('Y-m-d');
+            }
+
+            // Formato visible: 30/11/2026
+            if (preg_match('/^\d{2}\/\d{2}\/\d{4}$/', $value)) {
+                return \Carbon\Carbon::createFromFormat('d/m/Y', $value)->format('Y-m-d');
+            }
+
+            return null;
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
+    private static function batchExpirationMismatchMessage(Get $get, mixed $selectedValue = null): ?string
+    {
+        $productId = $get('product_id');
+        $batchNumber = strtoupper(trim((string) $get('batch_number')));
+        $expirationValue = $selectedValue ?? $get('expiration_date');
+
+        if (!$productId || blank($batchNumber) || blank($expirationValue)) {
+            return null;
+        }
+
+        $batch = ProductBatch::query()
+            ->where('tenant_id', Auth::user()?->tenant_id)
+            ->where('product_id', $productId)
+            ->where('batch_number', $batchNumber)
+            ->first();
+
+        if (!$batch || !$batch->expiration_date) {
+            return null;
+        }
+
+        $existing = self::normalizeDateForComparison($batch->expiration_date);
+        $selected = self::normalizeDateForComparison($expirationValue);
+
+        if (!$existing || !$selected || $existing === $selected) {
+            return null;
+        }
+
+        return 'Este lote ya existe con vencimiento ' .
+            $batch->expiration_date->format('d/m/Y') .
+            '. Verifica el número de lote o la fecha de vencimiento.';
+    }
+
+    private static function findExistingBatchForCurrentTenant(?int $productId, ?string $batchNumber): ?ProductBatch
+    {
+        if (!$productId || blank($batchNumber)) {
+            return null;
+        }
+
+        return ProductBatch::query()
+            ->where('tenant_id', Auth::user()?->tenant_id)
+            ->where('product_id', $productId)
+            ->where('batch_number', strtoupper(trim($batchNumber)))
+            ->first();
+    }
+
+    public static function updateRow(Get $get, Set $set): void
+    {
+        $quantity = (float) ($get('quantity') ?? 1);
+        $unitCost = (float) ($get('unit_cost') ?? 0); // Asumimos que este costo YA INCLUYE IGV
+
+        // El subtotal de la fila ahora representa el Monto Total de esa fila
+        $totalFila = $quantity * $unitCost;
+
+        $set('subtotal', round($totalFila, 2));
+    }
+
+    public static function updateTotals(Get $get, Set $set): void
+    {
+        $items = $get('items');
+        if ($items === null) {
+            $items = $get('../../items') ?? [];
+            $prefix = '../../';
+        } else {
+            $prefix = '';
+        }
+
+        $totalGeneral = 0; // Sumaremos el total final de todas las filas
+
+        foreach ($items as $item) {
+            $qty = (float) ($item['quantity'] ?? 1);
+            $cost = (float) ($item['unit_cost'] ?? 0); // Costo con IGV incluido
+
+            $totalGeneral += ($qty * $cost);
+        }
+
+        // 🌟 MATEMÁTICA INVERSA
+        // 1. Calculamos la base (Subtotal sin IGV) dividiendo entre 1.18
+        $igvRate = app(TenantPricingService::class)->igvRate();
+        $factor = 1 + $igvRate;
+
+        $subtotal = $factor > 0 ? ($totalGeneral / $factor) : $totalGeneral;
+
+        // 2. El IGV es la diferencia entre el Total y la Base (así evitamos descuadres de céntimos)
+        $igv = $totalGeneral - $subtotal;
+
+        // Guardamos los valores redondeados
+        $set($prefix . 'subtotal', round($subtotal, 2)); // Op. Gravadas
+        $set($prefix . 'igv', round($igv, 2));           // IGV (18%)
+        $set($prefix . 'total', round($totalGeneral, 2)); // Total a Pagar
+    }
+}
