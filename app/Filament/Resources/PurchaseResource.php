@@ -15,9 +15,14 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\HtmlString;
 use Percy\Core\Models\Supplier;
 use Percy\Core\Services\Tenants\TenantFeatureService;
 use Percy\Core\Services\Tenants\TenantPricingService;
+use Filament\Notifications\Notification;
+use Percy\Core\Models\ProductBatch;
+use Illuminate\Support\Facades\DB;
+use Percy\Core\Services\Inventory\InventoryService;
 
 class PurchaseResource extends Resource
 {
@@ -57,12 +62,28 @@ class PurchaseResource extends Resource
 
     public static function canEdit(Model $record): bool
     {
-        return Auth::user()?->canEditPurchases() ?? false;
+        if (! Auth::user()?->canEditPurchases()) {
+            return false;
+        }
+
+        if ($record instanceof Purchase && $record->status !== 'pending') {
+            return false;
+        }
+
+        return true;
     }
 
     public static function canDelete(Model $record): bool
     {
-        return Auth::user()?->canDeletePurchases() ?? false;
+        if (! Auth::user()?->canDeletePurchases()) {
+            return false;
+        }
+
+        if ($record instanceof Purchase && $record->status !== 'pending') {
+            return false;
+        }
+
+        return true;
     }
 
     public static function canDeleteAny(): bool
@@ -83,6 +104,71 @@ class PurchaseResource extends Resource
         return self::scopeToCurrentTenant($query);
     }
 
+    private static function normalizeDateForComparison(mixed $value): ?string
+    {
+        if (blank($value)) {
+            return null;
+        }
+
+        try {
+            if ($value instanceof \DateTimeInterface) {
+                return \Carbon\Carbon::instance($value)->format('Y-m-d');
+            }
+
+            $value = trim((string) $value);
+
+            // Formato normal del DatePicker: 2026-11-30
+            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
+                return \Carbon\Carbon::createFromFormat('Y-m-d', $value)->format('Y-m-d');
+            }
+
+            // Formato que está llegando desde Livewire: 2026-11-30 00:00:00
+            if (preg_match('/^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}$/', $value)) {
+                return \Carbon\Carbon::createFromFormat('Y-m-d H:i:s', $value)->format('Y-m-d');
+            }
+
+            // Formato visible: 30/11/2026
+            if (preg_match('/^\d{2}\/\d{2}\/\d{4}$/', $value)) {
+                return \Carbon\Carbon::createFromFormat('d/m/Y', $value)->format('Y-m-d');
+            }
+
+            return null;
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
+    private static function batchExpirationMismatchMessage(Get $get, mixed $selectedValue = null): ?string
+    {
+        $productId = $get('product_id');
+        $batchNumber = strtoupper(trim((string) $get('batch_number')));
+        $expirationValue = $selectedValue ?? $get('expiration_date');
+
+        if (!$productId || blank($batchNumber) || blank($expirationValue)) {
+            return null;
+        }
+
+        $batch = ProductBatch::query()
+            ->where('tenant_id', Auth::user()?->tenant_id)
+            ->where('product_id', $productId)
+            ->where('batch_number', $batchNumber)
+            ->first();
+
+        if (!$batch || !$batch->expiration_date) {
+            return null;
+        }
+
+        $existing = self::normalizeDateForComparison($batch->expiration_date);
+        $selected = self::normalizeDateForComparison($expirationValue);
+
+        if (!$existing || !$selected || $existing === $selected) {
+            return null;
+        }
+
+        return 'Este lote ya existe con vencimiento ' .
+            $batch->expiration_date->format('d/m/Y') .
+            '. Verifica el número de lote o la fecha de vencimiento.';
+    }
 
     public static function form(Form $form): Form
     {
@@ -159,14 +245,26 @@ class PurchaseResource extends Resource
 
                                 Forms\Components\Select::make('status')
                                     ->label('Estado')
-                                    ->options([
-                                        'pending' => 'Pendiente',
-                                        'completed' => 'Completado',
-                                        'canceled' => 'Cancelado',
-                                    ])
+                                    ->options(fn (?Purchase $record): array => $record
+                                        ? [
+                                            'pending' => 'Pendiente',
+                                            'completed' => 'Completado',
+                                            'canceled' => 'Cancelado',
+                                        ]
+                                        : [
+                                            'pending' => 'Pendiente',
+                                            'completed' => 'Completado',
+                                        ]
+                                    )
                                     ->default('completed')
                                     ->required()
                                     ->native(false)
+                                    ->disabled(fn (?Purchase $record): bool => filled($record))
+                                    ->dehydrated(fn (?Purchase $record): bool => blank($record))
+                                    ->helperText(fn (?Purchase $record): string => $record
+                                        ? 'El estado se cambia mediante acciones controladas.'
+                                        : 'Completado suma stock. Pendiente queda como borrador y no mueve inventario.'
+                                    )
                                     ->columnSpan(1),
                             ]),
                     ])->columnSpan(['lg' => 3]),
@@ -234,10 +332,18 @@ class PurchaseResource extends Resource
                                 // 2. 🚨 LIMPIEZA DE SEGURIDAD 🚨
                                 // Borramos todos los campos temporales del formulario para que
                                 // Laravel no intente guardarlos en la tabla purchase_items y lance error SQL
+
+                                if (!empty($data['batch_number'])) {
+                                    $data['batch_number'] = strtoupper(trim($data['batch_number']));
+                                }
+
                                 unset($data['_is_fractionable']);
                                 unset($data['_is_weighable']);
                                 unset($data['unit_code']);
                                 unset($data['measurement_unit']);
+                                unset($data['_existing_batch_id']);
+                                unset($data['_existing_batch_expiration_date']);
+                                unset($data['_batch_expiration_warning_message']);
 
                                 return $data;
                             })
@@ -318,23 +424,125 @@ class PurchaseResource extends Resource
                                     ->label('N° de Lote')
                                     ->visible(function () {
                                         $features = self::tenantFeatures();
+
                                         return $features['has_lots'] ?? false;
                                     })
-                                    ->required(fn () => \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features['has_lots'] ?? false)
-                                    // 🌟 Un poco más ancho para que se lea el lote
+                                    ->required(fn () => Auth::user()->tenant->businessSector->features['has_lots'] ?? false)
+                                    ->datalist(function (Get $get): array {
+                                        $productId = $get('product_id');
+
+                                        if (!$productId) {
+                                            return [];
+                                        }
+
+                                        return ProductBatch::query()
+                                            ->where('tenant_id', Auth::user()?->tenant_id)
+                                            ->where('product_id', $productId)
+                                            ->where('is_active', true)
+                                            ->orderBy('expiration_date')
+                                            ->pluck('batch_number')
+                                            ->filter()
+                                            ->unique()
+                                            ->values()
+                                            ->toArray();
+                                    })
+                                    ->live(onBlur: true)
+                                    ->afterStateUpdated(function ($state, Set $set, Get $get) {
+                                        $batchNumber = strtoupper(trim((string) $state));
+
+                                        $set('_batch_expiration_warning_message', null);
+
+                                        if ($batchNumber === '') {
+                                            $set('_existing_batch_id', null);
+                                            $set('_existing_batch_expiration_date', null);
+
+                                            return;
+                                        }
+
+                                        $set('batch_number', $batchNumber);
+
+                                        $batch = self::findExistingBatchForCurrentTenant(
+                                            (int) $get('product_id'),
+                                            $batchNumber
+                                        );
+
+                                        if (!$batch) {
+                                            $set('_existing_batch_id', null);
+                                            $set('_existing_batch_expiration_date', null);
+
+                                            return;
+                                        }
+
+                                        $set('_existing_batch_id', $batch->id);
+
+                                        if ($batch->expiration_date) {
+                                            $expirationDate = $batch->expiration_date->format('Y-m-d');
+
+                                            $set('_existing_batch_expiration_date', $expirationDate);
+                                            $set('expiration_date', $expirationDate);
+                                        }
+
+                                        Notification::make()
+                                            ->title('Lote existente encontrado')
+                                            ->body('El stock se sumará al lote ' . $batch->batch_number . '.')
+                                            ->success()
+                                            ->send();
+                                    })
+                                    ->helperText(function (Get $get): string {
+                                        if ($get('_existing_batch_id')) {
+                                            return 'Lote existente seleccionado. La compra sumará stock a este lote.';
+                                        }
+
+                                        return 'Puedes seleccionar un lote existente o escribir uno nuevo.';
+                                    })
                                     ->columnSpan(['default' => 12, 'md' => 3]),
 
                                 Forms\Components\DatePicker::make('expiration_date')
                                     ->label('Vencimiento')
                                     ->native(false)
                                     ->displayFormat('d/m/Y')
+                                    ->live()
                                     ->visible(function () {
                                         $features = self::tenantFeatures();
+
                                         return $features['has_expiry_dates'] ?? false;
                                     })
-                                    ->required(fn () => \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features['has_expiry_dates'] ?? false)
-                                    // 🌟 Un poco más ancho para la fecha
+                                    ->required(fn () => Auth::user()->tenant->businessSector->features['has_expiry_dates'] ?? false)
+                                    ->afterStateUpdated(function ($state, Set $set, Get $get) {
+                                        $message = self::batchExpirationMismatchMessage($get, $state);
+
+                                        $set('_batch_expiration_warning_message', $message);
+                                    })
+                                    ->rules([
+                                        fn (Get $get) => function (string $attribute, $value, \Closure $fail) use ($get) {
+                                            $message = self::batchExpirationMismatchMessage($get, $value);
+
+                                            if ($message) {
+                                                $fail($message);
+                                            }
+                                        },
+                                    ])
+                                    ->helperText(function (Get $get): string {
+                                        if ($get('_existing_batch_expiration_date')) {
+                                            return 'Fecha tomada del lote existente.';
+                                        }
+
+                                        return 'Ingresa la fecha de vencimiento del lote nuevo.';
+                                    })
                                     ->columnSpan(['default' => 12, 'md' => 3]),
+
+                                Forms\Components\Placeholder::make('batch_expiration_warning')
+                                    ->label('')
+                                    ->visible(fn (Get $get): bool => filled($get('_batch_expiration_warning_message')))
+                                    ->content(function (Get $get) {
+                                        return new HtmlString(
+                                            '<div class="rounded-xl border border-danger-300 bg-danger-50 p-3 text-sm text-danger-700 dark:bg-danger-900/20 dark:text-danger-300">
+                                                <strong>⚠ Lote con fecha diferente</strong><br>' .
+                                                e($get('_batch_expiration_warning_message')) .
+                                            '</div>'
+                                        );
+                                    })
+                                    ->columnSpan(['default' => 12, 'md' => 6]),
 
                                 Forms\Components\TextInput::make('quantity')
                                     ->label('Cantidad')
@@ -351,7 +559,7 @@ class PurchaseResource extends Resource
                                     })
                                     ->rules([
                                         fn (\Filament\Forms\Get $get) => function (string $attribute, $value, \Closure $fail) use ($get) {
-                                            if (!$get('_is_weighable') && fmod((float)$value, 1) !== 0.0) {
+                                            if (!$get('_is_weighable') && fmod((float) $value, 1) !== 0.0) {
                                                 $fail('Este producto solo admite cantidades enteras.');
                                             }
                                         },
@@ -408,6 +616,9 @@ class PurchaseResource extends Resource
                                 Forms\Components\Hidden::make('_is_fractionable'),
                                 Forms\Components\Hidden::make('_is_weighable')->default(false),
                                 Forms\Components\Hidden::make('unit_code')->default('NIU'),
+                                Forms\Components\Hidden::make('_existing_batch_id'),
+                                Forms\Components\Hidden::make('_existing_batch_expiration_date'),
+                                Forms\Components\Hidden::make('_batch_expiration_warning_message'),
                             ])
                             ->columns(12)
                             ->defaultItems(1)
@@ -437,6 +648,19 @@ class PurchaseResource extends Resource
                             ->placeholder('Agrega notas o comentarios sobre esta compra...')
                     ])->collapsible(),
             ]);
+    }
+
+    private static function findExistingBatchForCurrentTenant(?int $productId, ?string $batchNumber): ?ProductBatch
+    {
+        if (!$productId || blank($batchNumber)) {
+            return null;
+        }
+
+        return ProductBatch::query()
+            ->where('tenant_id', Auth::user()?->tenant_id)
+            ->where('product_id', $productId)
+            ->where('batch_number', strtoupper(trim($batchNumber)))
+            ->first();
     }
 
     public static function table(Table $table): Table
@@ -570,13 +794,94 @@ class PurchaseResource extends Resource
                     Tables\Actions\EditAction::make()
                         ->label('Editar')
                         ->icon('heroicon-o-pencil')
-                        ->color('warning'),
+                        ->color('warning')
+                        ->visible(fn (Purchase $record): bool =>
+                            $record->status === 'pending' &&
+                            (Auth::user()?->canEditPurchases() ?? false)
+                        ),
 
-                    //Tables\Actions\DeleteAction::make()
-                ])->label('Acciones')
-                  ->icon('heroicon-o-ellipsis-vertical')
-                  ->button()
-                  ->color('gray'),
+                    Tables\Actions\Action::make('confirmPendingPurchase')
+                        ->label('Confirmar compra')
+                        ->icon('heroicon-o-check-circle')
+                        ->color('success')
+                        ->visible(fn (Purchase $record): bool =>
+                            $record->status === 'pending' &&
+                            (Auth::user()?->canEditPurchases() ?? false)
+                        )
+                        ->requiresConfirmation()
+                        ->modalHeading('Confirmar compra pendiente')
+                        ->modalDescription('Al confirmar esta compra, los productos ingresarán al inventario y se registrará el movimiento en Kardex. Luego ya no podrá editarse libremente.')
+                        ->modalSubmitActionLabel('Sí, confirmar')
+                        ->modalCancelActionLabel('Cancelar')
+                        ->action(function (Purchase $record): void {
+                            DB::transaction(function () use ($record) {
+                                $record->refresh();
+
+                                if ($record->status !== 'pending') {
+                                    return;
+                                }
+
+                                $record->loadMissing('items.product');
+
+                                foreach ($record->items as $item) {
+                                    app(InventoryService::class)->addStockFromPurchaseItem($item);
+                                }
+
+                                $record->update([
+                                    'status' => 'completed',
+                                ]);
+                            });
+
+                            Notification::make()
+                                ->success()
+                                ->title('Compra confirmada')
+                                ->body('La compra fue confirmada y el stock ingresó correctamente al inventario.')
+                                ->send();
+                        }),
+
+                    Tables\Actions\Action::make('cancelPendingPurchase')
+                        ->label('Cancelar compra')
+                        ->icon('heroicon-o-x-circle')
+                        ->color('danger')
+                        ->visible(fn (Purchase $record): bool =>
+                            $record->status === 'pending' &&
+                            (Auth::user()?->canEditPurchases() ?? false)
+                        )
+                        ->requiresConfirmation()
+                        ->modalHeading('Cancelar compra pendiente')
+                        ->modalDescription('Esta compra aún no afecta inventario. Se marcará como cancelada y quedará como historial.')
+                        ->modalSubmitActionLabel('Sí, cancelar compra')
+                        ->modalCancelActionLabel('Volver')
+                        ->action(function (Purchase $record): void {
+                            $record->update([
+                                'status' => 'canceled',
+                            ]);
+
+                            Notification::make()
+                                ->success()
+                                ->title('Compra cancelada')
+                                ->body('La compra pendiente fue cancelada correctamente.')
+                                ->send();
+                        }),
+
+                    Tables\Actions\DeleteAction::make()
+                        ->label('Eliminar borrador')
+                        ->icon('heroicon-o-trash')
+                        ->color('danger')
+                        ->visible(fn (Purchase $record): bool =>
+                            $record->status === 'pending' &&
+                            (Auth::user()?->canDeletePurchases() ?? false)
+                        )
+                        ->requiresConfirmation()
+                        ->modalHeading('Eliminar compra pendiente')
+                        ->modalDescription('Esta compra aún no afecta inventario. Puedes eliminarla si fue registrada por error.')
+                        ->modalSubmitActionLabel('Sí, eliminar')
+                        ->modalCancelActionLabel('Cancelar'),
+                ])
+                    ->label('Acciones')
+                    ->icon('heroicon-o-ellipsis-vertical')
+                    ->button()
+                    ->color('gray'),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
