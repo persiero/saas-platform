@@ -23,6 +23,7 @@ use Filament\Notifications\Notification;
 use Percy\Core\Models\ProductBatch;
 use Illuminate\Support\Facades\DB;
 use Percy\Core\Services\Inventory\InventoryService;
+use Illuminate\Validation\ValidationException;
 
 class PurchaseResource extends Resource
 {
@@ -862,6 +863,49 @@ class PurchaseResource extends Resource
                                 ->title('Compra cancelada')
                                 ->body('La compra pendiente fue cancelada correctamente.')
                                 ->send();
+                        }),
+
+                    Tables\Actions\Action::make('voidCompletedPurchase')
+                        ->label('Anular compra')
+                        ->icon('heroicon-o-exclamation-triangle')
+                        ->color('danger')
+                        ->visible(fn (Purchase $record): bool =>
+                            $record->status === 'completed' &&
+                            (Auth::user()?->canVoidCompletedPurchases() ?? false)
+                        )
+                        ->requiresConfirmation()
+                        ->modalHeading('Anular compra completada')
+                        ->modalDescription('Esta acción descontará del inventario los productos ingresados por esta compra y registrará un movimiento de salida en Kardex. No podrás editar la compra después de anularla.')
+                        ->modalSubmitActionLabel('Sí, anular compra')
+                        ->modalCancelActionLabel('Volver')
+                        ->form([
+                            Forms\Components\Textarea::make('void_reason')
+                                ->label('Motivo de anulación')
+                                ->placeholder('Ej: Documento registrado por error, compra duplicada, devolución al proveedor, etc.')
+                                ->required()
+                                ->maxLength(500)
+                                ->rows(3),
+                        ])
+                        ->action(function (Purchase $record, array $data): void {
+                            try {
+                                app(InventoryService::class)->voidCompletedPurchase(
+                                    $record,
+                                    $data['void_reason'] ?? null
+                                );
+
+                                Notification::make()
+                                    ->success()
+                                    ->title('Compra anulada')
+                                    ->body('La compra fue anulada y el stock fue descontado correctamente.')
+                                    ->send();
+                            } catch (ValidationException $e) {
+                                Notification::make()
+                                    ->danger()
+                                    ->title('No se pudo anular la compra')
+                                    ->body(collect($e->errors())->flatten()->first() ?? 'Verifica el stock antes de anular.')
+                                    ->persistent()
+                                    ->send();
+                            }
                         }),
 
                     Tables\Actions\DeleteAction::make()
