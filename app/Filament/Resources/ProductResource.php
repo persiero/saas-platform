@@ -15,6 +15,7 @@ use Illuminate\Database\Eloquent\Model;
 use Percy\Core\Services\Tenants\TenantFeatureService;
 use App\Filament\Resources\ProductResource\Tables\ProductTable;
 use App\Filament\Resources\ProductResource\Schemas\ProductForm;
+use Percy\Core\Services\Tenants\TenantPlanService;
 
 class ProductResource extends Resource
 {
@@ -25,6 +26,52 @@ class ProductResource extends Resource
     protected static ?string $modelLabel = 'Producto';
     protected static ?string $pluralModelLabel = 'Productos';
     protected static ?int $navigationSort = 3;
+
+    public static function tenantHasAvailableProductSlots(): bool
+    {
+        $user = Auth::user();
+
+        if (! $user) {
+            return false;
+        }
+
+        if ($user->isSuperAdmin()) {
+            return true;
+        }
+
+        if (! $user->tenant) {
+            return false;
+        }
+
+        $limit = app(TenantPlanService::class)->limit('max_products', $user->tenant);
+
+        if ($limit === null) {
+            return true;
+        }
+
+        $products = Product::query()
+            ->where('tenant_id', $user->tenant_id)
+            ->count();
+
+        return $products < (int) $limit;
+    }
+
+    public static function productLimitMessage(): string
+    {
+        $user = Auth::user();
+
+        if (! $user || ! $user->tenant) {
+            return 'No se pudo validar el límite de productos del plan.';
+        }
+
+        $limit = app(TenantPlanService::class)->limit('max_products', $user->tenant);
+
+        $products = Product::query()
+            ->where('tenant_id', $user->tenant_id)
+            ->count();
+
+        return "Tu plan actual permite hasta {$limit} productos o servicios. Actualmente tienes {$products}.";
+    }
 
     // Filtro global para asegurar que solo se vean productos del tenant actual
     public static function getEloquentQuery(): Builder
@@ -51,7 +98,8 @@ class ProductResource extends Resource
 
     public static function canCreate(): bool
     {
-        return Auth::user()?->canCreateProducts() ?? false;
+        return (Auth::user()?->canCreateProducts() ?? false)
+            && self::tenantHasAvailableProductSlots();
     }
 
     public static function canEdit(Model $record): bool
