@@ -7,11 +7,11 @@ use App\Filament\Resources\TenantResource\RelationManagers;
 use Percy\Core\Models\Tenant;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
-use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
 use App\Filament\Resources\TenantResource\Schemas\TenantForm;
+use App\Filament\Resources\TenantResource\Tables\TenantTable;
 
 class TenantResource extends Resource
 {
@@ -55,62 +55,7 @@ class TenantResource extends Resource
 
     public static function table(Table $table): Table
     {
-        return $table
-            ->columns([
-                // 🌟 AQUÍ COLOCAMOS LA MINIATURA DEL LOGO
-                Tables\Columns\ImageColumn::make('logo')
-                    ->label('Logo')
-                    ->disk('r2_public')
-                    ->circular() // 🌟 Lo hacemos circular porque los logos de empresa se ven mejor así
-                    ->size(40)
-                    ->toggleable(),
-
-                Tables\Columns\TextColumn::make('name')
-                    ->label('Negocio')
-                    ->searchable()
-                    ->weight('bold')
-                    ->icon('heroicon-o-building-storefront')
-                    ->description(fn (Tenant $record): ?string => $record->business_name), // Razón social debajo
-
-                // Muestra el nombre del sector (Ej: Restaurante, Farmacia)
-                Tables\Columns\TextColumn::make('businessSector.name')
-                    ->label('Giro')
-                    ->badge() // Lo muestra como una etiqueta de color
-                    ->color('info'),
-
-                Tables\Columns\TextColumn::make('ruc')
-                    ->label('RUC')
-                    ->searchable()
-                    ->copyable(), // UX: Copia rápida para consultar en SUNAT
-
-                // Indicador visual de si ya subieron certificado
-                Tables\Columns\IconColumn::make('sunat_certificate')
-                    ->label('Cert. SUNAT')
-                    ->boolean()
-                    ->state(fn (Tenant $record): bool => !empty($record->sunat_certificate))
-                    ->trueIcon('heroicon-o-check-badge')
-                    ->falseIcon('heroicon-o-x-circle'),
-
-                Tables\Columns\ToggleColumn::make('is_active')
-                    ->label('Acceso')
-                    ->sortable(),
-            ])
-            ->filters([
-                Tables\Filters\TernaryFilter::make('is_active')
-                    ->label('Estado de Acceso')
-                    ->trueLabel('Activos')
-                    ->falseLabel('Suspendidos'),
-            ])
-            ->actions([
-                Tables\Actions\EditAction::make()
-                    ->label('Configurar')
-                    ->icon('heroicon-o-cog-6-tooth'),
-            ])
-            ->emptyStateHeading('Aún no tienes clientes')
-            ->emptyStateDescription('Registra tu primer cliente SaaS para empezar.')
-            ->emptyStateIcon('heroicon-o-server-stack')
-
-            ->bulkActions([]);
+        return TenantTable::configure($table);
     }
 
     public static function getRelations(): array
