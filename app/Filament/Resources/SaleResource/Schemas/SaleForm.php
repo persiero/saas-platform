@@ -14,6 +14,7 @@ use Percy\Core\Models\Product;
 use Percy\Core\Services\Tenants\TenantFeatureService;
 use Percy\Core\Services\Tenants\TenantPricingService;
 use Percy\Core\Services\Inventory\ProductBatchService;
+use Percy\Core\Services\Tenants\TenantPlanService;
 use Percy\Core\Models\AfectacionIgv;
 
 class SaleForm
@@ -40,11 +41,7 @@ class SaleForm
                     Forms\Components\Section::make('Información de Venta')->schema([
                         Forms\Components\Select::make('document_type')
                             ->label('Tipo de Comprobante')
-                            ->options([
-                                '03' => 'Boleta Electrónica',
-                                '01' => 'Factura Electrónica',
-                                '00' => 'Nota de Venta (Interno)',
-                            ])
+                            ->options(fn(?Sale $record): array => self::documentTypeOptions($record))
                             ->required()
                             ->default('00')
                             ->live()
@@ -239,7 +236,11 @@ class SaleForm
                             ->default(now())
                             ->minDate(now()->subDays(7))
                             ->maxDate(now())
-                            ->helperText('SUNAT solo acepta documentos de los últimos 7 días')
+                            ->helperText(
+                                fn(): string => self::canUseElectronicDocuments()
+                                    ? 'SUNAT solo acepta documentos de los últimos 7 días.'
+                                    : 'Fecha de registro interno de la venta.'
+                            )
                             ->required()
                             ->disabled(fn(?Sale $record) => $record && $record->status !== 'pending_payment')
                             ->columnSpan(['default' => 1, 'md' => 1]),
@@ -253,8 +254,8 @@ class SaleForm
                             ->label('N° de Receta Médica / CMP')
                             ->placeholder('Ej: CMP 12345')
                             ->maxLength(255)
-                            ->visible(fn (Forms\Get $get) => self::requiresPrescriptionForSelectedItems($get))
-                            ->required(fn (Forms\Get $get) => self::requiresPrescriptionForSelectedItems($get))
+                            ->visible(fn(Forms\Get $get) => self::requiresPrescriptionForSelectedItems($get))
+                            ->required(fn(Forms\Get $get) => self::requiresPrescriptionForSelectedItems($get))
                             ->columnSpan(['default' => 1, 'md' => 1]),
 
                         Forms\Components\Select::make('status')
@@ -429,13 +430,13 @@ class SaleForm
                                     ->label('Lote')
                                     ->options(function (Get $get) {
                                         return app(ProductBatchService::class)
-                                                    ->availableOptionsForProduct(
-                                                        $get('product_id'),
-                                                        Auth::user()->tenant_id
-                                                    );
+                                            ->availableOptionsForProduct(
+                                                $get('product_id'),
+                                                Auth::user()->tenant_id
+                                            );
                                     })
-                                    ->visible(fn () => app(TenantFeatureService::class)->has('has_lots'))
-                                    ->required(fn () => app(TenantFeatureService::class)->has('has_lots'))
+                                    ->visible(fn() => app(TenantFeatureService::class)->has('has_lots'))
+                                    ->required(fn() => app(TenantFeatureService::class)->has('has_lots'))
                                     ->searchable()
                                     ->preload()
                                     ->columnSpan(['default' => 1, 'md' => 2]),
@@ -651,6 +652,48 @@ class SaleForm
             ->columns(['default' => 1, 'lg' => 4]);
     }
 
+    private static function tenantPlanHas(string $feature): bool
+    {
+        /** @var \Percy\Core\Models\User|null $user */
+        $user = Auth::user();
+
+        if (! $user || ! $user->tenant) {
+            return false;
+        }
+
+        return app(TenantPlanService::class)->has($feature, $user->tenant);
+    }
+
+    private static function canUseElectronicDocuments(): bool
+    {
+        return self::tenantPlanHas('has_invoices') || self::tenantPlanHas('has_sunat');
+    }
+
+    private static function documentTypeOptions(?Sale $record = null): array
+    {
+        $options = [
+            '00' => 'Nota de Venta (Interno)',
+        ];
+
+        /*
+        * Si el plan tiene facturación electrónica, mostramos boleta y factura.
+        * Si se está editando una venta antigua que ya era boleta/factura,
+        * también las mostramos para no romper registros existentes.
+        */
+        $recordUsesElectronicDocument = $record
+            && in_array($record->document_type, ['01', '03'], true);
+
+        if (self::canUseElectronicDocuments() || $recordUsesElectronicDocument) {
+            return [
+                '03' => 'Boleta Electrónica',
+                '01' => 'Factura Electrónica',
+                '00' => 'Nota de Venta (Interno)',
+            ];
+        }
+
+        return $options;
+    }
+
     private static function requiresPrescriptionForSelectedItems(Get $get): bool
     {
         if (!app(TenantFeatureService::class)->hasAny(['has_recipes', 'has_lots'])) {
@@ -673,5 +716,4 @@ class SaleForm
 
         return false;
     }
-
 }

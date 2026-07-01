@@ -12,6 +12,8 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Filament\Tables\Filters\TrashedFilter;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
+use Illuminate\Support\Facades\Auth;
+use Percy\Core\Services\Tenants\TenantPlanService;
 
 class SupplierResource extends Resource
 {
@@ -23,17 +25,32 @@ class SupplierResource extends Resource
     protected static ?string $pluralModelLabel = 'Proveedores';
     protected static ?int $navigationSort = 2;
 
+    private static function userCanAccessSuppliers(): bool
+    {
+        /** @var \Percy\Core\Models\User|null $user */
+        $user = Auth::user();
+
+        if (! $user) {
+            return false;
+        }
+
+        if ($user->tenant_id === null) {
+            return false;
+        }
+
+        if (! $user->isAdmin()) {
+            return false;
+        }
+
+        return app(TenantPlanService::class)->has('has_purchases', $user->tenant);
+    }
+
     /**
      * Oculta el módulo de Reportes para el Súper Admin y para los Cajeros/Vendedores
      */
     public static function canViewAny(): bool
     {
-        /** @var \Percy\Core\Models\User $user */
-        $user = \Illuminate\Support\Facades\Auth::user();
-
-        // 1. tenant_id !== null (Bloquea al Súper Admin para que no exploten las gráficas)
-        // 2. isAdmin() (Bloquea a los empleados normales para proteger las finanzas)
-        return $user->tenant_id !== null && $user->isAdmin();
+        return self::userCanAccessSuppliers();
     }
 
     public static function getEloquentQuery(): Builder
@@ -48,30 +65,22 @@ class SupplierResource extends Resource
 
     public static function canCreate(): bool
     {
-        /** @var \Percy\Core\Models\User $user */
-        $user = \Illuminate\Support\Facades\Auth::user();
-        return $user->isAdmin();
+        return self::userCanAccessSuppliers();
     }
 
     public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
     {
-        /** @var \Percy\Core\Models\User $user */
-        $user = \Illuminate\Support\Facades\Auth::user();
-        return $user->isAdmin();
+        return self::userCanAccessSuppliers();
     }
 
     public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
     {
-        /** @var \Percy\Core\Models\User $user */
-        $user = \Illuminate\Support\Facades\Auth::user();
-        return $user->isAdmin();
+        return self::userCanAccessSuppliers();
     }
 
     public static function canRestore(\Illuminate\Database\Eloquent\Model $record): bool
     {
-        /** @var \Percy\Core\Models\User $user */
-        $user = \Illuminate\Support\Facades\Auth::user();
-        return $user->isAdmin(); // Solo el Admin puede restaurar
+        return self::userCanAccessSuppliers();
     }
 
     public static function canForceDelete(\Illuminate\Database\Eloquent\Model $record): bool
@@ -82,16 +91,12 @@ class SupplierResource extends Resource
     // 5. Restricción general para Bulk Actions (Aplica para eliminar/restaurar masivamente)
     public static function canDeleteAny(): bool
     {
-        /** @var \Percy\Core\Models\User $user */
-        $user = \Illuminate\Support\Facades\Auth::user();
-        return $user->isAdmin();
+        return self::userCanAccessSuppliers();
     }
 
     public static function canRestoreAny(): bool
     {
-        /** @var \Percy\Core\Models\User $user */
-        $user = \Illuminate\Support\Facades\Auth::user();
-        return $user->isAdmin();
+        return self::userCanAccessSuppliers();
     }
 
     public static function form(Form $form): Form
@@ -147,20 +152,20 @@ class SupplierResource extends Resource
                                 ->placeholder('Av. Principal 123, Distrito, Provincia, Departamento')
                                 ->columnSpanFull(),
                         ])->columns(2),
-                    ])->columnSpan(['lg' => 2]),
+                ])->columnSpan(['lg' => 2]),
 
-                    // COLUMNA DERECHA (Barra Lateral)
-                    Forms\Components\Group::make()->schema([
-                        Forms\Components\Section::make('Estado')
-                            ->schema([
-                                Forms\Components\Toggle::make('active')
-                                    ->label('Proveedor Activo')
-                                    ->default(true)
-                                    ->helperText('Desactiva si ya no trabajas con este proveedor')
-                            ]),
-                    ])->columnSpan(['lg' => 1]),
-                ])
-                ->columns(3);
+                // COLUMNA DERECHA (Barra Lateral)
+                Forms\Components\Group::make()->schema([
+                    Forms\Components\Section::make('Estado')
+                        ->schema([
+                            Forms\Components\Toggle::make('active')
+                                ->label('Proveedor Activo')
+                                ->default(true)
+                                ->helperText('Desactiva si ya no trabajas con este proveedor')
+                        ]),
+                ])->columnSpan(['lg' => 1]),
+            ])
+            ->columns(3);
     }
 
     public static function table(Table $table): Table
@@ -173,7 +178,7 @@ class SupplierResource extends Resource
                     ->sortable()
                     ->weight('bold')
                     ->icon('heroicon-o-building-office-2')
-                    ->description(fn (Supplier $record): ?string => $record->ruc ? "RUC: {$record->ruc}" : null),
+                    ->description(fn(Supplier $record): ?string => $record->ruc ? "RUC: {$record->ruc}" : null),
 
                 Tables\Columns\TextColumn::make('phone')
                     ->label('Teléfono')
@@ -200,7 +205,7 @@ class SupplierResource extends Resource
                     ->limit(40)
                     ->searchable()
                     ->placeholder('Sin dirección')
-                    ->tooltip(fn (Supplier $record): ?string => $record->address)
+                    ->tooltip(fn(Supplier $record): ?string => $record->address)
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\ToggleColumn::make('active')
@@ -253,9 +258,9 @@ class SupplierResource extends Resource
                         ->modalDescription('¿Deseas rescatar este proveedor de la papelera? Volverá a estar visible y activo en el sistema.'),
 
                 ])->label('Acciones')
-                  ->icon('heroicon-o-ellipsis-vertical')
-                  ->button()
-                  ->color('gray'),
+                    ->icon('heroicon-o-ellipsis-vertical')
+                    ->button()
+                    ->color('gray'),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
