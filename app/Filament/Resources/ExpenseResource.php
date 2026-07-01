@@ -12,6 +12,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
+use Percy\Core\Services\Tenants\TenantPlanService;
 
 class ExpenseResource extends Resource
 {
@@ -22,6 +23,22 @@ class ExpenseResource extends Resource
     protected static ?string $modelLabel = 'Gasto';
     protected static ?string $pluralModelLabel = 'Gastos';
     protected static ?int $navigationSort = 2;
+
+    private static function userCanManageExpenses(): bool
+    {
+        /** @var \Percy\Core\Models\User|null $user */
+        $user = Auth::user();
+
+        if (! $user || ! $user->tenant) {
+            return false;
+        }
+
+        if (! $user->canManageCashRegister()) {
+            return false;
+        }
+
+        return app(TenantPlanService::class)->has('has_expenses', $user->tenant);
+    }
 
     public static function getEloquentQuery(): Builder
     {
@@ -42,13 +59,17 @@ class ExpenseResource extends Resource
      */
     public static function canViewAny(): bool
     {
-        return Auth::user()?->canManageCashRegister() ?? false;
+        return self::userCanManageExpenses();
     }
 
     // 🔒 1. Solo el Admin puede editar un gasto registrado
     public static function canEdit(Model $record): bool
     {
         $user = Auth::user();
+
+        if (! self::userCanManageExpenses()) {
+            return false;
+        }
 
         if (! $user?->isAdmin()) {
             return false;
@@ -68,6 +89,10 @@ class ExpenseResource extends Resource
     {
         $user = Auth::user();
 
+        if (! self::userCanManageExpenses()) {
+            return false;
+        }
+
         if (! $user?->isAdmin()) {
             return false;
         }
@@ -84,12 +109,13 @@ class ExpenseResource extends Resource
     // 🔒 3. Solo el Admin puede usar el botón rojo de borrado masivo
     public static function canDeleteAny(): bool
     {
-        return Auth::user()?->isAdmin() ?? false;
+        return self::userCanManageExpenses()
+            && (Auth::user()?->isAdmin() ?? false);
     }
 
     public static function canCreate(): bool
     {
-        return Auth::user()?->canManageCashRegister() ?? false;
+        return self::userCanManageExpenses();
     }
 
     public static function form(Form $form): Form
@@ -158,7 +184,7 @@ class ExpenseResource extends Resource
                     ->date('d/m/Y')
                     ->sortable()
                     ->icon('heroicon-o-calendar')
-                    ->description(fn (Expense $record): string => $record->expense_date->diffForHumans()),
+                    ->description(fn(Expense $record): string => $record->expense_date->diffForHumans()),
 
                 Tables\Columns\TextColumn::make('user.name')
                     ->label('Registrado por')
@@ -169,16 +195,16 @@ class ExpenseResource extends Resource
 
                 Tables\Columns\TextColumn::make('cashRegister.id')
                     ->label('Caja')
-                    ->formatStateUsing(fn ($state) => $state ? '#' . $state : 'Sin caja')
+                    ->formatStateUsing(fn($state) => $state ? '#' . $state : 'Sin caja')
                     ->badge()
-                    ->color(fn ($state) => $state ? 'success' : 'gray')
+                    ->color(fn($state) => $state ? 'success' : 'gray')
                     ->toggleable(),
 
                 Tables\Columns\TextColumn::make('category')
                     ->label('Categoría')
                     ->searchable()
                     ->badge()
-                    ->color(fn (string $state): string => match ($state) {
+                    ->color(fn(string $state): string => match ($state) {
                         'Servicios' => 'info',
                         'Suministros' => 'warning',
                         'Alquiler' => 'danger',
@@ -189,7 +215,7 @@ class ExpenseResource extends Resource
                         'Otros' => 'gray',
                         default => 'gray',
                     })
-                    ->icon(fn (string $state): string => match ($state) {
+                    ->icon(fn(string $state): string => match ($state) {
                         'Servicios' => 'heroicon-o-briefcase',
                         'Suministros' => 'heroicon-o-cube',
                         'Alquiler' => 'heroicon-o-building-office',
@@ -213,7 +239,7 @@ class ExpenseResource extends Resource
                     ->label('Descripción')
                     ->limit(40)
                     ->searchable()
-                    ->tooltip(fn (Expense $record): string => $record->description ?? 'Sin descripción')
+                    ->tooltip(fn(Expense $record): string => $record->description ?? 'Sin descripción')
                     ->wrap(),
 
                 Tables\Columns\TextColumn::make('created_at')
@@ -254,8 +280,8 @@ class ExpenseResource extends Resource
                     ->columns(2)
                     ->query(function (Builder $query, array $data): Builder {
                         return $query
-                            ->when($data['from'], fn (Builder $query, $date) => $query->whereDate('expense_date', '>=', $date))
-                            ->when($data['until'], fn (Builder $query, $date) => $query->whereDate('expense_date', '<=', $date));
+                            ->when($data['from'], fn(Builder $query, $date) => $query->whereDate('expense_date', '>=', $date))
+                            ->when($data['until'], fn(Builder $query, $date) => $query->whereDate('expense_date', '<=', $date));
                     })
                     ->indicateUsing(function (array $data): array {
                         $indicators = [];
@@ -288,10 +314,10 @@ class ExpenseResource extends Resource
                         ->modalSubmitActionLabel('Sí, eliminar')
                         ->modalCancelActionLabel('Cancelar'),
                 ])
-                ->label('Acciones')
-                ->icon('heroicon-o-ellipsis-vertical')
-                ->button()
-                ->color('gray'),
+                    ->label('Acciones')
+                    ->icon('heroicon-o-ellipsis-vertical')
+                    ->button()
+                    ->color('gray'),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([

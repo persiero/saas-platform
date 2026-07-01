@@ -48,8 +48,8 @@ class ProductTableActions
                 ->label('Ajuste de Inventario')
                 ->icon('heroicon-o-scale')
                 ->color('warning')
-                ->visible(fn (): bool => Auth::user()?->canManageStock() ?? false)
-                ->form(fn (Product $record): array => self::manualAdjustmentForm($record))
+                ->visible(fn(): bool => Auth::user()?->canManageStock() ?? false)
+                ->form(fn(Product $record): array => self::manualAdjustmentForm($record))
                 ->action(function (array $data, Product $record): void {
                     try {
                         app(InventoryService::class)->manualAdjustStock(
@@ -63,7 +63,7 @@ class ProductTableActions
 
                         Notification::make()
                             ->title('Inventario ajustado')
-                            ->body('El ajuste fue registrado correctamente en el Kardex.')
+                            ->body('El ajuste fue registrado correctamente en los movimientos de inventario.')
                             ->success()
                             ->send();
                     } catch (ValidationException $e) {
@@ -76,14 +76,14 @@ class ProductTableActions
                     }
                 })
                 ->requiresConfirmation()
-                ->modalHeading(fn (Product $record): string => 'Ajuste de Inventario: ' . $record->name)
+                ->modalHeading(fn(Product $record): string => 'Ajuste de Inventario: ' . $record->name)
                 ->modalDescription(function (Product $record): HtmlString {
                     return new HtmlString(
                         'Estás a punto de modificar el stock de <strong>' .
-                        e($record->name) .
-                        '</strong>. <br>Stock global actual: <strong>' .
-                        self::formatStock($record->current_stock, $record) .
-                        '</strong>'
+                            e($record->name) .
+                            '</strong>. <br>Stock global actual: <strong>' .
+                            self::formatStock($record->current_stock, $record) .
+                            '</strong>'
                     );
                 })
                 ->modalWidth('lg'),
@@ -132,8 +132,8 @@ class ProductTableActions
                         })
                         ->toArray();
                 })
-                ->visible(fn (): bool => $usesBatches)
-                ->required(fn (): bool => $usesBatches)
+                ->visible(fn(): bool => $usesBatches)
+                ->required(fn(): bool => $usesBatches)
                 ->searchable()
                 ->preload(),
 
@@ -143,8 +143,8 @@ class ProductTableActions
                     'box' => 'Caja Entera',
                     'unit' => 'Unidad Suelta (Pastilla/Blíster)',
                 ])
-                ->visible(fn (): bool => $hasLots && $record->is_fractionable && $record->units_per_box > 0)
-                ->required(fn (): bool => $hasLots && $record->is_fractionable && $record->units_per_box > 0)
+                ->visible(fn(): bool => $hasLots && $record->is_fractionable && $record->units_per_box > 0)
+                ->required(fn(): bool => $hasLots && $record->is_fractionable && $record->units_per_box > 0)
                 ->default('box')
                 ->live(),
 
@@ -189,7 +189,7 @@ class ProductTableActions
 
                     return "✓ Stock Global actual: {$textoActual} | Quedará en: {$textoFinal}";
                 })
-                ->visible(fn (Forms\Get $get): bool => $get('type') === 'OUT'),
+                ->visible(fn(Forms\Get $get): bool => $get('type') === 'OUT'),
 
             Forms\Components\TextInput::make('reason')
                 ->label('Detalle / Observación')
