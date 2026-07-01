@@ -8,15 +8,10 @@ use App\Models\User;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
-use Filament\Tables;
 use Filament\Tables\Table;
-use Filament\Forms\Components\Grid;
-use Filament\Forms\Components\Section;
-use Filament\Forms\Components\Placeholder;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Illuminate\Support\Facades\Auth;
-use App\Filament\Resources\UserResource\Actions\UserTableActions;
+use App\Filament\Resources\UserResource\Tables\UserTable;
 
 class UserResource extends Resource
 {
@@ -140,68 +135,7 @@ class UserResource extends Resource
 
     public static function table(Table $table): Table
     {
-        return $table
-            ->columns([
-
-                Tables\Columns\TextColumn::make('name')
-                    ->label('Usuario')
-                    ->searchable()
-                    ->sortable()
-                    ->weight('medium'),
-
-                Tables\Columns\TextColumn::make('email')
-                    ->label('Correo electrónico')
-                    ->searchable()
-                    ->copyable(),
-
-                Tables\Columns\TextColumn::make('tenant.name')
-                    ->label('Empresa')
-                    ->badge()
-                    ->color(fn ($state): string => match ($state) {
-                        null => 'danger', // Rojo para los Súper Admins
-                        default => 'success', // Verde para los usuarios de negocios
-                    })
-                    ->default('SÚPER ADMIN') // Texto si el tenant_id es null
-                    ->sortable()
-                    ->searchable(),
-
-                Tables\Columns\TextColumn::make('roles.name')
-                    ->label('Roles')
-                    ->badge()
-                    ->color('info')
-                    ->separator(','),
-
-                Tables\Columns\TextColumn::make('created_at')
-                    ->label('Fecha de creación')
-                    ->date('d/m/Y')
-                    ->sortable(),
-
-                Tables\Columns\IconColumn::make('is_active')
-                    ->label('Activo')
-                    ->boolean()
-                    ->sortable()
-                    ->trueIcon('heroicon-o-check-circle')
-                    ->falseIcon('heroicon-o-x-circle')
-                    ->trueColor('success')
-                    ->falseColor('danger')
-                    ->tooltip(fn ($record): string =>
-                        $record->is_active
-                            ? 'Usuario activo'
-                            : 'Usuario desactivado'
-                    ),
-
-            ])
-            ->filters([
-                //
-            ])
-            ->actions([
-                Tables\Actions\ActionGroup::make(UserTableActions::actions())
-                    ->label('Acciones')
-                    ->icon('heroicon-o-ellipsis-vertical')
-                    ->button()
-                    ->color('gray'),
-            ])
-            ->bulkActions([]);
+        return UserTable::configure($table);
     }
 
     // EL NUEVO ESCUDO: Solo ves los usuarios de tu propio negocio
