@@ -37,13 +37,24 @@ class TenantTable
                 ->sortable()
                 ->weight('bold')
                 ->icon('heroicon-o-building-storefront')
-                ->description(fn (Tenant $record): ?string => $record->business_name),
+                ->description(fn(Tenant $record): ?string => $record->business_name),
 
             Tables\Columns\TextColumn::make('businessSector.name')
                 ->label('Giro')
                 ->badge()
                 ->color('info')
                 ->sortable(),
+
+            Tables\Columns\TextColumn::make('plan.name')
+                ->label('Plan')
+                ->badge()
+                ->color(fn(?string $state): string => match ($state) {
+                    'Básico' => 'gray',
+                    'Estándar' => 'info',
+                    'Premium' => 'success',
+                    default => 'warning',
+                })
+                ->placeholder('Sin plan'),
 
             Tables\Columns\TextColumn::make('ruc')
                 ->label('RUC')
@@ -54,7 +65,7 @@ class TenantTable
             Tables\Columns\IconColumn::make('sunat_certificate')
                 ->label('Cert. SUNAT')
                 ->boolean()
-                ->state(fn (Tenant $record): bool => ! empty($record->sunat_certificate))
+                ->state(fn(Tenant $record): bool => ! empty($record->sunat_certificate))
                 ->trueIcon('heroicon-o-check-badge')
                 ->falseIcon('heroicon-o-x-circle')
                 ->trueColor('success')
@@ -68,7 +79,8 @@ class TenantTable
                 ->falseIcon('heroicon-o-x-circle')
                 ->trueColor('success')
                 ->falseColor('danger')
-                ->tooltip(fn (Tenant $record): string =>
+                ->tooltip(
+                    fn(Tenant $record): string =>
                     $record->is_active
                         ? 'Negocio activo'
                         : 'Negocio suspendido'

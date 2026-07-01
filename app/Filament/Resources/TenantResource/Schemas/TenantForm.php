@@ -5,6 +5,7 @@ namespace App\Filament\Resources\TenantResource\Schemas;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Illuminate\Database\Eloquent\Builder;
+use Percy\Core\Models\Plan;
 
 class TenantForm
 {
@@ -37,11 +38,31 @@ class TenantForm
                                     ->relationship(
                                         'businessSector',
                                         'name',
-                                        modifyQueryUsing: fn (Builder $query) => $query->where('is_active', true)
+                                        modifyQueryUsing: fn(Builder $query) => $query->where('is_active', true)
                                     )
                                     ->searchable()
                                     ->preload()
                                     ->required()
+                                    ->columnSpan(['default' => 1, 'sm' => 1]),
+
+                                Forms\Components\Select::make('plan_id')
+                                    ->label('Plan contratado')
+                                    ->relationship(
+                                        'plan',
+                                        'name',
+                                        modifyQueryUsing: fn(Builder $query) => $query
+                                            ->where('is_active', true)
+                                            ->orderBy('sort_order')
+                                    )
+                                    ->default(
+                                        fn(): ?int => Plan::query()
+                                            ->where('slug', 'premium')
+                                            ->value('id')
+                                    )
+                                    ->required()
+                                    ->searchable()
+                                    ->preload()
+                                    ->helperText('Define qué módulos comerciales tendrá disponible este cliente.')
                                     ->columnSpan(['default' => 1, 'sm' => 1]),
 
                                 Forms\Components\TextInput::make('domain')
@@ -52,7 +73,8 @@ class TenantForm
                                     ->maxLength(80)
                                     ->regex('/^[a-z0-9]+(?:-[a-z0-9]+)*$/')
                                     ->helperText('Usa solo minúsculas, números y guiones. Ejemplo: farmacia-san-jose.')
-                                    ->dehydrateStateUsing(fn (?string $state): ?string =>
+                                    ->dehydrateStateUsing(
+                                        fn(?string $state): ?string =>
                                         filled($state) ? strtolower(trim($state)) : null
                                     )
                                     ->columnSpan(['default' => 1, 'sm' => 1]),
@@ -79,7 +101,8 @@ class TenantForm
                                     ->numeric()
                                     ->length(11)
                                     ->required()
-                                    ->dehydrateStateUsing(fn (?string $state): ?string =>
+                                    ->dehydrateStateUsing(
+                                        fn(?string $state): ?string =>
                                         filled($state) ? preg_replace('/\D/', '', $state) : null
                                     )
                                     ->columnSpan(['default' => 1, 'sm' => 1, 'md' => 1]),
@@ -110,7 +133,8 @@ class TenantForm
                                 Forms\Components\TextInput::make('email')
                                     ->label('Correo Electrónico')
                                     ->email()
-                                    ->dehydrateStateUsing(fn (?string $state): ?string =>
+                                    ->dehydrateStateUsing(
+                                        fn(?string $state): ?string =>
                                         filled($state) ? strtolower(trim($state)) : null
                                     )
                                     ->columnSpan(['default' => 1, 'sm' => 1]),
