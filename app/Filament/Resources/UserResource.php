@@ -29,11 +29,37 @@ class UserResource extends Resource
 
     public static function canViewAny(): bool
     {
-        /** @var \Percy\Core\Models\User $user */
-        $user = \Illuminate\Support\Facades\Auth::user();
+        return Auth::user()?->isAdmin() ?? false;
+    }
 
-        // Bloquea a los cajeros, permite el paso a los Admins (tanto al Súper Admin como al Dueño local)
-        return $user->isAdmin();
+    public static function canCreate(): bool
+    {
+        return Auth::user()?->isAdmin() ?? false;
+    }
+
+    public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        $user = Auth::user();
+
+        if (! $user?->isAdmin()) {
+            return false;
+        }
+
+        if ($user->isSuperAdmin()) {
+            return true;
+        }
+
+        return (int) $record->tenant_id === (int) $user->tenant_id;
+    }
+
+    public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return false;
+    }
+
+    public static function canDeleteAny(): bool
+    {
+        return false;
     }
 
     public static function form(Form $form): Form
@@ -42,15 +68,19 @@ class UserResource extends Resource
             ->schema([
                 // EL SELECTOR DE NEGOCIO INTELIGENTE
                 Forms\Components\Select::make('tenant_id')
-                    ->relationship('tenant', 'name')
+                    ->relationship(
+                        'tenant',
+                        'name',
+                        modifyQueryUsing: fn (Builder $query) => $query->where('is_active', true)
+                    )
                     ->label('Negocio / Sucursal')
-                    ->default(fn () => Auth::user()->tenant_id) // Por defecto toma el ID de quien lo crea
-                    ->disabled(fn () => Auth::user()->tenant_id !== null) // Bloquea el campo si NO eres el Súper Admin
-                    ->dehydrated() // OBLIGATORIO: Le dice a Filament que guarde el dato en la BD aunque el campo esté bloqueado
+                    ->default(fn () => Auth::user()?->tenant_id)
+                    ->disabled(fn () => Auth::user()?->tenant_id !== null)
+                    ->dehydrated()
                     ->searchable()
                     ->preload()
-                    ->helperText(fn () => Auth::user()->tenant_id === null
-                        ? 'Selecciona la empresa del cliente. (Déjalo vacío para crear otro Súper Administrador).'
+                    ->helperText(fn () => Auth::user()?->isSuperAdmin()
+                        ? 'Selecciona la empresa del cliente. Déjalo vacío solo para crear otro usuario global del SaaS.'
                         : 'El usuario será asignado automáticamente a tu negocio.')
                     ->columnSpanFull(),
 
@@ -71,11 +101,22 @@ class UserResource extends Resource
                     ->columnSpan(1),
 
                 Forms\Components\Select::make('roles')
-                    ->relationship('roles', 'name')
+                    ->relationship(
+                        'roles',
+                        'name',
+                        modifyQueryUsing: function (Builder $query): Builder {
+                            if (Auth::user()?->isSuperAdmin()) {
+                                return $query;
+                            }
+
+                            return $query->where('name', '!=', 'Super Admin');
+                        }
+                    )
                     ->label('Roles asignados')
                     ->multiple()
                     ->preload()
                     ->searchable()
+                    ->required()
                     ->helperText('Los roles determinan qué módulos puede usar el usuario.')
                     ->columnSpanFull(),
 
@@ -134,9 +175,19 @@ class UserResource extends Resource
                     ->date('d/m/Y')
                     ->sortable(),
 
-                Tables\Columns\ToggleColumn::make('is_active')
-                ->label('Activo')
-                ->sortable(),
+                Tables\Columns\IconColumn::make('is_active')
+                    ->label('Activo')
+                    ->boolean()
+                    ->sortable()
+                    ->trueIcon('heroicon-o-check-circle')
+                    ->falseIcon('heroicon-o-x-circle')
+                    ->trueColor('success')
+                    ->falseColor('danger')
+                    ->tooltip(fn ($record): string =>
+                        $record->is_active
+                            ? 'Usuario activo'
+                            : 'Usuario desactivado'
+                    ),
 
             ])
             ->filters([
@@ -146,22 +197,70 @@ class UserResource extends Resource
                 Tables\Actions\ActionGroup::make([
                     Tables\Actions\EditAction::make()
                         ->label('Editar')
-                        ->icon('heroicon-o-pencil'),
-                    Tables\Actions\DeleteAction::make()
-                        ->label('Eliminar')
-                        ->icon('heroicon-o-trash')
-                        ->requiresConfirmation(),
+                        ->icon('heroicon-o-pencil')
+                        ->color('warning'),
+
+                    Tables\Actions\Action::make('deactivateUser')
+                        ->label('Desactivar usuario')
+                        ->icon('heroicon-o-lock-closed')
+                        ->color('danger')
+                        ->visible(fn ($record): bool =>
+                            $record->is_active &&
+                            (Auth::user()?->isAdmin() ?? false) &&
+                            Auth::id() !== $record->id
+                        )
+                        ->requiresConfirmation()
+                        ->modalHeading('Desactivar usuario')
+                        ->modalDescription(fn ($record): string =>
+                            "El usuario {$record->name} ya no podrá ingresar al sistema, pero su historial se conservará."
+                        )
+                        ->modalSubmitActionLabel('Sí, desactivar')
+                        ->modalCancelActionLabel('Cancelar')
+                        ->action(function ($record): void {
+                            $record->update([
+                                'is_active' => false,
+                            ]);
+
+                            \Filament\Notifications\Notification::make()
+                                ->success()
+                                ->title('Usuario desactivado')
+                                ->body('El acceso del usuario fue desactivado correctamente.')
+                                ->send();
+                        }),
+
+                    Tables\Actions\Action::make('reactivateUser')
+                        ->label('Reactivar usuario')
+                        ->icon('heroicon-o-lock-open')
+                        ->color('success')
+                        ->visible(fn ($record): bool =>
+                            ! $record->is_active &&
+                            (Auth::user()?->isAdmin() ?? false)
+                        )
+                        ->requiresConfirmation()
+                        ->modalHeading('Reactivar usuario')
+                        ->modalDescription(fn ($record): string =>
+                            "El usuario {$record->name} podrá ingresar nuevamente al sistema."
+                        )
+                        ->modalSubmitActionLabel('Sí, reactivar')
+                        ->modalCancelActionLabel('Cancelar')
+                        ->action(function ($record): void {
+                            $record->update([
+                                'is_active' => true,
+                            ]);
+
+                            \Filament\Notifications\Notification::make()
+                                ->success()
+                                ->title('Usuario reactivado')
+                                ->body('El acceso del usuario fue reactivado correctamente.')
+                                ->send();
+                        }),
                 ])
-                ->label('Acciones')
-                ->icon('heroicon-o-ellipsis-vertical')
-                ->button()
-                ->color('gray'),
+                    ->label('Acciones')
+                    ->icon('heroicon-o-ellipsis-vertical')
+                    ->button()
+                    ->color('gray'),
             ])
-            ->bulkActions([
-                Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
-                ]),
-            ]);
+            ->bulkActions([]);
     }
 
     // EL NUEVO ESCUDO: Solo ves los usuarios de tu propio negocio
