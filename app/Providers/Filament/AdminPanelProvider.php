@@ -88,10 +88,6 @@ class AdminPanelProvider extends PanelProvider
             ->font('Inter')
             ->sidebarWidth('18rem')
             ->sidebarCollapsibleOnDesktop()
-            // AQUÍ REGISTRAMOS EL MIDDLEWARE
-            ->authMiddleware([
-                \App\Http\Middleware\SetPanelTheme::class,
-            ])
 
             // 🌟 MAGIA: Forzamos el orden global de los grupos del menú
             ->navigationGroups([
@@ -123,6 +119,7 @@ class AdminPanelProvider extends PanelProvider
             ])
             ->authMiddleware([
                 Authenticate::class,
+                \App\Http\Middleware\SetPanelTheme::class,
             ]);
     }
 }
