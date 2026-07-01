@@ -3,16 +3,22 @@
 namespace App\Filament\Widgets;
 
 use Percy\Core\Models\Sale;
-use Carbon\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Filament\Widgets\ChartWidget;
 
 class RevenueChart extends ChartWidget
 {
-    protected static ?string $heading = 'Ingresos Diarios (Últimos 7 días)';
-    protected static ?int $sort = 3; // Lo ubicamos debajo de las alertas de vencimiento
-    protected int | string | array $columnSpan = 'full'; // Que ocupe todo el ancho
+    protected static ?string $heading = 'Evolución de Ingresos (Últimos 14 días)';
+    protected static ?int $sort = 3;
+
+    protected int | string | array $columnSpan = 'full';
+
     protected static ?string $maxHeight = '300px';
+
+    public static function canView(): bool
+    {
+        return Auth::check() && Auth::user()?->tenant_id !== null;
+    }
 
     protected function getData(): array
     {
@@ -20,15 +26,18 @@ class RevenueChart extends ChartWidget
         $labels = [];
         $tenantId = Auth::user()->tenant_id;
 
-        // Recorremos los últimos 7 días con un bucle para armar los datos
-        for ($i = 6; $i >= 0; $i--) {
+        for ($i = 13; $i >= 0; $i--) {
             $date = now()->subDays($i);
-            $labels[] = $date->format('d M'); // Ej: 14 Mar
+            $labels[] = $date->format('d M');
 
-            // Sumamos las ventas de ese día exacto para este tenant
             $sum = Sale::where('tenant_id', $tenantId)
                 ->whereDate('sold_at', $date->toDateString())
-                ->where('sunat_status', '!=', 'rejected') // Ignoramos las facturas rechazadas por SUNAT
+                ->where('status', '!=', 'canceled')
+                ->whereIn('document_type', ['00', '01', '03'])
+                ->where(function ($query) {
+                    $query->whereNull('sunat_status')
+                        ->orWhere('sunat_status', '!=', 'rejected');
+                })
                 ->sum('total');
 
             $data[] = $sum;
@@ -39,10 +48,8 @@ class RevenueChart extends ChartWidget
                 [
                     'label' => 'Ventas S/',
                     'data' => $data,
-                    'backgroundColor' => '#3b82f6', // Azul brillante matching con "Nueva Venta"
-                    'borderColor' => '#1d4ed8',
-                    'fill' => 'start', // Efecto de área coloreada
-                    'tension' => 0.3, // Suaviza la línea
+                    'fill' => 'start',
+                    'tension' => 0.3,
                 ],
             ],
             'labels' => $labels,

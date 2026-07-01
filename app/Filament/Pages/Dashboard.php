@@ -10,7 +10,7 @@ class Dashboard extends BaseDashboard
 {
     public static function canAccess(): bool
     {
-        return true;
+        return Auth::check();
     }
 
     public function mount()
@@ -18,7 +18,7 @@ class Dashboard extends BaseDashboard
         /** @var \Percy\Core\Models\User|null $user */
         $user = Auth::user();
 
-        if (!$user) {
+        if (! $user) {
             return;
         }
 
