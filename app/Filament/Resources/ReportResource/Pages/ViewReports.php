@@ -8,6 +8,7 @@ use Filament\Forms;
 use Percy\Core\Services\ReportService;
 use Illuminate\Support\Facades\Auth;
 use Filament\Notifications\Notification;
+use Percy\Core\Services\Tenants\TenantPlanService;
 
 class ViewReports extends Page
 {
@@ -23,11 +24,34 @@ class ViewReports extends Page
     public $cashStatus = [];
     public $paymentMethodsData = [];
 
+    public bool $canViewProfitability = false;
+    public bool $canViewAdvancedReports = false;
+
     public function mount(): void
     {
         $this->startDate = now()->startOfMonth()->format('Y-m-d');
         $this->endDate = now()->format('Y-m-d');
+
+        $this->syncReportPermissions();
         $this->loadReports();
+    }
+
+    private function tenantPlanHas(string $feature): bool
+    {
+        /** @var \Percy\Core\Models\User|null $user */
+        $user = Auth::user();
+
+        if (! $user || ! $user->tenant) {
+            return false;
+        }
+
+        return app(TenantPlanService::class)->has($feature, $user->tenant);
+    }
+
+    private function syncReportPermissions(): void
+    {
+        $this->canViewProfitability = $this->tenantPlanHas('has_profitability_reports');
+        $this->canViewAdvancedReports = $this->tenantPlanHas('has_advanced_reports');
     }
 
     protected function getFormSchema(): array
@@ -40,7 +64,7 @@ class ViewReports extends Page
                         ->required()
                         ->native(false)
                         ->displayFormat('d/m/Y')
-                        ->maxDate(fn () => $this->endDate ?? now())
+                        ->maxDate(fn() => $this->endDate ?? now())
                         ->default(now()->startOfMonth())
                         ->prefixIcon('heroicon-o-calendar-days'),
 
@@ -49,7 +73,7 @@ class ViewReports extends Page
                         ->required()
                         ->native(false)
                         ->displayFormat('d/m/Y')
-                        ->minDate(fn () => $this->startDate)
+                        ->minDate(fn() => $this->startDate)
                         ->maxDate(now())
                         ->default(now())
                         ->prefixIcon('heroicon-o-calendar-days'),
@@ -81,23 +105,19 @@ class ViewReports extends Page
     public function loadReports(): void
     {
         try {
-            $service = new ReportService();
+            $service = app(ReportService::class);
             $tenantId = Auth::user()->tenant_id;
+
+            $this->syncReportPermissions();
 
             $this->salesData = $service->salesByPeriod($tenantId, $this->startDate, $this->endDate);
             $this->topProducts = $service->topProducts($tenantId, $this->startDate, $this->endDate);
-            $this->profitability = $service->profitability($tenantId, $this->startDate, $this->endDate);
             $this->cashStatus = $service->cashRegisterStatus($tenantId);
+            $this->paymentMethodsData = $service->paymentMethods($tenantId, $this->startDate, $this->endDate);
 
-            // 🌟 NUEVO: Agrupamos las ventas por método de pago
-            $this->paymentMethodsData = \Percy\Core\Models\Sale::where('tenant_id', $tenantId)
-                ->whereBetween('sold_at', [$this->startDate . ' 00:00:00', $this->endDate . ' 23:59:59'])
-                ->where('status', '!=', 'canceled')
-                ->select('payment_method', \Illuminate\Support\Facades\DB::raw('SUM(total) as total_amount'), \Illuminate\Support\Facades\DB::raw('COUNT(*) as transaction_count'))
-                ->groupBy('payment_method')
-                ->orderByDesc('total_amount')
-                ->get()
-                ->toArray();
+            $this->profitability = $this->canViewProfitability
+                ? $service->profitability($tenantId, $this->startDate, $this->endDate)
+                : [];
 
             Notification::make()
                 ->success()
@@ -119,12 +139,13 @@ class ViewReports extends Page
 
         // 🌟 MEJORA NIVEL DIOS: Cargamos las relaciones anidadas 'items.product'
         // Esto trae todas las ventas, sus detalles y el nombre del producto en 1 sola consulta
-        $sales = \Percy\Core\Models\Sale::with(['customer', 'user', 'items.product'])
-            ->where('tenant_id', $tenantId)
-            ->whereBetween('sold_at', [$this->startDate . ' 00:00:00', $this->endDate . ' 23:59:59'])
-            ->where('status', '!=', 'canceled')
-            ->orderBy('sold_at', 'desc')
-            ->get();
+        $service = app(ReportService::class);
+
+        $sales = $service->salesForExport(
+            $tenantId,
+            $this->startDate,
+            $this->endDate
+        );
 
         $fileName = 'reporte_ventas_detallado_' . now()->format('Ymd_Hi') . '.csv';
 
@@ -136,7 +157,7 @@ class ViewReports extends Page
             "Expires"             => "0"
         ];
 
-        $callback = function() use($sales) {
+        $callback = function () use ($sales) {
             $file = fopen('php://output', 'w');
 
             fputs($file, chr(0xEF) . chr(0xBB) . chr(0xBF));
@@ -159,7 +180,7 @@ class ViewReports extends Page
             ], ';');
 
             foreach ($sales as $sale) {
-                $tipoDoc = match($sale->document_type) {
+                $tipoDoc = match ($sale->document_type) {
                     '01' => 'Factura',
                     '03' => 'Boleta',
                     default => 'Nota de Venta'

@@ -4,6 +4,8 @@ namespace App\Filament\Resources;
 
 use App\Filament\Resources\ReportResource\Pages;
 use Filament\Resources\Resource;
+use Illuminate\Support\Facades\Auth;
+use Percy\Core\Services\Tenants\TenantPlanService;
 
 class ReportResource extends Resource
 {
@@ -15,12 +17,16 @@ class ReportResource extends Resource
 
     public static function canViewAny(): bool
     {
-        /** @var \Percy\Core\Models\User $user */
-        $user = \Illuminate\Support\Facades\Auth::user();
+        /** @var \Percy\Core\Models\User|null $user */
+        $user = Auth::user();
 
-        // 1. tenant_id !== null (Bloquea al Súper Admin para que no exploten las gráficas)
-        // 2. isAdmin() (Bloquea a los empleados normales para proteger las finanzas)
-        return $user->tenant_id !== null && $user->isAdmin();
+        if (! $user || $user->tenant_id === null || ! $user->isAdmin()) {
+            return false;
+        }
+
+        return app(TenantPlanService::class)->has('has_basic_reports', $user->tenant)
+            || app(TenantPlanService::class)->has('has_profitability_reports', $user->tenant)
+            || app(TenantPlanService::class)->has('has_advanced_reports', $user->tenant);
     }
 
     public static function getPages(): array
