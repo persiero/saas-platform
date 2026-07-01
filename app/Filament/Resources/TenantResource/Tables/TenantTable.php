@@ -5,6 +5,7 @@ namespace App\Filament\Resources\TenantResource\Tables;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Percy\Core\Models\Tenant;
+use App\Filament\Resources\TenantResource\Actions\TenantTableActions;
 
 class TenantTable
 {
@@ -59,9 +60,19 @@ class TenantTable
                 ->trueColor('success')
                 ->falseColor('danger'),
 
-            Tables\Columns\ToggleColumn::make('is_active')
+            Tables\Columns\IconColumn::make('is_active')
                 ->label('Acceso')
-                ->sortable(),
+                ->boolean()
+                ->sortable()
+                ->trueIcon('heroicon-o-check-circle')
+                ->falseIcon('heroicon-o-x-circle')
+                ->trueColor('success')
+                ->falseColor('danger')
+                ->tooltip(fn (Tenant $record): string =>
+                    $record->is_active
+                        ? 'Negocio activo'
+                        : 'Negocio suspendido'
+                ),
 
             Tables\Columns\TextColumn::make('created_at')
                 ->label('Creado')
@@ -86,9 +97,11 @@ class TenantTable
     private static function actions(): array
     {
         return [
-            Tables\Actions\EditAction::make()
-                ->label('Configurar')
-                ->icon('heroicon-o-cog-6-tooth'),
+            Tables\Actions\ActionGroup::make(TenantTableActions::actions())
+                ->label('Acciones')
+                ->icon('heroicon-o-ellipsis-vertical')
+                ->button()
+                ->color('gray'),
         ];
     }
 }
