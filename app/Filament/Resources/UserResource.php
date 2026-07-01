@@ -16,6 +16,7 @@ use Filament\Forms\Components\Placeholder;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Illuminate\Support\Facades\Auth;
+use App\Filament\Resources\UserResource\Actions\UserTableActions;
 
 class UserResource extends Resource
 {
@@ -194,67 +195,7 @@ class UserResource extends Resource
                 //
             ])
             ->actions([
-                Tables\Actions\ActionGroup::make([
-                    Tables\Actions\EditAction::make()
-                        ->label('Editar')
-                        ->icon('heroicon-o-pencil')
-                        ->color('warning'),
-
-                    Tables\Actions\Action::make('deactivateUser')
-                        ->label('Desactivar usuario')
-                        ->icon('heroicon-o-lock-closed')
-                        ->color('danger')
-                        ->visible(fn ($record): bool =>
-                            $record->is_active &&
-                            (Auth::user()?->isAdmin() ?? false) &&
-                            Auth::id() !== $record->id
-                        )
-                        ->requiresConfirmation()
-                        ->modalHeading('Desactivar usuario')
-                        ->modalDescription(fn ($record): string =>
-                            "El usuario {$record->name} ya no podrá ingresar al sistema, pero su historial se conservará."
-                        )
-                        ->modalSubmitActionLabel('Sí, desactivar')
-                        ->modalCancelActionLabel('Cancelar')
-                        ->action(function ($record): void {
-                            $record->update([
-                                'is_active' => false,
-                            ]);
-
-                            \Filament\Notifications\Notification::make()
-                                ->success()
-                                ->title('Usuario desactivado')
-                                ->body('El acceso del usuario fue desactivado correctamente.')
-                                ->send();
-                        }),
-
-                    Tables\Actions\Action::make('reactivateUser')
-                        ->label('Reactivar usuario')
-                        ->icon('heroicon-o-lock-open')
-                        ->color('success')
-                        ->visible(fn ($record): bool =>
-                            ! $record->is_active &&
-                            (Auth::user()?->isAdmin() ?? false)
-                        )
-                        ->requiresConfirmation()
-                        ->modalHeading('Reactivar usuario')
-                        ->modalDescription(fn ($record): string =>
-                            "El usuario {$record->name} podrá ingresar nuevamente al sistema."
-                        )
-                        ->modalSubmitActionLabel('Sí, reactivar')
-                        ->modalCancelActionLabel('Cancelar')
-                        ->action(function ($record): void {
-                            $record->update([
-                                'is_active' => true,
-                            ]);
-
-                            \Filament\Notifications\Notification::make()
-                                ->success()
-                                ->title('Usuario reactivado')
-                                ->body('El acceso del usuario fue reactivado correctamente.')
-                                ->send();
-                        }),
-                ])
+                Tables\Actions\ActionGroup::make(UserTableActions::actions())
                     ->label('Acciones')
                     ->icon('heroicon-o-ellipsis-vertical')
                     ->button()
