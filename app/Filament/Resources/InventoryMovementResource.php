@@ -13,6 +13,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Illuminate\Support\Facades\Auth;
+use Percy\Core\Services\Tenants\TenantPlanService;
 
 class InventoryMovementResource extends Resource
 {
@@ -25,25 +26,45 @@ class InventoryMovementResource extends Resource
     protected static ?string $pluralModelLabel = 'Movimientos de Inventario';
     protected static ?int $navigationSort = 3;
 
+    private static function userCanViewKardex(): bool
+    {
+        /** @var \Percy\Core\Models\User|null $user */
+        $user = Auth::user();
+
+        if (! $user) {
+            return false;
+        }
+
+        if ($user->tenant_id === null) {
+            return false;
+        }
+
+        if (! $user->isAdmin()) {
+            return false;
+        }
+
+        return app(TenantPlanService::class)->has('has_kardex', $user->tenant);
+    }
+
     /**
      * Oculta el módulo de Reportes para el Súper Admin y para los Cajeros/Vendedores
      */
     public static function canViewAny(): bool
     {
-        /** @var \Percy\Core\Models\User $user */
-        $user = \Illuminate\Support\Facades\Auth::user();
-
-        // 1. tenant_id !== null (Bloquea al Súper Admin para que no exploten las gráficas)
-        // 2. isAdmin() (Bloquea a los empleados normales para proteger las finanzas)
-        return $user->tenant_id !== null && $user->isAdmin();
+        return self::userCanViewKardex();
     }
 
     // Solo mostramos los movimientos de la empresa actual
     public static function getEloquentQuery(): Builder
     {
+        $user = Auth::user();
+
+        if (! $user || $user->tenant_id === null) {
+            return parent::getEloquentQuery()->whereRaw('1 = 0');
+        }
+
         return parent::getEloquentQuery()
-            ->where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id)
-            // 🌟 LA CURA AL LAZY LOADING: Traemos el producto y su unidad de SUNAT de golpe
+            ->where('tenant_id', $user->tenant_id)
             ->with(['product.unidadSunat']);
     }
 
@@ -136,20 +157,20 @@ class InventoryMovementResource extends Resource
                     ->badge()
                     ->color('gray')
                     ->searchable()
-                    ->visible(fn () => \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features['has_lots'] ?? false),
+                    ->visible(fn() => \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features['has_lots'] ?? false),
 
                 Tables\Columns\TextColumn::make('type')
                     ->label('Tipo')
                     ->badge()
-                    ->formatStateUsing(fn (string $state): string => $state === 'IN' ? 'INGRESO' : 'SALIDA')
-                    ->color(fn (string $state): string => $state === 'IN' ? 'success' : 'danger')
-                    ->icon(fn (string $state): string => $state === 'IN' ? 'heroicon-m-arrow-down-right' : 'heroicon-m-arrow-up-right'),
+                    ->formatStateUsing(fn(string $state): string => $state === 'IN' ? 'INGRESO' : 'SALIDA')
+                    ->color(fn(string $state): string => $state === 'IN' ? 'success' : 'danger')
+                    ->icon(fn(string $state): string => $state === 'IN' ? 'heroicon-m-arrow-down-right' : 'heroicon-m-arrow-up-right'),
 
                 Tables\Columns\TextColumn::make('quantity')
                     ->label('Cant.')
                     ->sortable()
                     ->weight('black')
-                    ->color(fn ($record) => $record->type === 'IN' ? 'success' : 'danger')
+                    ->color(fn($record) => $record->type === 'IN' ? 'success' : 'danger')
                     ->formatStateUsing(function ($state, $record) {
                         $product = $record->product;
                         if (!$product) return $state;
@@ -174,7 +195,12 @@ class InventoryMovementResource extends Resource
                         // Si es granel (Peso/Volumen)
                         if ($product->is_weighable) {
                             $codigoUnidad = $product->unidadSunat ? $product->unidadSunat->codigo : '';
-                            $sufijo = match($codigoUnidad) { 'KGM' => 'Kg', 'LTR' => 'Lt', 'GLL' => 'Gal', default => '' };
+                            $sufijo = match ($codigoUnidad) {
+                                'KGM' => 'Kg',
+                                'LTR' => 'Lt',
+                                'GLL' => 'Gal',
+                                default => ''
+                            };
                             return "{$signo} " . number_format($valorAbsoluto, 2) . " {$sufijo}";
                         }
 
@@ -208,7 +234,12 @@ class InventoryMovementResource extends Resource
                         // Si es granel
                         if ($product->is_weighable) {
                             $codigoUnidad = $product->unidadSunat ? $product->unidadSunat->codigo : '';
-                            $sufijo = match($codigoUnidad) { 'KGM' => 'Kg', 'LTR' => 'Lt', 'GLL' => 'Gal', default => '' };
+                            $sufijo = match ($codigoUnidad) {
+                                'KGM' => 'Kg',
+                                'LTR' => 'Lt',
+                                'GLL' => 'Gal',
+                                default => ''
+                            };
                             return number_format($valorAbsoluto, 2) . " {$sufijo}";
                         }
 
@@ -241,9 +272,9 @@ class InventoryMovementResource extends Resource
             ])
             ->actions([
                 Tables\Actions\ViewAction::make()
-                ->label('Ver detalles')
-                ->icon('heroicon-o-eye')
-                ->color('info'),
+                    ->label('Ver detalles')
+                    ->icon('heroicon-o-eye')
+                    ->color('info'),
             ])
             ->bulkActions([
                 // En un Kardex estricto, no se debe permitir eliminar movimientos en bloque
