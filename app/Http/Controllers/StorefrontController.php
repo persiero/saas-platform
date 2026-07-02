@@ -19,6 +19,8 @@ class StorefrontController extends Controller
 
         $categories = Category::query()
             ->where('tenant_id', $tenant->id)
+            ->where('active', true)
+            ->orderBy('name')
             ->get();
 
         $products = Product::query()
@@ -29,6 +31,7 @@ class StorefrontController extends Controller
                     ->orWhere('current_stock', '>', 0);
             })
             ->with(['category', 'unidadSunat'])
+            ->orderBy('name')
             ->get();
 
         return view('storefront.index', compact('tenant', 'categories', 'products'));
@@ -117,5 +120,67 @@ class StorefrontController extends Controller
         );
 
         return $tenant;
+    }
+
+    public function products(string $tenant_domain)
+    {
+        $tenant = $this->findActiveTenant($tenant_domain);
+
+        $categories = Category::query()
+            ->where('tenant_id', $tenant->id)
+            ->where('active', true)
+            ->orderBy('name')
+            ->get();
+
+        $products = Product::query()
+            ->where('tenant_id', $tenant->id)
+            ->where('active', true)
+            ->where(function ($query) {
+                $query->where('type', 'service')
+                    ->orWhere('current_stock', '>', 0);
+            })
+            ->with(['category', 'unidadSunat'])
+            ->orderBy('name')
+            ->get();
+
+        return view('storefront.products', compact('tenant', 'categories', 'products'));
+    }
+
+    public function showProduct(string $tenant_domain, int $product)
+    {
+        $tenant = $this->findActiveTenant($tenant_domain);
+
+        $product = Product::query()
+            ->where('tenant_id', $tenant->id)
+            ->where('active', true)
+            ->whereKey($product)
+            ->where(function ($query) {
+                $query->where('type', 'service')
+                    ->orWhere('current_stock', '>', 0);
+            })
+            ->with(['category', 'unidadSunat'])
+            ->firstOrFail();
+
+        $relatedProducts = Product::query()
+            ->where('tenant_id', $tenant->id)
+            ->where('active', true)
+            ->where('id', '!=', $product->id)
+            ->where(function ($query) {
+                $query->where('type', 'service')
+                    ->orWhere('current_stock', '>', 0);
+            })
+            ->when($product->category_id, function ($query) use ($product) {
+                $query->where('category_id', $product->category_id);
+            })
+            ->with(['category', 'unidadSunat'])
+            ->orderBy('name')
+            ->limit(8)
+            ->get();
+
+        return view('storefront.product-show', compact(
+            'tenant',
+            'product',
+            'relatedProducts'
+        ));
     }
 }

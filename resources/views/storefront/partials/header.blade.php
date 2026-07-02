@@ -1,78 +1,250 @@
-{{-- 🌟 BARRA DE ANUNCIOS (Top Bar) --}}
-    <div class="bg-gray-900 text-white text-[11px] md:text-xs font-medium py-1.5 px-4 flex justify-center items-center gap-4 tracking-wider overflow-hidden">
+@php
+    $numeroLimpioHeader = $tenant->phone ? preg_replace('/[^0-9]/', '', $tenant->phone) : null;
 
-        {{-- 🌟 Corrección: hidden md:flex (Sin conflictos) y whitespace-nowrap (Sin saltos de línea) --}}
-        <span class="hidden md:flex items-center gap-1.5 whitespace-nowrap">
-            <x-heroicon-o-shield-check class="w-4 h-4 text-green-400"/>
-            Compra 100% Segura
-        </span>
+    if ($numeroLimpioHeader && strlen($numeroLimpioHeader) === 9) {
+        $numeroLimpioHeader = '51' . $numeroLimpioHeader;
+    }
 
-        <span class="flex items-center gap-1.5 whitespace-nowrap">
-            <x-heroicon-o-truck class="w-4 h-4 text-brand"/>
-            Delivery a todo Trujillo y alrededores
-        </span>
+    $isHomePage = request()->routeIs('storefront.index');
+    $isProductsPage = request()->routeIs('storefront.products');
+@endphp
 
-    </div>
+<header class="bg-white/95 backdrop-blur-xl sticky top-0 z-50 border-b border-slate-100 shadow-sm">
+    {{-- FILA PRINCIPAL --}}
+    <div class="max-w-6xl mx-auto px-4 py-3">
+        <div class="flex items-center justify-between gap-3">
 
-{{-- 🌟 CABECERA PRINCIPAL --}}
-    <header class="bg-white shadow-sm sticky top-0 z-50">
-        <div class="max-w-6xl mx-auto px-4 py-3 flex justify-between items-center">
-
-            {{-- 🌟 LOGO DINÁMICO --}}
-            <div class="flex items-center gap-3 md:gap-5"> {{-- 🌟 1. Un poquito más de separación en PC --}}
-
+            {{-- LOGO + NOMBRE --}}
+            <a href="/" class="flex items-center gap-3 min-w-0 hover:opacity-90 transition">
                 @if($tenant->logo)
-                    {{-- 🌟 2. w-12 h-12 en celular | md:w-20 md:h-20 en PC (80x80px) --}}
-                    <img src="{{ Storage::disk('r2_public')->url($tenant->logo) }}" alt="Logo {{ $tenant->name }}" class="w-12 h-12 md:w-20 md:h-20 object-contain rounded-full shadow-sm bg-white border border-gray-100">
+                    <img
+                        src="{{ Storage::disk('r2_public')->url($tenant->logo) }}"
+                        alt="Logo {{ $tenant->name }}"
+                        class="w-11 h-11 md:w-14 md:h-14 object-contain rounded-2xl bg-white border border-slate-100 shadow-sm shrink-0"
+                    >
                 @else
-                    {{-- 🌟 3. Igualamos el tamaño para la letra inicial, y agrandamos la letra (md:text-3xl) --}}
-                    <div class="w-12 h-12 md:w-20 md:h-20 bg-brand/10 rounded-full flex items-center justify-center text-brand font-black text-xl md:text-3xl">
+                    <div class="w-11 h-11 md:w-14 md:h-14 bg-brand-soft rounded-2xl flex items-center justify-center text-brand font-black text-xl md:text-2xl shrink-0 border border-slate-100">
                         {{ substr($tenant->name, 0, 1) }}
                     </div>
                 @endif
 
-                {{-- 🌟 4. El título: text-xl en celular | md:text-2xl en PC --}}
-                <h1 class="text-xl md:text-2xl font-black text-gray-800 leading-tight">
-                    {{ $tenant->name }} <br>
+                <div class="min-w-0">
+                    <h1 class="text-sm md:text-xl font-black text-slate-900 leading-tight truncate">
+                        {{ $tenant->name }}
+                    </h1>
 
-                    {{-- 🌟 ESTADO DINÁMICO: ABIERTO / CERRADO --}}
-                    @if($tenant->is_open_for_orders)
-                        <span class="text-xs md:text-sm text-green-500 font-medium flex items-center gap-1">
-                            <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span> Abierto
+                    <div class="flex items-center gap-2 mt-1">
+                        @if($tenant->is_open_for_orders)
+                            <span class="inline-flex items-center gap-1.5 text-[10px] md:text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full">
+                                <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                                Abierto
+                            </span>
+                        @else
+                            <span class="inline-flex items-center gap-1.5 text-[10px] md:text-xs font-bold text-red-700 bg-red-50 border border-red-100 px-2 py-0.5 rounded-full">
+                                <span class="w-2 h-2 rounded-full bg-red-500"></span>
+                                Cerrado
+                            </span>
+                        @endif
+
+                        <span class="hidden sm:inline text-xs font-semibold text-slate-500">
+                            Catálogo online
                         </span>
-                    @else
-                        <span class="text-xs md:text-sm text-red-500 font-medium flex items-center gap-1">
-                            <span class="w-2 h-2 rounded-full bg-red-500"></span> Cerrado
-                        </span>
-                    @endif
-                </h1>
+                    </div>
+                </div>
+            </a>
+
+            {{-- ACCIONES --}}
+            <div class="flex items-center gap-2 shrink-0">
+                @if($tenant->phone && $numeroLimpioHeader)
+                    <a
+                        href="https://wa.me/{{ $numeroLimpioHeader }}?text=Hola,%20vengo%20de%20la%20tienda%20online.%20Necesito%20información."
+                        target="_blank"
+                        class="hidden sm:inline-flex items-center gap-2 bg-emerald-50 text-emerald-700 border border-emerald-100 font-bold px-3 md:px-4 py-2.5 rounded-2xl hover:bg-emerald-100 transition"
+                    >
+                        <x-heroicon-o-chat-bubble-left-right class="w-5 h-5" />
+                        <span class="hidden md:inline">WhatsApp</span>
+                    </a>
+                @endif
+
+                @isset($categories)
+                    <button
+                        type="button"
+                        onclick="toggleSearchPanel()"
+                        class="inline-flex items-center justify-center w-11 h-11 md:hidden bg-slate-100 text-slate-700 rounded-2xl hover:bg-slate-200 transition"
+                        aria-label="Buscar productos"
+                    >
+                        <x-heroicon-o-magnifying-glass class="w-5 h-5" />
+                    </button>
+                @endisset
+
+                <button
+                    onclick="toggleCart()"
+                    class="relative h-11 md:h-12 px-3 md:px-4 bg-brand text-white rounded-2xl hover:opacity-95 active:scale-95 transition flex items-center justify-center gap-2 shadow-brand"
+                >
+                    <x-heroicon-o-shopping-cart class="w-5 h-5 md:w-6 md:h-6" />
+
+                    <span class="hidden sm:inline font-black text-sm">
+                        Carrito
+                    </span>
+
+                    <span
+                        id="cart-count"
+                        class="absolute -top-1 -right-1 bg-red-500 text-white text-[11px] font-black min-w-5 h-5 px-1 rounded-full shadow-md flex items-center justify-center"
+                    >
+                        0
+                    </span>
+                </button>
             </div>
+        </div>
+    </div>
 
-            {{-- Botón del Carrito --}}
-            <button onclick="toggleCart()" class="relative p-2 bg-indigo-50 text-indigo-600 rounded-full hover:bg-indigo-100 transition">
-                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
-                <span id="cart-count" class="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full shadow-md">0</span>
-            </button>
+    {{-- FILA DE BÚSQUEDA COMPACTA --}}
+    @isset($categories)
+        <div id="search-panel" class="hidden md:block border-t border-slate-100 bg-white">
+            <div class="max-w-6xl mx-auto px-4 py-3">
+                <div class="flex items-center gap-3">
+
+                    {{-- En el index mostramos acceso directo al catálogo --}}
+                    @if($isHomePage)
+                        <a
+                            href="/productos"
+                            class="shrink-0 inline-flex items-center gap-2 bg-brand text-white font-black rounded-2xl py-3 px-4 text-sm hover:opacity-90 active:scale-95 transition shadow-brand"
+                        >
+                            Ver productos
+                            <x-heroicon-o-arrow-right class="w-4 h-4" />
+                        </a>
+                    @endif
+
+                    {{-- En /productos mostramos el filtro de categorías --}}
+                    @if($isProductsPage)
+                        <div class="relative shrink-0">
+                            <input type="hidden" id="categorySelect" value="all">
+
+                            <button
+                                type="button"
+                                onclick="toggleCategoryDropdown()"
+                                class="min-w-[210px] inline-flex items-center justify-between gap-3 bg-white border border-slate-200 text-slate-800 font-black rounded-2xl py-3 px-4 text-sm outline-none hover:border-brand transition"
+                            >
+                                <span id="categorySelectLabel">Todas las categorías</span>
+                                <x-heroicon-o-chevron-down class="w-4 h-4 text-slate-400" />
+                            </button>
+
+                            <div
+                                id="categoryDropdown"
+                                class="hidden absolute left-0 top-full mt-2 w-full bg-white border border-slate-100 rounded-2xl shadow-xl overflow-hidden z-[80]"
+                            >
+                                <button
+                                    type="button"
+                                    onclick="selectHeaderCategory('all', 'Todas las categorías')"
+                                    class="category-dropdown-item w-full text-left px-4 py-3 text-sm font-bold text-slate-700 transition"
+                                >
+                                    Todas las categorías
+                                </button>
+
+                                @foreach($categories as $category)
+                                    <button
+                                        type="button"
+                                        onclick="selectHeaderCategory(@js($category->name), @js($category->name))"
+                                        class="category-dropdown-item w-full text-left px-4 py-3 text-sm font-bold text-slate-700 transition border-t border-slate-50"
+                                    >
+                                        {{ $category->name }}
+                                    </button>
+                                @endforeach
+                            </div>
+                        </div>
+                    @endif
+
+                    {{-- Buscador --}}
+                    <div class="relative flex-1">
+                        <input
+                            type="text"
+                            id="searchInput"
+                            onkeyup="filterProducts()"
+                            placeholder="{{ $isProductsPage ? 'Buscar productos por nombre o categoría...' : 'Busca un producto o entra al catálogo completo...' }}"
+                            class="w-full bg-slate-50 border border-slate-200 focus:bg-white focus-brand rounded-2xl py-3 pl-11 pr-11 text-sm transition-all outline-none"
+                        >
+
+                        {{-- Lupa interna --}}
+                        <button
+                            type="button"
+                            onclick="filterProducts()"
+                            class="absolute left-3 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center text-slate-400 hover:text-brand transition"
+                            aria-label="Buscar"
+                        >
+                            <x-heroicon-o-magnifying-glass class="w-5 h-5" />
+                        </button>
+
+                        {{-- Limpiar interno --}}
+                        <button
+                            type="button"
+                            onclick="resetFilters()"
+                            class="absolute right-3 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center text-slate-400 hover:text-red-500 transition"
+                            aria-label="Limpiar búsqueda"
+                        >
+                            <x-heroicon-o-x-mark class="w-4 h-4" />
+                        </button>
+                    </div>
+                </div>
+            </div>
         </div>
 
-        {{-- 🌟 BUSCADOR Y CATEGORÍAS (Solo se muestra en el catálogo, no en el checkout) --}}
-        @isset($categories)
-            <div class="max-w-6xl mx-auto px-4 pb-3">
-                <div class="relative mb-3">
-                    <input type="text" id="searchInput" onkeyup="filterProducts()" placeholder="Buscar productos..." class="w-full bg-gray-100 border-transparent focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 rounded-xl py-2 pl-10 pr-4 text-sm transition-all">
-                    <svg class="w-5 h-5 text-gray-400 absolute left-3 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-                </div>
+        <script>
+            window.toggleSearchPanel = function () {
+                const panel = document.getElementById('search-panel');
 
-                <div class="flex overflow-x-auto hide-scrollbar gap-2 pb-1" id="category-filters">
-                    <button onclick="filterCategory('all', this)" class="category-btn active-category px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors">
-                        Todos
-                    </button>
-                    @foreach($categories as $category)
-                        <button onclick="filterCategory('{{ $category->name }}', this)" class="category-btn bg-gray-100 text-gray-600 hover:bg-gray-200 px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors">
-                            {{ $category->name }}
-                        </button>
-                    @endforeach
-                </div>
-            </div>
-        @endisset
-    </header>
+                if (! panel) {
+                    return;
+                }
+
+                panel.classList.toggle('hidden');
+                panel.classList.toggle('block');
+            };
+
+            window.toggleCategoryDropdown = function () {
+                const dropdown = document.getElementById('categoryDropdown');
+
+                if (! dropdown) {
+                    return;
+                }
+
+                dropdown.classList.toggle('hidden');
+            };
+
+            window.selectHeaderCategory = function (value, label) {
+                const input = document.getElementById('categorySelect');
+                const labelElement = document.getElementById('categorySelectLabel');
+                const dropdown = document.getElementById('categoryDropdown');
+
+                if (input) {
+                    input.value = value;
+                }
+
+                if (labelElement) {
+                    labelElement.innerText = label;
+                }
+
+                if (dropdown) {
+                    dropdown.classList.add('hidden');
+                }
+
+                if (typeof filterCategoryFromSelect === 'function') {
+                    filterCategoryFromSelect(value);
+                }
+            };
+
+            document.addEventListener('click', function (event) {
+                const dropdown = document.getElementById('categoryDropdown');
+                const button = event.target.closest('[onclick="toggleCategoryDropdown()"]');
+                const insideDropdown = event.target.closest('#categoryDropdown');
+
+                if (! dropdown) {
+                    return;
+                }
+
+                if (! button && ! insideDropdown) {
+                    dropdown.classList.add('hidden');
+                }
+            });
+        </script>
+    @endisset
+</header>

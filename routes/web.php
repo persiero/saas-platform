@@ -19,6 +19,13 @@ Route::domain('{tenant_domain}.' . env('APP_URL_BASE', 'saas-platform.test'))
         Route::get('/', [StorefrontController::class, 'index'])
             ->name('storefront.index');
 
+        Route::get('/productos', [StorefrontController::class, 'products'])
+            ->name('storefront.products');
+
+        Route::get('/productos/{product}', [StorefrontController::class, 'showProduct'])
+            ->whereNumber('product')
+            ->name('storefront.products.show');
+
         Route::get('/checkout', [StorefrontController::class, 'checkout'])
             ->name('storefront.checkout');
 
