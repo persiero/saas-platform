@@ -26,7 +26,12 @@ class CreatePurchase extends CreateRecord
 
     protected function mutateFormDataBeforeCreate(array $data): array
     {
+        if (!Auth::user()?->canCreatePurchases()) {
+            abort(403);
+        }
+
         $data['tenant_id'] = Auth::user()->tenant_id;
+
         return $data;
     }
 

@@ -24,9 +24,14 @@ class EditPurchase extends EditRecord
             Actions\DeleteAction::make()
                 ->label('Eliminar')
                 ->icon('heroicon-o-trash')
+                ->color('danger')
+                ->visible(fn (): bool =>
+                    $this->record->status === 'pending' &&
+                    (Auth::user()?->canDeletePurchases() ?? false)
+                )
                 ->requiresConfirmation()
-                ->modalHeading('Eliminar Compra')
-                ->modalDescription('¿Estás seguro de que deseas eliminar esta compra?')
+                ->modalHeading('Eliminar Compra Pendiente')
+                ->modalDescription('Esta compra aún no afecta inventario. ¿Deseas eliminarla?')
                 ->modalSubmitActionLabel('Sí, eliminar')
                 ->modalCancelActionLabel('Cancelar'),
         ];
@@ -52,40 +57,5 @@ class EditPurchase extends EditRecord
     }
 
     // 🌟 NUEVO: Si editan la compra y agregan un vencimiento, aseguramos que exista en el inventario
-    protected function afterSave(): void
-    {
-        $compra = $this->record;
-        $features = Auth::user()->tenant->businessSector->features ?? [];
-        $hasLots = $features['has_lots'] ?? false;
-        $hasExpiry = $features['has_expiry_dates'] ?? false;
 
-        if (!$hasLots && !$hasExpiry) return;
-
-        foreach ($compra->items as $item) {
-            if (!empty($item['expiration_date']) || !empty($item['batch_number'])) {
-                $batchNumber = $item['batch_number'] ?? null;
-                $expirationDate = $item['expiration_date'] ?? null;
-
-                if (empty($batchNumber) && !empty($expirationDate)) {
-                    $batchNumber = 'VENC-' . Carbon::parse($expirationDate)->format('Ymd');
-                }
-
-                if (!empty($batchNumber)) {
-                    // Actualizamos o creamos el lote si no existe.
-                    // Nota: Si cambian cantidades en la edición, la lógica de Kardex se vuelve compleja.
-                    // Por ahora, nos aseguramos de que el lote al menos exista en la BD.
-                    \Percy\Core\Models\ProductBatch::updateOrCreate(
-                        [
-                            'tenant_id' => $compra->tenant_id,
-                            'product_id' => $item['product_id'],
-                            'batch_number' => strtoupper($batchNumber),
-                        ],
-                        [
-                            'expiration_date' => $expirationDate,
-                        ]
-                    );
-                }
-            }
-        }
-    }
 }

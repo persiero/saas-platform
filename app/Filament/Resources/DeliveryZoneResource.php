@@ -13,6 +13,8 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Support\Facades\Auth;
+use Percy\Core\Services\Tenants\TenantPlanService;
+use Illuminate\Database\Eloquent\Builder;
 
 class DeliveryZoneResource extends Resource
 {
@@ -24,14 +26,51 @@ class DeliveryZoneResource extends Resource
     protected static ?string $pluralModelLabel = 'Zonas de Repartos';
     protected static ?int $navigationSort = 4;
 
+    private static function canAccessDeliveryZones(): bool
+    {
+        /** @var \Percy\Core\Models\User|null $user */
+        $user = Auth::user();
+
+        if (! $user) {
+            return false;
+        }
+
+        if ($user->tenant_id === null) {
+            return false;
+        }
+
+        if (! $user->isAdmin()) {
+            return false;
+        }
+
+        return app(TenantPlanService::class)->has('has_delivery', $user->tenant)
+            || app(TenantPlanService::class)->has('has_online_store', $user->tenant);
+    }
+
     // 🌟 AGREGA ESTO AQUÍ:
     public static function canViewAny(): bool
     {
-        /** @var \Percy\Core\Models\User $user */
-        $user = \Illuminate\Support\Facades\Auth::user();
+        return self::canAccessDeliveryZones();
+    }
 
-        // Solo permite el acceso a los administradores
-        return $user->isAdmin();
+    public static function canCreate(): bool
+    {
+        return self::canAccessDeliveryZones();
+    }
+
+    public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return self::canAccessDeliveryZones();
+    }
+
+    public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return self::canAccessDeliveryZones();
+    }
+
+    public static function canDeleteAny(): bool
+    {
+        return self::canAccessDeliveryZones();
     }
 
     public static function form(Form $form): Form
@@ -47,7 +86,7 @@ class DeliveryZoneResource extends Resource
                             ->options(Department::pluck('name', 'id'))
                             ->reactive()
                             ->required()
-                            ->afterStateUpdated(fn (callable $set) => $set('province_id', null)),
+                            ->afterStateUpdated(fn(callable $set) => $set('province_id', null)),
 
                         // 🌟 SELECT DE PROVINCIA (No se guarda, solo filtra)
                         Forms\Components\Select::make('province_id')
@@ -59,7 +98,7 @@ class DeliveryZoneResource extends Resource
                             })
                             ->reactive()
                             ->required()
-                            ->afterStateUpdated(fn (callable $set) => $set('district_id', null)),
+                            ->afterStateUpdated(fn(callable $set) => $set('district_id', null)),
 
                         // 🌟 SELECT DE DISTRITO (Este SÍ se guarda en district_id)
                         Forms\Components\Select::make('district_id')
@@ -70,7 +109,7 @@ class DeliveryZoneResource extends Resource
                                 return District::where('province_id', $provId)->pluck('name', 'id');
                             })
                             ->required()
-                            ->unique(ignorable: fn ($record) => $record, modifyRuleUsing: function ($rule) {
+                            ->unique(ignorable: fn($record) => $record, modifyRuleUsing: function ($rule) {
                                 return $rule->where('tenant_id', Auth::user()->tenant_id);
                             })
                             ->helperText('Solo puedes agregar un distrito una vez.'),
@@ -129,10 +168,16 @@ class DeliveryZoneResource extends Resource
     }
 
     // 🌟 MULTI-TENANT: Solo muestra las zonas del negocio logueado
-    public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
+    public static function getEloquentQuery(): Builder
     {
+        $user = Auth::user();
+
+        if (! $user || $user->tenant_id === null) {
+            return parent::getEloquentQuery()->whereRaw('1 = 0');
+        }
+
         return parent::getEloquentQuery()
-            ->where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id);
+            ->where('tenant_id', $user->tenant_id);
     }
 
     public static function getPages(): array

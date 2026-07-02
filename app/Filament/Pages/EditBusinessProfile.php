@@ -18,6 +18,7 @@ use Filament\Forms\Components\Grid;
 use Filament\Forms\Components\Placeholder;
 use Illuminate\Support\Facades\Auth;
 use Percy\Core\Models\Tenant;
+use Percy\Core\Services\Tenants\TenantPlanService;
 
 class EditBusinessProfile extends Page implements HasForms
 {
@@ -26,12 +27,35 @@ class EditBusinessProfile extends Page implements HasForms
     protected static ?string $navigationIcon = 'heroicon-o-building-storefront';
     protected static ?string $navigationGroup = 'Configuración';
     protected static ?string $navigationLabel = 'Mi Empresa';
-    protected static ?string $title = 'Configuración de SUNAT';
+    protected static ?string $title = 'Mi Empresa';
     protected static ?int $navigationSort = 6;
 
     protected static string $view = 'percy-core::filament.pages.edit-business-profile';
 
     public ?array $data = [];
+
+    private static function tenantPlanHas(string $feature): bool
+    {
+        /** @var \Percy\Core\Models\User|null $user */
+        $user = Auth::user();
+
+        if (! $user || ! $user->tenant) {
+            return false;
+        }
+
+        return app(TenantPlanService::class)->has($feature, $user->tenant);
+    }
+
+    private static function hasSunatAccess(): bool
+    {
+        return self::tenantPlanHas('has_sunat');
+    }
+
+    private static function hasOnlineStoreAccess(): bool
+    {
+        return self::tenantPlanHas('has_online_store')
+            || self::tenantPlanHas('has_delivery');
+    }
 
     public static function canAccess(): bool
     {
@@ -48,6 +72,7 @@ class EditBusinessProfile extends Page implements HasForms
         }
     }
 
+
     public function form(Form $form): Form
     {
         return $form
@@ -57,6 +82,7 @@ class EditBusinessProfile extends Page implements HasForms
                         // 🌟 NUEVA PESTAÑA 1: MARCA Y CATÁLOGO (Exclusiva para el diseño de su web)
                         Tabs\Tab::make('Marca y Catálogo')
                             ->icon('heroicon-o-paint-brush')
+                            ->visible(fn(): bool => self::hasOnlineStoreAccess())
                             ->schema([
                                 Section::make('Personaliza tu Tienda Virtual')
                                     ->description('Sube tu logo y elige el color principal para que tu catálogo web tenga la identidad de tu negocio.')
@@ -144,38 +170,39 @@ class EditBusinessProfile extends Page implements HasForms
                         // PESTAÑA 3: Motor SUNAT (Tu código original intacto)
                         Tabs\Tab::make('Facturación Electrónica')
                             ->icon('heroicon-o-document-check')
+                            ->visible(fn(): bool => $this->hasSunatAccess())
                             ->schema([
                                 Section::make('Configuración SUNAT')
-                                ->description('Credenciales necesarias para emitir comprobantes electrónicos.')
-                                ->schema([
-                                    Select::make('sunat_environment')
-                                        ->label('Entorno')
-                                        ->options([
-                                            'beta' => 'Pruebas (BETA)',
-                                            'production' => 'Producción',
-                                        ])
-                                        ->default('beta')
-                                        ->required(),
-                                    Placeholder::make(''),
-                                    TextInput::make('sunat_sol_user')
-                                        ->label('Usuario SOL')
-                                        ->helperText('Ingresa solo tu usuario (Ej: MODDATOS).'),
-                                    TextInput::make('sunat_sol_pass')
-                                        ->label('Clave SOL')
-                                        ->password()
-                                        ->revealable(),
-                                    FileUpload::make('sunat_certificate')
-                                        ->label('Certificado Digital (.pem / .pfx)')
-                                        ->directory('certificates')
-                                        ->disk('sunat')
-                                        ->visibility('private')
-                                        ->helperText('Sube el archivo proporcionado por tu entidad certificadora.'),
-                                    TextInput::make('sunat_certificate_password')
-                                        ->label('Contraseña del Certificado')
-                                        ->password()
-                                        ->revealable()
-                                        ->helperText('Necesaria para firmar los XML.'),
-                                ])->columns(2)
+                                    ->description('Credenciales necesarias para emitir comprobantes electrónicos.')
+                                    ->schema([
+                                        Select::make('sunat_environment')
+                                            ->label('Entorno')
+                                            ->options([
+                                                'beta' => 'Pruebas (BETA)',
+                                                'production' => 'Producción',
+                                            ])
+                                            ->default('beta')
+                                            ->required(),
+                                        Placeholder::make(''),
+                                        TextInput::make('sunat_sol_user')
+                                            ->label('Usuario SOL')
+                                            ->helperText('Ingresa solo tu usuario (Ej: MODDATOS).'),
+                                        TextInput::make('sunat_sol_pass')
+                                            ->label('Clave SOL')
+                                            ->password()
+                                            ->revealable(),
+                                        FileUpload::make('sunat_certificate')
+                                            ->label('Certificado Digital (.pem / .pfx)')
+                                            ->directory('certificates')
+                                            ->disk('sunat')
+                                            ->visibility('private')
+                                            ->helperText('Sube el archivo proporcionado por tu entidad certificadora.'),
+                                        TextInput::make('sunat_certificate_password')
+                                            ->label('Contraseña del Certificado')
+                                            ->password()
+                                            ->revealable()
+                                            ->helperText('Necesaria para firmar los XML.'),
+                                    ])->columns(2)
                             ]),
 
                         // PESTAÑA 4: Preferencias (Tu código original intacto)
@@ -197,7 +224,8 @@ class EditBusinessProfile extends Page implements HasForms
                                     ->default(true),
                                 Toggle::make('auto_send_sunat')
                                     ->label('Enviar a SUNAT automáticamente')
-                                    ->default(true),
+                                    ->default(true)
+                                    ->visible(fn(): bool => $this->hasSunatAccess()),
                             ])->columns(2),
                     ])
                     ->columnSpanFull(),
@@ -208,13 +236,40 @@ class EditBusinessProfile extends Page implements HasForms
     public function save(): void
     {
         $tenant = Tenant::find(Auth::user()->tenant_id);
-        if ($tenant) {
-            $tenant->update($this->form->getState());
 
-            Notification::make()
-                ->success()
-                ->title('Configuración guardada exitosamente')
-                ->send();
+        if (! $tenant) {
+            return;
         }
+
+        $data = $this->form->getState();
+
+        if (! self::hasOnlineStoreAccess()) {
+            unset(
+                $data['logo'],
+                $data['primary_color'],
+                $data['business_hours'],
+                $data['is_open_for_orders'],
+                $data['delivery_fee'],
+                $data['yape_number']
+            );
+        }
+
+        if (! self::hasSunatAccess()) {
+            unset(
+                $data['sunat_environment'],
+                $data['sunat_sol_user'],
+                $data['sunat_sol_pass'],
+                $data['sunat_certificate'],
+                $data['sunat_certificate_password'],
+                $data['auto_send_sunat']
+            );
+        }
+
+        $tenant->update($data);
+
+        Notification::make()
+            ->success()
+            ->title('Configuración guardada exitosamente')
+            ->send();
     }
 }

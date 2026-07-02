@@ -21,6 +21,7 @@ class ListCashRegisters extends ListRecords
         return [
             Actions\CreateAction::make()
                 ->label('Abrir Nueva Caja')
+                ->visible(fn () => Auth::user()?->canOpenCashRegister() ?? false)
                 ->icon('heroicon-o-lock-open')
                 ->modalHeading('Apertura de Caja')
                 ->modalWidth('sm') // Modal pequeño y elegante
@@ -46,6 +47,10 @@ class ListCashRegisters extends ListRecords
 
                 // ESTE ES TU CANDADO BACKEND (Lo dejamos como doble seguridad):
                 ->action(function (array $data) {
+                    if (!Auth::user()?->canOpenCashRegister()) {
+                        abort(403);
+                    }
+
                     $hasOpenCash = CashRegister::where('tenant_id', Auth::user()->tenant_id)
                         ->where('status', 'open')
                         ->exists();
@@ -56,10 +61,10 @@ class ListCashRegisters extends ListRecords
                             ->body('Ya hay una caja abierta en este local. Ciérrala primero.')
                             ->warning()
                             ->send();
-                        return; // Detiene la creación
+
+                        return;
                     }
 
-                    // Si pasa el candado, crea la caja
                     CashRegister::create([
                         'tenant_id' => Auth::user()->tenant_id,
                         'user_id' => Auth::id(),
@@ -68,7 +73,10 @@ class ListCashRegisters extends ListRecords
                         'opened_at' => now(),
                     ]);
 
-                    Notification::make()->title('Caja Abierta')->success()->send();
+                    Notification::make()
+                        ->title('Caja Abierta')
+                        ->success()
+                        ->send();
                 }),
         ];
     }

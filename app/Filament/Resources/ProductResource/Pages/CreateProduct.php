@@ -3,14 +3,33 @@
 namespace App\Filament\Resources\ProductResource\Pages;
 
 use App\Filament\Resources\ProductResource;
-use Filament\Actions;
+use Filament\Notifications\Notification;
 use Filament\Resources\Pages\CreateRecord;
+use Illuminate\Validation\ValidationException;
 
 class CreateProduct extends CreateRecord
 {
     protected static string $resource = ProductResource::class;
 
     protected static ?string $title = 'Nuevo Producto';
+
+    protected function beforeCreate(): void
+    {
+        if (ProductResource::tenantHasAvailableProductSlots()) {
+            return;
+        }
+
+        Notification::make()
+            ->title('Límite de productos alcanzado')
+            ->body(ProductResource::productLimitMessage())
+            ->warning()
+            ->persistent()
+            ->send();
+
+        throw ValidationException::withMessages([
+            'limit' => ProductResource::productLimitMessage(),
+        ]);
+    }
 
     protected function getFormActions(): array
     {

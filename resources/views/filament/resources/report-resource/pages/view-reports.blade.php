@@ -84,76 +84,135 @@
             </div>
         </x-filament::section>
 
-        {{-- Rentabilidad --}}
-        <x-filament::section>
-            <x-slot name="heading">
-                <div class="flex items-center gap-2">
-                    <x-heroicon-o-chart-pie class="w-5 h-5 text-primary-500" />
-                    <span class="text-lg font-semibold">Análisis de Rentabilidad</span>
-                </div>
-            </x-slot>
-            <x-slot name="description">
-                Comparativa de ingresos vs gastos del período seleccionado
-            </x-slot>
-
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {{-- FILA 1: La operación de mercadería --}}
-                {{-- Ingresos --}}
-                <div class="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
-                    <div class="flex items-center justify-center gap-2 text-gray-500 dark:text-gray-400 mb-2">
-                        <x-heroicon-m-arrow-trending-up class="w-5 h-5" />
-                        <span class="text-sm font-medium">Ingresos Totales</span>
+        @if($canViewOnlineStoreReports)
+            <x-filament::section>
+                <x-slot name="heading">
+                    <div class="flex items-center gap-2">
+                        <x-heroicon-o-globe-alt class="w-5 h-5 text-primary-500" />
+                        <span class="text-lg font-semibold">Ventas por Canal</span>
                     </div>
-                    <div class="text-2xl font-bold text-center">S/ {{ number_format($profitability['sales'] ?? 0, 2) }}</div>
-                </div>
+                </x-slot>
+                <x-slot name="description">
+                    Comparativa entre ventas presenciales y ventas provenientes de la tienda online.
+                </x-slot>
 
-                {{-- Costo de Ventas --}}
-                <div class="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
-                    <div class="flex items-center justify-center gap-2 text-orange-500 mb-2">
-                        <x-heroicon-m-shopping-cart class="w-5 h-5" />
-                        <span class="text-sm font-medium">Costo de Mercadería</span>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="text-sm font-medium text-gray-600 dark:text-gray-300">Ventas Presenciales</div>
+                            <x-heroicon-o-building-storefront class="w-6 h-6 text-gray-500" />
+                        </div>
+                        <div class="text-2xl font-bold">
+                            S/ {{ number_format($salesByChannel['local']['total_amount'] ?? 0, 2) }}
+                        </div>
+                        <div class="text-xs text-gray-500 mt-1">
+                            {{ $salesByChannel['local']['transaction_count'] ?? 0 }} operaciones |
+                            {{ $salesByChannel['local']['percentage'] ?? 0 }}% del total
+                        </div>
                     </div>
-                    <div class="text-2xl font-bold text-center">S/ {{ number_format($profitability['cogs'] ?? 0, 2) }}</div>
-                </div>
 
-                {{-- Utilidad Bruta (NUEVA) --}}
-                <div class="dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm bg-blue-50/30">
-                    <div class="flex items-center justify-center gap-2 text-blue-600 mb-2">
-                        <x-heroicon-m-calculator class="w-5 h-5" />
-                        <span class="text-sm font-medium">Utilidad Bruta</span>
+                    <div class="bg-white dark:bg-gray-800 p-6 rounded-xl border border-primary-200 dark:border-primary-800 shadow-sm">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="text-sm font-medium text-primary-700 dark:text-primary-300">Ventas Online Procesadas</div>
+                            <x-heroicon-o-globe-alt class="w-6 h-6 text-primary-600" />
+                        </div>
+                        <div class="text-2xl font-bold text-primary-700 dark:text-primary-300">
+                            S/ {{ number_format($salesByChannel['ecommerce']['total_amount'] ?? 0, 2) }}
+                        </div>
+                        <div class="text-xs text-primary-600 dark:text-primary-400 mt-1">
+                            {{ $salesByChannel['ecommerce']['transaction_count'] ?? 0 }} pedidos procesados |
+                            {{ $salesByChannel['ecommerce']['percentage'] ?? 0 }}% del total
+                        </div>
                     </div>
-                    <div class="text-2xl font-bold text-center text-blue-700">S/ {{ number_format($profitability['gross_profit'] ?? 0, 2) }}</div>
-                </div>
 
-                {{-- FILA 2: La utilidad final --}}
-                {{-- Gastos --}}
-                <div class="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
-                    <div class="flex items-center justify-center gap-2 text-danger-500 mb-2">
-                        <x-heroicon-m-arrow-trending-down class="w-5 h-5" />
-                        <span class="text-sm font-medium">Gastos Operativos</span>
+                    <div class="bg-warning-50 dark:bg-warning-500/10 p-6 rounded-xl border border-warning-200 dark:border-warning-500/20 shadow-sm">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="text-sm font-medium text-warning-700 dark:text-warning-300">Pedidos Web Pendientes</div>
+                            <x-heroicon-o-clock class="w-6 h-6 text-warning-600" />
+                        </div>
+                        <div class="text-2xl font-bold text-warning-900 dark:text-warning-100">
+                            {{ $pendingWebOrdersSummary['count'] ?? 0 }}
+                        </div>
+                        <div class="text-xs text-warning-600 dark:text-warning-400 mt-1">
+                            Monto referencial: S/ {{ number_format($pendingWebOrdersSummary['total_amount'] ?? 0, 2) }}
+                        </div>
                     </div>
-                    <div class="text-2xl font-bold text-center text-danger-600">S/ {{ number_format($profitability['expenses'] ?? 0, 2) }}</div>
                 </div>
+            </x-filament::section>
+        @endif
 
-                {{-- Utilidad Neta --}}
-                <div class="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm bg-success-50/30">
-                    <div class="flex items-center justify-center gap-2 text-success-600 mb-2">
-                        <x-heroicon-m-banknotes class="w-5 h-5" />
-                        <span class="text-sm font-medium">Utilidad Neta (Bolsillo)</span>
+        @if($canViewProfitability)
+            {{-- Rentabilidad --}}
+            <x-filament::section>
+                <x-slot name="heading">
+                    <div class="flex items-center gap-2">
+                        <x-heroicon-o-chart-pie class="w-5 h-5 text-primary-500" />
+                        <span class="text-lg font-semibold">Análisis de Rentabilidad</span>
                     </div>
-                    <div class="text-2xl font-bold text-center text-success-700">S/ {{ number_format($profitability['profit'] ?? 0, 2) }}</div>
-                </div>
+                </x-slot>
+                <x-slot name="description">
+                    Comparativa de ingresos vs gastos del período seleccionado
+                </x-slot>
 
-                {{-- Margen --}}
-                <div class="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
-                    <div class="flex items-center justify-center gap-2 text-gray-500 mb-2">
-                        <x-heroicon-m-presentation-chart-line class="w-5 h-5" />
-                        <span class="text-sm font-medium">Margen de Ganancia</span>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {{-- FILA 1: La operación de mercadería --}}
+                    {{-- Ingresos --}}
+                    <div class="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                        <div class="flex items-center justify-center gap-2 text-gray-500 dark:text-gray-400 mb-2">
+                            <x-heroicon-m-arrow-trending-up class="w-5 h-5" />
+                            <span class="text-sm font-medium">Ingresos Totales</span>
+                        </div>
+                        <div class="text-2xl font-bold text-center">S/ {{ number_format($profitability['sales'] ?? 0, 2) }}</div>
                     </div>
-                    <div class="text-2xl font-bold text-center">{{ $profitability['margin_percentage'] ?? 0 }}%</div>
+
+                    {{-- Costo de Ventas --}}
+                    <div class="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                        <div class="flex items-center justify-center gap-2 text-orange-500 mb-2">
+                            <x-heroicon-m-shopping-cart class="w-5 h-5" />
+                            <span class="text-sm font-medium">Costo de Mercadería</span>
+                        </div>
+                        <div class="text-2xl font-bold text-center">S/ {{ number_format($profitability['cogs'] ?? 0, 2) }}</div>
+                    </div>
+
+                    {{-- Utilidad Bruta (NUEVA) --}}
+                    <div class="dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm bg-blue-50/30">
+                        <div class="flex items-center justify-center gap-2 text-blue-600 mb-2">
+                            <x-heroicon-m-calculator class="w-5 h-5" />
+                            <span class="text-sm font-medium">Utilidad Bruta</span>
+                        </div>
+                        <div class="text-2xl font-bold text-center text-blue-700">S/ {{ number_format($profitability['gross_profit'] ?? 0, 2) }}</div>
+                    </div>
+
+                    {{-- FILA 2: La utilidad final --}}
+                    {{-- Gastos --}}
+                    <div class="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                        <div class="flex items-center justify-center gap-2 text-danger-500 mb-2">
+                            <x-heroicon-m-arrow-trending-down class="w-5 h-5" />
+                            <span class="text-sm font-medium">Gastos Operativos</span>
+                        </div>
+                        <div class="text-2xl font-bold text-center text-danger-600">S/ {{ number_format($profitability['expenses'] ?? 0, 2) }}</div>
+                    </div>
+
+                    {{-- Utilidad Neta --}}
+                    <div class="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm bg-success-50/30">
+                        <div class="flex items-center justify-center gap-2 text-success-600 mb-2">
+                            <x-heroicon-m-banknotes class="w-5 h-5" />
+                            <span class="text-sm font-medium">Utilidad Neta (Bolsillo)</span>
+                        </div>
+                        <div class="text-2xl font-bold text-center text-success-700">S/ {{ number_format($profitability['profit'] ?? 0, 2) }}</div>
+                    </div>
+
+                    {{-- Margen --}}
+                    <div class="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                        <div class="flex items-center justify-center gap-2 text-gray-500 mb-2">
+                            <x-heroicon-m-presentation-chart-line class="w-5 h-5" />
+                            <span class="text-sm font-medium">Margen de Ganancia</span>
+                        </div>
+                        <div class="text-2xl font-bold text-center">{{ $profitability['margin_percentage'] ?? 0 }}%</div>
+                    </div>
                 </div>
-            </div>
-        </x-filament::section>
+            </x-filament::section>
+        @endif
 
         {{-- Productos Más Vendidos --}}
         <x-filament::section>

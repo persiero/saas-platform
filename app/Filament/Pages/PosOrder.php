@@ -6,6 +6,7 @@ use Filament\Pages\Page;
 use Percy\Core\Models\Sale;
 use Percy\Core\Models\Product;
 use Percy\Core\Models\Category;
+use Percy\Core\Services\Sales\CorrelativeService;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Computed;
 use App\Filament\Pages\PosRestaurant;
@@ -82,7 +83,7 @@ class PosOrder extends Page
         $this->selectedCategoryId = $id;
     }
 
-   // 🌟 ACCIÓN PRINCIPAL: Agregar plato a la comanda
+    // 🌟 ACCIÓN PRINCIPAL: Agregar plato a la comanda
     public function addProduct($productId)
     {
         // 🌟 EL CANDADO DE CAJA: Si no hay caja abierta, bloqueamos todo
@@ -136,7 +137,6 @@ class PosOrder extends Page
                 'total' => $nuevoTotal,
                 'igv_amount' => round($nuevoIgvLinea, 2), // <- Ahora SUNAT recibirá el IGV correcto de la fila
             ]);
-
         } else {
             // Si es nuevo, lo agregamos a la comanda
             $afectacion = \Percy\Core\Models\AfectacionIgv::find($product->afectacion_igv_id ?? 1);
@@ -352,7 +352,7 @@ class PosOrder extends Page
             ->label('Cobrar')
             ->color('success')
             ->icon('heroicon-m-banknotes')
-            ->visible(fn () => !Auth::user()->hasRole('Vendedor'))
+            ->visible(fn() => !Auth::user()->hasRole('Vendedor'))
             ->extraAttributes(['class' => 'w-full [&>button]:w-full [&>button]:justify-center'])
             ->modalHeading('Finalizar Venta')
             ->modalDescription('Selecciona el comprobante y método de pago.')
@@ -384,7 +384,7 @@ class PosOrder extends Page
                 \Filament\Forms\Components\Select::make('serie_documento')
                     ->label('Serie del Comprobante')
                     // 🌟 LA MAGIA ABSOLUTA: Esto fuerza a reconstruir el HTML del selector
-                    ->key(fn (\Filament\Forms\Get $get) => 'serie_dinamica_' . $get('document_type'))
+                    ->key(fn(\Filament\Forms\Get $get) => 'serie_dinamica_' . $get('document_type'))
                     ->options(function (\Filament\Forms\Get $get) {
                         $docType = $get('document_type');
                         return \Percy\Core\Models\Serie::where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id)
@@ -421,8 +421,8 @@ class PosOrder extends Page
                     })
                     ->searchable()
                     ->preload()
-                    ->required(fn (\Filament\Forms\Get $get) => $get('document_type') === '01')
-                    ->helperText(fn (\Filament\Forms\Get $get) => $get('document_type') === '01' ? 'Obligatorio para Facturas' : 'Opcional. Déjalo en blanco para Consumidor Final.')
+                    ->required(fn(\Filament\Forms\Get $get) => $get('document_type') === '01')
+                    ->helperText(fn(\Filament\Forms\Get $get) => $get('document_type') === '01' ? 'Obligatorio para Facturas' : 'Opcional. Déjalo en blanco para Consumidor Final.')
                     ->manageOptionActions(function (\Filament\Forms\Components\Actions\Action $action) {
                         return $action
                             ->icon('heroicon-o-user-plus')
@@ -447,10 +447,18 @@ class PosOrder extends Page
 
                             \Filament\Forms\Components\TextInput::make('document_number')
                                 ->label('Número')
-                                ->maxLength(fn (\Filament\Forms\Get $get) => match ($get('document_type')) { 'DNI' => 8, 'RUC' => 11, default => 15 })
-                                ->minLength(fn (\Filament\Forms\Get $get) => match ($get('document_type')) { 'DNI' => 8, 'RUC' => 11, default => null })
-                                ->numeric(fn (\Filament\Forms\Get $get) => in_array($get('document_type'), ['DNI', 'RUC']))
-                                ->placeholder(fn (\Filament\Forms\Get $get) => $get('document_type') === 'RUC' ? 'Ej: 20... (11 dígitos)' : 'Ej: 12345678')
+                                ->maxLength(fn(\Filament\Forms\Get $get) => match ($get('document_type')) {
+                                    'DNI' => 8,
+                                    'RUC' => 11,
+                                    default => 15
+                                })
+                                ->minLength(fn(\Filament\Forms\Get $get) => match ($get('document_type')) {
+                                    'DNI' => 8,
+                                    'RUC' => 11,
+                                    default => null
+                                })
+                                ->numeric(fn(\Filament\Forms\Get $get) => in_array($get('document_type'), ['DNI', 'RUC']))
+                                ->placeholder(fn(\Filament\Forms\Get $get) => $get('document_type') === 'RUC' ? 'Ej: 20... (11 dígitos)' : 'Ej: 12345678')
                                 ->required()
                                 ->columnSpan(1)
                                 ->suffixAction(
@@ -458,7 +466,7 @@ class PosOrder extends Page
                                         ->icon('heroicon-m-magnifying-glass')
                                         ->color('primary')
                                         ->tooltip('Buscar RUC (Decolecta)')
-                                        ->visible(fn (\Filament\Forms\Get $get) => $get('document_type') === 'RUC')
+                                        ->visible(fn(\Filament\Forms\Get $get) => $get('document_type') === 'RUC')
                                         ->action(function ($state, \Filament\Forms\Set $set) {
                                             if (blank($state) || strlen($state) !== 11) {
                                                 \Filament\Notifications\Notification::make()->danger()->title('Error')->body('Ingrese un RUC válido de 11 dígitos.')->send();
@@ -511,13 +519,13 @@ class PosOrder extends Page
                     ->default('Efectivo')
                     ->live()
                     ->required()
-                    ->afterStateUpdated(fn (\Filament\Forms\Set $set) => $set('payment_reference', null)),
+                    ->afterStateUpdated(fn(\Filament\Forms\Set $set) => $set('payment_reference', null)),
 
                 \Filament\Forms\Components\TextInput::make('payment_reference')
                     ->label('N° de Operación / Referencia')
                     ->placeholder('Ej: 123456')
-                    ->visible(fn (\Filament\Forms\Get $get) => \Percy\Core\Models\Sale::requiresReference($get('payment_method') ?? ''))
-                    ->required(fn (\Filament\Forms\Get $get) => \Percy\Core\Models\Sale::requiresReference($get('payment_method') ?? '')),
+                    ->visible(fn(\Filament\Forms\Get $get) => \Percy\Core\Models\Sale::requiresReference($get('payment_method') ?? ''))
+                    ->required(fn(\Filament\Forms\Get $get) => \Percy\Core\Models\Sale::requiresReference($get('payment_method') ?? '')),
             ])
             ->action(function (array $data) {
                 // 1. Validar que la comanda no esté vacía
@@ -534,19 +542,20 @@ class PosOrder extends Page
 
                 // 2. 🌟 MAGIA ACTUALIZADA: Usamos la serie que el cliente seleccionó en el formulario
                 if ($newDocType !== $currentDocType) {
-                    $serieRecord = \Percy\Core\Models\Serie::where('tenant_id', Auth::user()->tenant_id)
-                        ->where('document_type', $newDocType)
-                        ->where('serie', $data['serie_documento']) // 👈 Usamos la selección del formulario
-                        ->first();
+                    try {
+                        $finalSerie = $data['serie_documento'];
 
-                    if (!$serieRecord) {
-                        \Filament\Notifications\Notification::make()->danger()->title('Falta Serie')->body('La serie seleccionada no existe o no está activa.')->send();
+                        $finalCorrelative = app(CorrelativeService::class)
+                            ->next(Auth::user()->tenant_id, $newDocType, $finalSerie);
+                    } catch (\Exception $e) {
+                        \Filament\Notifications\Notification::make()
+                            ->danger()
+                            ->title('Falta Serie')
+                            ->body($e->getMessage())
+                            ->send();
+
                         return;
                     }
-
-                    $serieRecord->increment('correlative');
-                    $finalSerie = $serieRecord->serie;
-                    $finalCorrelative = $serieRecord->correlative;
                 }
 
                 // 3. Calculamos el monto en letras

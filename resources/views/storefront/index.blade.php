@@ -2,119 +2,135 @@
 
 @section('content')
     {{-- 🌟 CATÁLOGO DE PRODUCTOS --}}
-    <main class="max-w-6xl mx-auto px-4 py-8">
-        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6" id="products-grid">
-            @foreach($products as $product)
-                {{-- 🌟 TRADUCTOR DE UNIDADES SUNAT A NOMBRES AMIGABLES --}}
-                @php
-                    $codigoSunat = $product->unidadSunat->codigo ?? 'NIU';
-                    $unidadAmigable = match($codigoSunat) {
-                        'NIU' => 'Und.',
-                        'KGM' => 'Kg.',
-                        'LTR' => 'Lt.',
-                        'GLL' => 'Galón',
-                        'GRM' => 'g.',
-                        'MTR' => 'm.',
-                        'BX'  => 'Caja',
-                        'PK'  => 'Paquete',
-                        default => $codigoSunat // Si es otro raro, lo deja como está
-                    };
-                @endphp
+    <main class="max-w-6xl mx-auto px-4 py-6 md:py-8">
 
-                <div class="product-card bg-white rounded-2xl shadow-sm border border-gray-100 p-2 sm:p-3 flex flex-col h-full transition-all duration-300 hover:shadow-xl hover:-translate-y-1 relative group overflow-hidden"
-                     data-name="{{ strtolower($product->name) }}"
-                     data-category="{{ strtolower($product->category->name ?? 'General') }}">
+        {{-- BANNER DE BIENVENIDA --}}
+        <section
+            class="relative overflow-hidden rounded-3xl mb-6 border border-slate-100 shadow-sm"
+            style="background:
+                radial-gradient(circle at top right, color-mix(in srgb, {{ $tenant->primary_color ?? '#4f46e5' }} 28%, transparent), transparent 38%),
+                linear-gradient(135deg, color-mix(in srgb, {{ $tenant->primary_color ?? '#4f46e5' }} 15%, white), #ffffff 55%, #f8fafc);"
+        >
+            <div class="relative p-5 md:p-8">
+                <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-5">
+                    <div class="max-w-2xl">
+                        <div class="inline-flex items-center gap-2 bg-white/80 border border-white/80 rounded-full px-3 py-1 text-[11px] md:text-xs font-black text-brand shadow-sm mb-3">
+                            <x-heroicon-o-sparkles class="w-4 h-4" />
+                            Bienvenido a nuestra tienda online
+                        </div>
 
-                    {{-- 🌟 IMAGEN (Ajustada para que no sea tan gigante en móvil) --}}
-                    <div class="relative w-full h-32 sm:h-44 rounded-xl mb-2 sm:mb-3 overflow-hidden bg-gray-50 flex items-center justify-center">
-                        @if($product->image)
-                            <img src="{{ Storage::disk('r2_public')->url($product->image) }}" alt="{{ $product->name }}" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110">
-                        @else
-                            <svg class="w-10 h-10 sm:w-12 sm:h-12 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                        @endif
+                        <h2 class="text-2xl md:text-4xl font-black text-slate-950 leading-tight">
+                            Explora la tienda y encuentra tus productos favoritos
+                        </h2>
 
-                        {{-- BADGE DE UNIDAD --}}
-                        <div class="absolute top-2 right-2 bg-white/90 backdrop-blur-sm px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg shadow-sm border border-gray-100 text-[9px] sm:text-[10px] font-black text-gray-700 uppercase tracking-wider">
-                            X {{ $unidadAmigable }}
+                        <p class="text-sm md:text-base text-slate-600 mt-2 leading-relaxed">
+                            Ingresa al catálogo completo, filtra por categorías y agrega tus productos al carrito para enviar tu pedido por WhatsApp.
+                        </p>
+
+                        <div class="flex flex-wrap items-center gap-2 mt-4">
+                            <span class="inline-flex items-center gap-1.5 bg-white/85 border border-white rounded-full px-3 py-1.5 text-xs font-bold text-slate-700 shadow-sm">
+                                <x-heroicon-o-truck class="w-4 h-4 text-brand" />
+                                Delivery
+                            </span>
+
+                            <span class="inline-flex items-center gap-1.5 bg-white/85 border border-white rounded-full px-3 py-1.5 text-xs font-bold text-slate-700 shadow-sm">
+                                <x-heroicon-o-building-storefront class="w-4 h-4 text-brand" />
+                                Recojo en tienda
+                            </span>
+
+                            <span class="inline-flex items-center gap-1.5 bg-white/85 border border-white rounded-full px-3 py-1.5 text-xs font-bold text-slate-700 shadow-sm">
+                                <x-heroicon-o-device-phone-mobile class="w-4 h-4 text-brand" />
+                                Confirmación por WhatsApp
+                            </span>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-3 mt-5">
+                            <a
+                                href="/productos"
+                                class="inline-flex items-center gap-2 bg-brand text-white font-black px-5 py-3 rounded-2xl shadow-brand hover:opacity-90 active:scale-95 transition"
+                            >
+                                Ver todos los productos
+                                <x-heroicon-o-arrow-right class="w-5 h-5" />
+                            </a>
+
+                            <button
+                                type="button"
+                                onclick="toggleCart()"
+                                class="inline-flex items-center gap-2 bg-white text-slate-700 border border-slate-200 font-black px-5 py-3 rounded-2xl hover:bg-slate-50 active:scale-95 transition"
+                            >
+                                Ver carrito
+                                <x-heroicon-o-shopping-cart class="w-5 h-5 text-brand" />
+                            </button>
                         </div>
                     </div>
 
-                    {{-- 🌟 TEXTOS (Con altura mínima forzada para alinear todo) --}}
-                    <div class="px-1 flex-grow flex flex-col">
-                        <p class="text-[10px] sm:text-xs font-semibold text-brand mb-1 uppercase tracking-wider line-clamp-1">{{ $product->category->name ?? 'General' }}</p>
-
-                        {{-- TRUCO: min-h-[2.5rem] fuerza a que ocupen el espacio de 2 líneas siempre --}}
-                        <h3 class="text-xs sm:text-sm font-bold text-gray-800 leading-tight line-clamp-2 mb-2 min-h-[2rem] sm:min-h-[2.5rem]">{{ $product->name }}</h3>
-                    </div>
-
-                    {{-- 🌟 PRECIO Y BOTÓN (Responsivo: Apilado en móvil pequeño, lado a lado en móvil grande/PC) --}}
-                    <div class="px-1 mt-auto pt-2 flex flex-col min-[400px]:flex-row items-start min-[400px]:items-end justify-between border-t border-gray-50 gap-2 min-[400px]:gap-0">
-                        <div class="flex flex-col w-full min-[400px]:w-auto">
-                            <span class="text-[10px] sm:text-xs text-gray-400 font-medium line-through hidden">S/ {{ number_format($product->price * 1.2, 2) }}</span>
-                            <span class="font-black text-sm sm:text-lg text-gray-900 leading-none truncate w-full">S/ {{ number_format($product->price, 2) }}</span>
-                        </div>
-
-                        {{-- Botón (Se estira en móvil, tamaño normal en PC) --}}
-                        <button onclick="addToCart('{{ addslashes($product->name) }}', {{ $product->price }}, '{{ $unidadAmigable }}')" class="w-full min-[400px]:w-auto bg-brand text-white text-xs sm:text-sm px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl flex items-center justify-center hover:opacity-90 transition font-bold shadow-sm shadow-brand/30 active:scale-95">
-                            Agregar
-                        </button>
+                    <div class="hidden md:flex w-32 h-32 rounded-[2rem] bg-white/70 border border-white shadow-sm items-center justify-center shrink-0">
+                        <x-heroicon-o-shopping-bag class="w-16 h-16 text-brand" />
                     </div>
                 </div>
-            @endforeach
+
+                @if(! $tenant->is_open_for_orders)
+                    <div class="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 flex items-start gap-2">
+                        <x-heroicon-o-exclamation-triangle class="w-5 h-5 shrink-0 mt-0.5" />
+                        <div>
+                            <strong>Tienda cerrada por ahora.</strong>
+                            Puedes revisar el catálogo, pero los pedidos se atenderán cuando vuelva a abrir.
+                        </div>
+                    </div>
+                @endif
+            </div>
+        </section>
+    
+        {{-- Resumen superior --}}
+        <section class="mb-4">
+            <div class="flex items-end justify-between gap-3">
+                <div>
+                    <h2 class="text-2xl font-black text-slate-950">
+                        Productos destacados
+                    </h2>
+                    <p class="text-sm text-slate-500 mt-1">
+                        Algunos productos disponibles en nuestra tienda.
+                    </p>
+                </div>
+
+                <a
+                    href="/productos"
+                    class="hidden sm:inline-flex items-center gap-2 text-sm font-black text-brand hover:opacity-80 transition"
+                >
+                    Ver catálogo completo
+                    <x-heroicon-o-arrow-right class="w-4 h-4" />
+                </a>
+            </div>
+        </section>
+        
+        {{-- Estado vacío --}}
+        <div id="empty-state" class="hidden bg-white rounded-3xl border border-gray-100 shadow-sm py-14 px-6 text-center mb-6">
+            <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-gray-100 flex items-center justify-center">
+                <svg class="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.7" d="M21 21l-4.35-4.35m1.85-5.15a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                </svg>
+            </div>
+            <h3 class="text-lg font-bold text-gray-800">No encontramos productos</h3>
+            <p class="text-sm text-gray-500 mt-1">Prueba con otro nombre o cambia la categoría.</p>
+        </div>
+
+        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6" id="products-grid">
+            @forelse($products as $product)
+                @include('storefront.partials.product-card', ['product' => $product])
+            @empty
+                <div class="col-span-full bg-white border border-slate-100 rounded-3xl p-10 text-center shadow-sm">
+                    <div class="w-16 h-16 mx-auto rounded-full bg-slate-100 flex items-center justify-center mb-4">
+                        <x-heroicon-o-inbox class="w-8 h-8 text-slate-400" />
+                    </div>
+                    <h3 class="text-lg font-black text-slate-800">No hay productos disponibles</h3>
+                    <p class="text-sm text-slate-500 mt-1">
+                        La tienda aún no tiene productos publicados.
+                    </p>
+                </div>
+            @endforelse
         </div>
     </main>
 
     <script>
-        // 🌟 LÓGICA DE FILTROS Y BÚSQUEDA
-        let currentCategory = 'all';
-
-        // 1. Filtrar al escribir en el buscador
-        function filterProducts() {
-            applyFilters();
-        }
-
-        // 2. Filtrar al hacer clic en las "píldoras" de categorías
-        function filterCategory(category, btn) {
-            currentCategory = category.toLowerCase();
-
-            // Limpiar el estilo visual de todos los botones
-            let allButtons = document.querySelectorAll('.category-btn');
-            allButtons.forEach(button => {
-                button.classList.remove('active-category', 'bg-brand', 'text-white'); // Ajusta según tu color
-                button.classList.add('bg-gray-100', 'text-gray-600');
-            });
-
-            // Ponerle el estilo de "Activo" al botón seleccionado
-            btn.classList.remove('bg-gray-100', 'text-gray-600');
-            btn.classList.add('active-category', 'bg-brand', 'text-white'); // Usa tu clase de color principal
-
-            applyFilters();
-        }
-
-        // 3. El motor principal que cruza Búsqueda + Categoría
-        function applyFilters() {
-            let searchInput = document.getElementById('searchInput');
-            if (!searchInput) return; // Por seguridad, si no existe el buscador no hace nada
-
-            let searchTerm = searchInput.value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""); // Ignora tildes
-            let products = document.querySelectorAll('.product-card'); // Asegúrate de que tus tarjetas tengan esta clase
-
-            products.forEach(card => {
-                // Leemos los atributos de la tarjeta
-                let productName = (card.getAttribute('data-name') || '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-                let productCategory = (card.getAttribute('data-category') || '').toLowerCase();
-
-                // Verificamos si cumple ambas condiciones
-                let matchesSearch = productName.includes(searchTerm);
-                let matchesCategory = (currentCategory === 'all' || productCategory === currentCategory);
-
-                // Mostrar u ocultar (Usamos 'flex' asumiendo que tus tarjetas tienen flex-col o similar)
-                if (matchesSearch && matchesCategory) {
-                    card.style.display = 'flex';
-                } else {
-                    card.style.display = 'none';
-                }
-            });
-        }
+        @include('storefront.partials.product-filter-script')
     </script>
 @endsection

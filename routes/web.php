@@ -1,49 +1,79 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Auth;
 use App\Http\Controllers\SaleController;
+use App\Http\Controllers\StorefrontController;
+use Barryvdh\DomPDF\Facade\Pdf;
+use Percy\Core\Models\Sale;
 
+/*
+|--------------------------------------------------------------------------
+| Tiendas por subdominio
+|--------------------------------------------------------------------------
+*/
 
-// 🌟 1. PRIMERO LAS RUTAS DE SUBDOMINIOS (TIENDAS SAAS)
-// Al ponerlas aquí arriba, Laravel las evalúa antes que cualquier redirección global.
-Route::domain('{tenant_domain}.' . env('APP_URL_BASE', 'saas-platform.test'))->group(function () {
-    // Ruta del Catálogo Principal (La que ya tenías)
-    Route::get('/', [\App\Http\Controllers\StorefrontController::class, 'index'])->name('storefront.index');
+Route::domain('{tenant_domain}.' . env('APP_URL_BASE', 'saas-platform.test'))
+    ->where(['tenant_domain' => '[a-zA-Z0-9\-]+'])
+    ->group(function () {
+        Route::get('/', [StorefrontController::class, 'index'])
+            ->name('storefront.index');
 
-    // 🌟 Ruta del Checkout (Apuntando al controlador nuevo)
-    Route::get('/checkout', [\App\Http\Controllers\StorefrontController::class, 'checkout'])->name('storefront.checkout');
+        Route::get('/productos', [StorefrontController::class, 'products'])
+            ->name('storefront.products');
 
-    // 🌟 LA NUEVA RUTA POST (Asegúrate de que esta línea exista aquí adentro)
-    Route::post('/checkout/process', [\App\Http\Controllers\StorefrontController::class, 'processWebOrder'])->name('storefront.process');
-});
+        Route::get('/productos/{product}', [StorefrontController::class, 'showProduct'])
+            ->whereNumber('product')
+            ->name('storefront.products.show');
 
-// 🌟 2. RUTAS GLOBALES DEL SISTEMA PRINCIPAL
-// Si alguien entra a "saas-platform.test" (sin subdominio), lo mandamos al panel admin.
+        Route::get('/checkout', [StorefrontController::class, 'checkout'])
+            ->name('storefront.checkout');
+
+        Route::post('/checkout/process', [StorefrontController::class, 'processWebOrder'])
+            ->name('storefront.process');
+    });
+
+/*
+|--------------------------------------------------------------------------
+| Sistema principal
+|--------------------------------------------------------------------------
+*/
+
 Route::redirect('/', '/admin');
 
-// 🌟 3. OTRAS RUTAS DEL SISTEMA (Tickets, PDF, Caché, etc.)
-Route::get('/sales/{sale}/ticket', [SaleController::class, 'printTicket'])->name('sales.ticket');
-Route::get('/sales/{sale}/download-xml', [SaleController::class, 'downloadXml'])->name('sales.download-xml');
-Route::get('/sales/{sale}/download-cdr', [SaleController::class, 'downloadCdr'])->name('sales.download-cdr');
+/*
+|--------------------------------------------------------------------------
+| Rutas privadas
+|--------------------------------------------------------------------------
+*/
 
-// Ruta para el ticket de cocina (Preparación) - AHORA COMO PDF REAL
-Route::get('/print/kitchen/{id}', function ($id) {
-    $sale = \Percy\Core\Models\Sale::with(['items', 'table.zone', 'user'])->findOrFail($id);
+Route::middleware(['auth'])->group(function () {
+    Route::prefix('sales/{sale}')
+        ->whereNumber('sale')
+        ->group(function () {
+            Route::get('/ticket', [SaleController::class, 'printTicket'])
+                ->name('sales.ticket');
 
-    // Generamos el PDF. El array [0, 0, 226.77, 800] representa 80mm de ancho.
-    $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.kitchen-ticket', compact('sale'))
-        ->setPaper([0, 0, 226.77, 800], 'portrait');
+            Route::get('/download-xml', [SaleController::class, 'downloadXml'])
+                ->name('sales.download-xml');
 
-    // Mostramos el PDF en el navegador igual que la Nota de Venta
-    return $pdf->stream('comanda-mesa-'.$sale->id.'.pdf');
+            Route::get('/download-cdr', [SaleController::class, 'downloadCdr'])
+                ->name('sales.download-cdr');
+        });
 
-})->name('print.kitchen');
+    Route::get('/print/kitchen/{id}', function ($id) {
+        $sale = Sale::with(['items', 'table.zone', 'user'])->findOrFail($id);
 
-Route::get('/limpiar-cache', function () {
-    try {
-        \Illuminate\Support\Facades\Artisan::call('optimize:clear');
-        return "✅ Caché del servidor eliminada con éxito. Laravel ya puede leer Cloudflare.";
-    } catch (\Exception $e) {
-        return "❌ Error limpiando caché: " . $e->getMessage();
-    }
+        /** @var \App\Models\User|null $user */
+        $user = Auth::user();
+
+        abort_unless($user && $user->tenant_id === $sale->tenant_id, 403);
+
+        $pdf = Pdf::loadView('pdf.kitchen-ticket', compact('sale'))
+            ->setPaper([0, 0, 226.77, 800], 'portrait');
+
+        return $pdf->stream('comanda-mesa-' . $sale->id . '.pdf');
+    })
+        ->whereNumber('id')
+        ->name('print.kitchen');
 });

@@ -13,6 +13,8 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Filament\Tables\Filters\TrashedFilter;
+use Illuminate\Support\Facades\Auth;
+use Percy\Core\Services\Tenants\TenantPlanService;
 
 class CategoryResource extends Resource
 {
@@ -24,52 +26,61 @@ class CategoryResource extends Resource
     protected static ?string $pluralModelLabel = 'Categorías';
     protected static ?int $navigationSort = 2;
 
+    private static function userCanManageCategories(): bool
+    {
+        /** @var \Percy\Core\Models\User|null $user */
+        $user = Auth::user();
+
+        if (! $user || ! $user->tenant) {
+            return false;
+        }
+
+        if (! $user->isAdmin()) {
+            return false;
+        }
+
+        return app(TenantPlanService::class)->has('has_product_categories', $user->tenant);
+    }
+
     public static function getEloquentQuery(): Builder
     {
+        $user = Auth::user();
+
+        if (! $user || $user->tenant_id === null) {
+            return parent::getEloquentQuery()->whereRaw('1 = 0');
+        }
+
         return parent::getEloquentQuery()
-            ->where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id) // 1. Filtro SaaS
-            // ❌ Quitamos el ->with(['category']) porque estos módulos no lo necesitan
+            ->where('tenant_id', $user->tenant_id)
             ->withoutGlobalScopes([
-                SoftDeletingScope::class, // 2. Permite ver la papelera
+                SoftDeletingScope::class,
             ]);
     }
 
     // 🌟 MAGIA SAAS: Ocultar este menú a los Mozos (Vendedores)
     public static function canViewAny(): bool
     {
-        /** @var \Percy\Core\Models\User $user */
-        $user = \Illuminate\Support\Facades\Auth::user();
-
-        // Si el usuario NO tiene el rol de Vendedor, puede ver el menú
-        return !$user->hasRole('Vendedor');
+        return self::userCanManageCategories();
     }
 
     public static function canCreate(): bool
     {
-        /** @var \Percy\Core\Models\User $user */
-        $user = \Illuminate\Support\Facades\Auth::user();
-        return $user->isAdmin();
+        return self::userCanManageCategories();
     }
 
     public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
     {
-        /** @var \Percy\Core\Models\User $user */
-        $user = \Illuminate\Support\Facades\Auth::user();
-        return $user->isAdmin();
+        return self::userCanManageCategories();
     }
 
     public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
     {
-        /** @var \Percy\Core\Models\User $user */
-        $user = \Illuminate\Support\Facades\Auth::user();
-        return $user->isAdmin();
+        return self::userCanManageCategories();
     }
 
     public static function canRestore(\Illuminate\Database\Eloquent\Model $record): bool
     {
-        /** @var \Percy\Core\Models\User $user */
-        $user = \Illuminate\Support\Facades\Auth::user();
-        return $user->isAdmin(); // Solo el Admin puede restaurar
+        return self::userCanManageCategories();
     }
 
     public static function canForceDelete(\Illuminate\Database\Eloquent\Model $record): bool
@@ -80,16 +91,12 @@ class CategoryResource extends Resource
     // 5. Restricción general para Bulk Actions (Aplica para eliminar/restaurar masivamente)
     public static function canDeleteAny(): bool
     {
-        /** @var \Percy\Core\Models\User $user */
-        $user = \Illuminate\Support\Facades\Auth::user();
-        return $user->isAdmin();
+        return self::userCanManageCategories();
     }
 
     public static function canRestoreAny(): bool
     {
-        /** @var \Percy\Core\Models\User $user */
-        $user = \Illuminate\Support\Facades\Auth::user();
-        return $user->isAdmin();
+        return self::userCanManageCategories();
     }
 
     public static function form(Form $form): Form
@@ -104,19 +111,19 @@ class CategoryResource extends Resource
                     ->prefixIcon('heroicon-o-tag')
                     ->columnSpan(2),
 
-                    Forms\Components\Textarea::make('description')
-                        ->label('Descripción')
-                        ->maxLength(255)
-                        ->rows(3)
-                        ->placeholder('Descripción opcional de la categoría')
-                        ->columnSpan(2),
+                Forms\Components\Textarea::make('description')
+                    ->label('Descripción')
+                    ->maxLength(255)
+                    ->rows(3)
+                    ->placeholder('Descripción opcional de la categoría')
+                    ->columnSpan(2),
 
-                    Forms\Components\Toggle::make('active')
-                        ->label('¿Categoría Activa?')
-                        ->helperText('Las categorías inactivas no aparecerán en los formularios')
-                        ->default(true)
-                        ->inline(false)
-                        ->columnSpan(2),
+                Forms\Components\Toggle::make('active')
+                    ->label('¿Categoría Activa?')
+                    ->helperText('Las categorías inactivas no aparecerán en los formularios')
+                    ->default(true)
+                    ->inline(false)
+                    ->columnSpan(2),
             ])->columns(2);
     }
 
@@ -130,7 +137,7 @@ class CategoryResource extends Resource
                     ->sortable()
                     ->weight('bold')
                     ->icon('heroicon-o-tag')
-                    ->description(fn (Category $record): ?string => $record->description),
+                    ->description(fn(Category $record): ?string => $record->description),
 
                 Tables\Columns\ToggleColumn::make('active')
                     ->label('Activo')
@@ -182,10 +189,10 @@ class CategoryResource extends Resource
                         ->modalHeading('Restaurar Categoría')
                         ->modalDescription('¿Deseas rescatar esta categoría de la papelera? Volverá a estar visible y activo en el sistema.'),
                 ])
-                ->label('Acciones')
-                ->icon('heroicon-o-ellipsis-vertical')
-                ->button()
-                ->color('gray'),
+                    ->label('Acciones')
+                    ->icon('heroicon-o-ellipsis-vertical')
+                    ->button()
+                    ->color('gray'),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([

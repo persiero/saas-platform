@@ -5,10 +5,11 @@ namespace App\Filament\Resources\SaleResource\Pages;
 use App\Filament\Resources\SaleResource;
 use Filament\Actions;
 use Filament\Resources\Pages\CreateRecord;
-use Percy\Core\Models\Serie;
 use Percy\Core\Models\CashRegister;
+use Percy\Core\Services\Sales\CorrelativeService;
 use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\Auth;
+use Percy\Core\Services\Cash\CashRegisterService;
 
 class CreateSale extends CreateRecord
 {
@@ -23,10 +24,8 @@ class CreateSale extends CreateRecord
         parent::mount();
 
         // Validar que el usuario tenga una caja abierta
-        $openCash = CashRegister::where('tenant_id', Auth::user()->tenant_id)
-            ->where('user_id', Auth::id())
-            ->where('status', 'open')
-            ->exists();
+        $openCash = app(CashRegisterService::class)
+            ->openCashRegisterForTenant(Auth::user()->tenant_id);
 
         if (!$openCash) {
             Notification::make()
@@ -42,18 +41,19 @@ class CreateSale extends CreateRecord
 
     protected function mutateFormDataBeforeCreate(array $data): array
     {
-        $serieRecord = Serie::where('document_type', $data['document_type'])
-            ->where('serie', $data['series'])
-            ->first();
+        $tenantId = Auth::user()->tenant_id;
+        $userId = Auth::id();
 
-        if (!$serieRecord) {
-            throw new \Exception("La serie seleccionada no está configurada en el sistema.");
-        }
+        $cashRegister = app(CashRegisterService::class)
+            ->requireOpenCashRegisterForTenant($tenantId);
 
-        $serieRecord->increment('correlative');
-        $data['correlative'] = $serieRecord->correlative;
+        $data['tenant_id'] = $tenantId;
+        $data['user_id'] = $userId;
+        $data['cash_register_id'] = $cashRegister->id;
 
-        // 🌟 MAGIA DE LAS LETRAS: Generamos el texto aquí mismo para TODOS los documentos
+        $data['correlative'] = app(CorrelativeService::class)
+            ->next($tenantId, $data['document_type'], $data['series']);
+
         if (isset($data['total'])) {
             $data['legend_text'] = $this->convertirTotalALetras((float) $data['total']);
         }

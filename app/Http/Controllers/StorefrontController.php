@@ -3,176 +3,184 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
-use Percy\Core\Models\Tenant;
-use Percy\Core\Models\Product;
 use Percy\Core\Models\Category;
 use Percy\Core\Models\DeliveryZone;
-use Percy\Core\Models\Sale;
-use Percy\Core\Models\SaleItem;
+use Percy\Core\Models\Product;
+use Percy\Core\Models\Tenant;
+use Percy\Core\Services\Sales\WebOrderService;
+use Illuminate\Validation\ValidationException;
+use Percy\Core\Services\Tenants\TenantPlanService;
 
 class StorefrontController extends Controller
 {
     public function index($tenant_domain)
     {
-        // 1. Buscamos de quién es esta tienda usando el subdominio
-        $tenant = Tenant::where('domain', $tenant_domain)
-                        ->where('is_active', true)
-                        ->firstOrFail(); // Si no existe o está apagado, lanza error 404
+        $tenant = $this->findActiveTenant($tenant_domain);
 
-        // 2. Traemos las categorías de este cliente (que tengan productos)
-        $categories = Category::where('tenant_id', $tenant->id)->get();
+        $categories = Category::query()
+            ->where('tenant_id', $tenant->id)
+            ->where('active', true)
+            ->orderBy('name')
+            ->get();
 
-        // 3. Traemos el catálogo de productos activos
-        $products = Product::where('tenant_id', $tenant->id)
-                           ->where('active', true)
-                           ->with(['category', 'unidadSunat']) // 🌟 MAGIA: Agregamos unidadSunat al arreglo
-                           ->get();
+        $products = Product::query()
+            ->where('tenant_id', $tenant->id)
+            ->where('active', true)
+            ->where(function ($query) {
+                $query->where('type', 'service')
+                    ->orWhere('current_stock', '>', 0);
+            })
+            ->with(['category', 'unidadSunat'])
+            ->orderBy('name')
+            ->get();
 
-        // 4. Mandamos todo a la vista pública
         return view('storefront.index', compact('tenant', 'categories', 'products'));
     }
 
-    // 🌟 NUEVA FUNCIÓN PARA LA PÁGINA DE PAGO
     public function checkout($tenant_domain)
     {
-        // 1. Buscamos al Tenant igual que en el index
-        $tenant = Tenant::where('domain', $tenant_domain)
-                        ->where('is_active', true)
-                        ->firstOrFail();
+        $tenant = $this->findActiveTenant($tenant_domain);
 
-        // 2. Traemos las zonas de reparto de este cliente (Solo las activas)
-        $deliveryZones = DeliveryZone::with('district') // Cargamos la relación para tener el nombre
-                                     ->where('tenant_id', $tenant->id)
-                                     ->where('is_active', true)
-                                     ->get();
+        $deliveryZones = DeliveryZone::query()
+            ->with('district')
+            ->where('tenant_id', $tenant->id)
+            ->where('is_active', true)
+            ->get();
 
-        // 3. Mandamos la vista del checkout
         return view('storefront.checkout', compact('tenant', 'deliveryZones'));
     }
 
-    // 🌟 LA NUEVA FUNCIÓN POST (Crea el ticket en la BD y descuenta el stock)
     public function processWebOrder(Request $request, $tenant_domain)
     {
         try {
-            DB::beginTransaction();
+            $tenant = $this->findActiveTenant($tenant_domain);
 
-            $tenant = Tenant::where('domain', $tenant_domain)->firstOrFail();
+            $validated = $request->validate([
+                'customer_name' => ['required', 'string', 'max:120'],
+                'customer_phone' => ['required', 'string', 'max:20'],
+                'customer_dni' => ['nullable', 'string', 'max:20'],
 
-            // 🌟 NUEVO: Leer el IGV del Tenant (o usar 18% por defecto)
-            $porcentajeIgv = $tenant->igv_percentage ?? 18;
-            $factorIgv = 1 + ($porcentajeIgv / 100);
+                'order_type' => ['required', 'in:delivery,pickup'],
+                'delivery_zone_id' => ['nullable', 'integer'],
+                'address' => ['nullable', 'string', 'max:255'],
+                'notes' => ['nullable', 'string', 'max:500'],
 
-            // 1. Calcular Totales en el servidor (Por seguridad)
-            $subtotal = 0;
-            foreach ($request->cart as $item) {
-                $subtotal += ($item['price'] * $item['quantity']);
-            }
+                'cart' => ['required', 'array', 'min:1'],
+                'cart.*.product_id' => ['required', 'integer'],
+                'cart.*.quantity' => ['required', 'numeric', 'min:1'],
+            ]);
 
-            $deliveryFee = $request->delivery_fee ?? 0;
-            $total = $subtotal + $deliveryFee;
-
-            // 🌟 NUEVO: Calculamos el IGV global usando el factor dinámico
-            $igv = $total - ($total / $factorIgv);
-
-            // 2. Construir la Nota para el Cajero
-            $notasDelivery = "=== DATOS WEB ===\n";
-            $notasDelivery .= "Nombre: " . $request->customer_name . "\n";
-            if ($request->customer_dni) $notasDelivery .= "DNI: " . $request->customer_dni . "\n";
-
-            if ($request->order_type === 'delivery') {
-                $notasDelivery .= "Distrito: " . $request->district . "\n";
-                $notasDelivery .= "Dirección: " . $request->address . "\n";
-                if ($deliveryFee > 0) $notasDelivery .= "Tarifa Envío: S/ " . number_format($deliveryFee, 2) . "\n";
-            } else {
-                $notasDelivery .= "=> RECOJO EN TIENDA\n";
-            }
-            if ($request->notes) $notasDelivery .= "\nNotas: " . $request->notes;
-
-            // 3. Crear el Ticket Interno (Borrador)
-            $sale = new Sale();
-            $sale->tenant_id = $tenant->id;
-            $sale->user_id = null;
-            $sale->customer_id = null;
-            $sale->document_type = '00';
-            $sale->series = 'N001';
-            $sale->channel = 'ecommerce';
-            $sale->payment_method = 'Pendiente';
-            $sale->status = 'pending_payment';
-
-            // 🌟 NUEVO: Usamos el factor dinámico para las operaciones gravadas
-            $sale->op_gravadas = round($total / $factorIgv, 2);
-            $sale->igv = round($igv, 2);
-            $sale->total = round($total, 2);
-            $sale->op_exoneradas = 0;
-            $sale->op_inafectas = 0;
-
-            $sale->sold_at = now();
-            $sale->kitchen_notes = $notasDelivery;
-            $sale->save();
-
-            // 4. Crear los Items y Descontar Stock
-            foreach ($request->cart as $cartItem) {
-                $producto = Product::where('tenant_id', $tenant->id)
-                                   ->where('name', $cartItem['name'])
-                                   ->first();
-
-                if ($producto) {
-                    $itemTotal = $cartItem['price'] * $cartItem['quantity'];
-
-                    // 🌟 NUEVO: Usamos el factor dinámico para los ítems
-                    $base = $itemTotal / $factorIgv;
-
-                    SaleItem::create([
-                        'tenant_id' => $tenant->id,
-                        'sale_id' => $sale->id,
-                        'product_id' => $producto->id,
-                        'item_name' => $producto->name,
-                        'quantity' => $cartItem['quantity'],
-                        'unit_price' => $cartItem['price'],
-                        'unit_value' => round($base, 2),
-                        'igv_amount' => round($itemTotal - $base, 2),
-                        'total' => round($itemTotal, 2),
-                        'afectacion_igv_id' => $producto->afectacion_igv_id ?? 1,
-                    ]);
-
-                    // Descuento de Stock Básico
-                    $producto->decrement('current_stock', $cartItem['quantity']);
-                }
-            }
-
-            // 🌟 5. LA MAGIA: Agregar el Costo de Envío como un ítem extra dinámico
-            if ($deliveryFee > 0) {
-                $deliveryBase = $deliveryFee / $factorIgv;
-                $deliveryIgv = $deliveryFee - $deliveryBase;
-
-                SaleItem::create([
-                    'tenant_id' => $tenant->id,
-                    'sale_id' => $sale->id,
-                    'product_id' => null, // No está atado a un producto físico
-                    'item_name' => 'Servicio de Delivery - ' . $request->district, // Le agregamos el distrito para que se vea más profesional
-                    'quantity' => 1,
-                    'unit_price' => $deliveryFee,
-                    'unit_value' => round($deliveryBase, 2),
-                    'igv_amount' => round($deliveryIgv, 2),
-                    'total' => round($deliveryFee, 2),
-                    'afectacion_igv_id' => 1, // 1 = Gravado Operación Onerosa
+            if ($validated['order_type'] === 'delivery' && empty($validated['delivery_zone_id'])) {
+                throw ValidationException::withMessages([
+                    'delivery_zone_id' => 'Selecciona una zona de reparto.',
                 ]);
             }
 
-            DB::commit();
+            if ($validated['order_type'] === 'delivery' && empty($validated['address'])) {
+                throw ValidationException::withMessages([
+                    'address' => 'Ingresa la dirección de entrega.',
+                ]);
+            }
 
-            // Devolvemos el N° de Ticket a la vista
+            $sale = app(WebOrderService::class)
+                ->createFromStorefront($tenant, $validated);
+
             $numeroTicket = $sale->series . '-' . str_pad($sale->correlative, 6, '0', STR_PAD_LEFT);
 
             return response()->json([
                 'success' => true,
-                'ticket_number' => $numeroTicket
+                'ticket_number' => $numeroTicket,
             ]);
-
+        } catch (ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => collect($e->errors())->flatten()->first() ?? 'Datos incompletos.',
+                'errors' => $e->errors(),
+            ], 422);
         } catch (\Exception $e) {
-            DB::rollBack();
-            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 500);
         }
+    }
+
+    private function findActiveTenant(string $tenantDomain): Tenant
+    {
+        $tenant = Tenant::query()
+            ->where('domain', $tenantDomain)
+            ->where('is_active', true)
+            ->firstOrFail();
+
+        $planService = app(TenantPlanService::class);
+
+        abort_unless(
+            $planService->has('has_online_store', $tenant) || $planService->has('has_delivery', $tenant),
+            404
+        );
+
+        return $tenant;
+    }
+
+    public function products(string $tenant_domain)
+    {
+        $tenant = $this->findActiveTenant($tenant_domain);
+
+        $categories = Category::query()
+            ->where('tenant_id', $tenant->id)
+            ->where('active', true)
+            ->orderBy('name')
+            ->get();
+
+        $products = Product::query()
+            ->where('tenant_id', $tenant->id)
+            ->where('active', true)
+            ->where(function ($query) {
+                $query->where('type', 'service')
+                    ->orWhere('current_stock', '>', 0);
+            })
+            ->with(['category', 'unidadSunat'])
+            ->orderBy('name')
+            ->get();
+
+        return view('storefront.products', compact('tenant', 'categories', 'products'));
+    }
+
+    public function showProduct(string $tenant_domain, int $product)
+    {
+        $tenant = $this->findActiveTenant($tenant_domain);
+
+        $product = Product::query()
+            ->where('tenant_id', $tenant->id)
+            ->where('active', true)
+            ->whereKey($product)
+            ->where(function ($query) {
+                $query->where('type', 'service')
+                    ->orWhere('current_stock', '>', 0);
+            })
+            ->with(['category', 'unidadSunat'])
+            ->firstOrFail();
+
+        $relatedProducts = Product::query()
+            ->where('tenant_id', $tenant->id)
+            ->where('active', true)
+            ->where('id', '!=', $product->id)
+            ->where(function ($query) {
+                $query->where('type', 'service')
+                    ->orWhere('current_stock', '>', 0);
+            })
+            ->when($product->category_id, function ($query) use ($product) {
+                $query->where('category_id', $product->category_id);
+            })
+            ->with(['category', 'unidadSunat'])
+            ->orderBy('name')
+            ->limit(8)
+            ->get();
+
+        return view('storefront.product-show', compact(
+            'tenant',
+            'product',
+            'relatedProducts'
+        ));
     }
 }

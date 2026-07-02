@@ -11,12 +11,50 @@ use Illuminate\Support\Facades\Auth;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
+use Filament\Notifications\Notification;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Validation\ValidationException;
+use Percy\Core\Models\ProductBatch;
+use Percy\Core\Services\Inventory\InventoryService;
 
 class BatchesRelationManager extends RelationManager
 {
     protected static string $relationship = 'batches';
 
     protected static ?string $title = 'Lotes y Fechas de Vencimiento';
+
+    public static function getTitle(\Illuminate\Database\Eloquent\Model $ownerRecord, string $pageClass): string
+    {
+        if (self::hasLots()) {
+            return 'Lotes y Fechas de Vencimiento';
+        }
+
+        return 'Fechas de Vencimiento';
+    }
+
+    private static function tenantFeatures(): array
+    {
+        return Auth::user()?->tenant?->businessSector?->features ?? [];
+    }
+
+    private static function hasLots(): bool
+    {
+        $features = self::tenantFeatures();
+
+        return $features['has_lots'] ?? false;
+    }
+
+    private static function hasExpiryDates(): bool
+    {
+        $features = self::tenantFeatures();
+
+        return $features['has_expiry_dates'] ?? false;
+    }
+
+    private static function usesBatchesOrExpiry(): bool
+    {
+        return self::hasLots() || self::hasExpiryDates();
+    }
 
     public function form(Form $form): Form
     {
@@ -60,8 +98,8 @@ class BatchesRelationManager extends RelationManager
                     ->required()
                     ->numeric()
                     // 🌟 1. Límites y saltos dinámicos leyendo al Producto "Padre"
-                    ->step(fn (\Filament\Resources\RelationManagers\RelationManager $livewire) => $livewire->getOwnerRecord()->is_weighable ? 0.001 : 1)
-                    ->minValue(fn (\Filament\Resources\RelationManagers\RelationManager $livewire) => $livewire->getOwnerRecord()->is_weighable ? 0.001 : 1)
+                    ->step(fn(\Filament\Resources\RelationManagers\RelationManager $livewire) => $livewire->getOwnerRecord()->is_weighable ? 0.001 : 1)
+                    ->minValue(fn(\Filament\Resources\RelationManagers\RelationManager $livewire) => $livewire->getOwnerRecord()->is_weighable ? 0.001 : 1)
                     ->default(1)
                     // 🌟 2. UX: Añadimos el sufijo visual (Kg, Lt, Und) para guiar al usuario
                     ->suffix(function (\Filament\Resources\RelationManagers\RelationManager $livewire) {
@@ -69,7 +107,7 @@ class BatchesRelationManager extends RelationManager
                         if (!$product->is_weighable) return 'Und';
 
                         $code = $product->unidadSunat?->codigo ?? 'NIU';
-                        return match($code) {
+                        return match ($code) {
                             'KGM' => 'Kg',
                             'LTR' => 'Lt',
                             'GLL' => 'Gal',
@@ -78,7 +116,7 @@ class BatchesRelationManager extends RelationManager
                     })
                     // 🌟 3. BLINDAJE: Impide forzar decimales si el producto es por unidad
                     ->rules([
-                        fn (\Filament\Resources\RelationManagers\RelationManager $livewire) => function (string $attribute, $value, \Closure $fail) use ($livewire) {
+                        fn(\Filament\Resources\RelationManagers\RelationManager $livewire) => function (string $attribute, $value, \Closure $fail) use ($livewire) {
                             $product = $livewire->getOwnerRecord();
                             if (!$product->is_weighable && fmod((float)$value, 1) !== 0.0) {
                                 $fail('Este producto solo admite cantidades enteras.');
@@ -89,10 +127,10 @@ class BatchesRelationManager extends RelationManager
                     ->dehydrated(),
 
                 Forms\Components\Hidden::make('current_quantity')
-                    ->default(fn (Forms\Get $get) => $get('initial_quantity')),
+                    ->default(fn(Forms\Get $get) => $get('initial_quantity')),
 
                 Forms\Components\Hidden::make('tenant_id')
-                    ->default(fn () => Auth::user()->tenant_id),
+                    ->default(fn() => Auth::user()->tenant_id),
             ]);
     }
 
@@ -102,39 +140,62 @@ class BatchesRelationManager extends RelationManager
             ->recordTitleAttribute('batch_number')
             ->columns([
                 Tables\Columns\TextColumn::make('batch_number')
-                    ->label('Lote')
+                    ->label(fn(): string => self::hasLots() ? 'Lote' : 'Código interno')
                     ->searchable()
+                    ->sortable()
                     ->weight('bold')
-                    // 🌟 Solo visible si el negocio usa lotes (Farmacia)
-                    ->visible(fn () => \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features['has_lots'] ?? false),
+                    ->badge()
+                    ->color(fn(): string => self::hasLots() ? 'primary' : 'gray')
+                    ->placeholder('Sin código')
+                    ->visible(fn(): bool => self::usesBatchesOrExpiry())
+                    ->description(
+                        fn($record): ?string =>
+                        self::hasLots()
+                            ? null
+                            : 'Generado automáticamente'
+                    ),
 
                 Tables\Columns\TextColumn::make('expiration_date')
                     ->label('Vencimiento')
                     ->date('d/m/Y')
                     ->sortable()
                     ->badge()
-                    // Lógica mágica de colores para alertar a la farmacia:
+                    ->placeholder('Sin vencimiento')
                     ->color(function ($state): string {
-                        if (!$state) return 'gray';
+                        if (! $state) {
+                            return 'gray';
+                        }
+
                         $fecha = Carbon::parse($state);
-                        if ($fecha->isPast()) return 'danger'; // Vencido
-                        if ($fecha->diffInDays(now()) <= 90) return 'warning'; // Vence en 3 meses
-                        return 'success'; // Todo bien
+
+                        if ($fecha->isPast()) {
+                            return 'danger';
+                        }
+
+                        if ($fecha->diffInDays(now()) <= 90) {
+                            return 'warning';
+                        }
+
+                        return 'success';
                     }),
 
                 Tables\Columns\TextColumn::make('current_quantity')
                     ->label('Stock Actual')
-                    ->numeric()
                     ->sortable()
-                    // Si el stock es bajo, lo marcamos en rojo
-                    ->color(fn ($state): string => $state <= 5 ? 'danger' : 'gray'),
+                    ->badge()
+                    ->formatStateUsing(function ($state): string {
+                        $value = (float) $state;
+
+                        return number_format($value, $value == floor($value) ? 0 : 3);
+                    })
+                    ->color(fn($state): string => (float) $state <= 5 ? 'danger' : 'success'),
             ])
             ->filters([
                 //
             ])
             ->headerActions([
                 Tables\Actions\CreateAction::make()
-                    ->label(fn () => (\Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features['has_lots'] ?? false) ? 'Registrar Lote' : 'Registrar Vencimiento')
+                    ->label(fn(): string => self::hasLots() ? 'Registrar Lote' : 'Registrar Vencimiento')
                     ->icon('heroicon-o-plus-circle')
                     ->mutateFormDataUsing(function (array $data): array {
                         $data['current_quantity'] = $data['initial_quantity'];
@@ -142,31 +203,35 @@ class BatchesRelationManager extends RelationManager
 
                         // 🌟 MAGIA PARA MINIMARKET: Si el lote viene vacío (porque está oculto), generamos uno interno
                         if (empty($data['batch_number'])) {
-                            $data['batch_number'] = 'VENC-' . now()->format('dmy-His');
+                            $data['batch_number'] = ! empty($data['expiration_date'])
+                                ? 'VENC-' . Carbon::parse($data['expiration_date'])->format('Ymd') . '-' . now()->format('His')
+                                : 'VENC-' . now()->format('Ymd-His');
                         } else {
-                            $data['batch_number'] = strtoupper($data['batch_number']);
+                            $data['batch_number'] = strtoupper(trim($data['batch_number']));
                         }
 
                         return $data;
                     })
-                    ->after(function (\Illuminate\Database\Eloquent\Model $record) {
-                        // ... (Mantén toda tu lógica del Kardex intacta aquí) ...
-                        $product = $record->product;
-                        $qtyIngresada = $record->initial_quantity;
-                        $stockRealExacto = $product->batches()->where('is_active', true)->sum('current_quantity');
-                        $product->current_stock = $stockRealExacto;
-                        $product->save();
+                    ->after(function (Model $record): void {
+                        try {
+                            app(InventoryService::class)->registerManualBatchStock(
+                                $record,
+                                'Registro Manual de Stock/Vencimiento'
+                            );
 
-                        \Percy\Core\Models\InventoryMovement::create([
-                            'tenant_id'        => $record->tenant_id,
-                            'product_id'       => $record->product_id,
-                            'product_batch_id' => $record->id,
-                            'user_id'          => \Illuminate\Support\Facades\Auth::id(),
-                            'type'             => 'IN',
-                            'quantity'         => $qtyIngresada,
-                            'balance_after'    => $product->current_stock,
-                            'reason'           => 'Registro Manual de Stock/Vencimiento',
-                        ]);
+                            Notification::make()
+                                ->success()
+                                ->title('Stock registrado')
+                                ->body('El lote fue registrado y el stock ingresó correctamente al inventario.')
+                                ->send();
+                        } catch (ValidationException $e) {
+                            Notification::make()
+                                ->danger()
+                                ->title('No se pudo registrar el stock')
+                                ->body(collect($e->errors())->flatten()->first() ?? 'Verifica los datos del lote.')
+                                ->persistent()
+                                ->send();
+                        }
                     }),
             ])
             ->actions([
@@ -227,30 +292,35 @@ class BatchesRelationManager extends RelationManager
                     }),
 
                 Tables\Actions\DeleteAction::make()
-                    ->before(function (\Illuminate\Database\Eloquent\Model $record) {
-                        // $record es el Lote que estamos a punto de borrar
-                        $product = $record->product;
-                        $qtyToDeduct = $record->current_quantity; // Lo que quedaba vivo en este lote
+                    ->label('Eliminar')
+                    ->icon('heroicon-o-trash')
+                    ->color('danger')
+                    ->requiresConfirmation()
+                    ->modalHeading('Eliminar lote / vencimiento')
+                    ->modalDescription('Esta acción retirará del inventario el stock restante de este lote y registrará el movimiento en Kardex.')
+                    ->modalSubmitActionLabel('Sí, eliminar')
+                    ->modalCancelActionLabel('Cancelar')
+                    ->before(function (Tables\Actions\DeleteAction $action, Model $record): void {
+                        try {
+                            app(InventoryService::class)->removeManualBatchStock(
+                                $record,
+                                'Eliminación manual de Lote: ' . $record->batch_number
+                            );
+                        } catch (ValidationException $e) {
+                            Notification::make()
+                                ->danger()
+                                ->title('No se pudo eliminar el lote')
+                                ->body(collect($e->errors())->flatten()->first() ?? 'Verifica el stock antes de continuar.')
+                                ->persistent()
+                                ->send();
 
-                        // 1. Restamos la mercancía del stock global
-                        $product->current_stock -= $qtyToDeduct;
-                        $product->save();
-
-                        // 2. Dejamos la huella en el Kardex explicando por qué desapareció el stock
-                        \Percy\Core\Models\InventoryMovement::create([
-                            'tenant_id'        => $record->tenant_id,
-                            'product_id'       => $record->product_id,
-                            'user_id'          => \Illuminate\Support\Facades\Auth::id(),
-                            'type'             => 'OUT',
-                            'quantity'         => $qtyToDeduct,
-                            'balance_after'    => $product->current_stock,
-                            'reason'           => 'Eliminación manual de Lote: ' . $record->batch_number,
-                        ]);
+                            $action->halt();
+                        }
                     }),
             ])
             ->bulkActions([
                 //Tables\Actions\BulkActionGroup::make([
-                  //  Tables\Actions\DeleteBulkAction::make(),
+                //  Tables\Actions\DeleteBulkAction::make(),
                 //]),
             ]);
     }

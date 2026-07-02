@@ -3,28 +3,55 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+
     <title>{{ $tenant->name }} - Catálogo</title>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 
-    <style>
-        /* Ocultar scrollbar */
-        .hide-scrollbar::-webkit-scrollbar { display: none; }
-        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    <style>        
+        :root {
+            --brand-color: {{ $tenant->primary_color ?? '#4f46e5' }};
+        }
 
-        /* 🌟 CLASES DE COLOR DINÁMICO */
-        .bg-brand { background-color: {{ $tenant->primary_color ?? '#4f46e5' }} !important; }
-        .text-brand { color: {{ $tenant->primary_color ?? '#4f46e5' }} !important; }
-        .border-brand { border-color: {{ $tenant->primary_color ?? '#4f46e5' }} !important; }
+        .bg-brand { background-color: var(--brand-color) !important; }
+        .text-brand { color: var(--brand-color) !important; }
+        .border-brand { border-color: var(--brand-color) !important; }
 
-        /* Botón de categoría activo */
-        .active-category {
-            background-color: {{ $tenant->primary_color ?? '#4f46e5' }} !important;
+        .category-dropdown-item:hover {
+            background-color: var(--brand-color) !important;
             color: white !important;
+        }
+
+        .category-dropdown-item:hover svg {
+            color: white !important;
+        }
+
+        .bg-brand-soft {
+            background-color: color-mix(in srgb, var(--brand-color) 10%, white);
+        }
+
+        .shadow-brand {
+            box-shadow: 0 12px 28px color-mix(in srgb, var(--brand-color) 25%, transparent);
+        }
+
+        .focus-brand:focus {
+            border-color: var(--brand-color) !important;
+            box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-color) 18%, transparent);
+        }
+
+        .active-category {
+            background-color: var(--brand-color) !important;
+            color: white !important;
+            box-shadow: 0 10px 20px color-mix(in srgb, var(--brand-color) 25%, transparent);
+        }
+
+        .category-btn {
+            -webkit-tap-highlight-color: transparent;
         }
     </style>
 
 </head>
-<body class="bg-gray-50 pb-24">
+<body class="bg-slate-50 text-slate-800 pb-24 antialiased">
 
     {{-- Aquí insertamos la cabecera --}}
     @include('storefront.partials.header')

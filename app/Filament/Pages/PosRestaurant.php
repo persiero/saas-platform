@@ -4,6 +4,7 @@ namespace App\Filament\Pages;
 
 use Filament\Pages\Page;
 use Percy\Core\Models\Zone;
+use Percy\Core\Services\Sales\CorrelativeService;
 use Illuminate\Support\Facades\Auth;
 use App\Filament\Pages\PosOrder;
 
@@ -32,10 +33,10 @@ class PosRestaurant extends Page
             ->where('is_active', true)
             ->with(['tables' => function ($query) {
                 $query->where('is_active', true)
-                      ->with(['sales' => function ($q) {
-                          // 🌟 MAGIA: Filtramos estrictamente la venta pendiente y a su mozo
-                          $q->where('status', 'pending')->with('user');
-                      }]);
+                    ->with(['sales' => function ($q) {
+                        // 🌟 MAGIA: Filtramos estrictamente la venta pendiente y a su mozo
+                        $q->where('status', 'pending')->with('user');
+                    }]);
             }])
             ->get();
 
@@ -68,11 +69,22 @@ class PosRestaurant extends Page
                     ->body('Debes crear una Serie activa para "Nota de Venta (Interno)" (00) en la configuración.')
                     ->danger()
                     ->send();
+
                 return;
             }
 
-            // Incrementamos el correlativo
-            $serieRecord->increment('correlative');
+            try {
+                $nuevoCorrelativo = app(CorrelativeService::class)
+                    ->next(Auth::user()->tenant_id, '00', $serieRecord->serie);
+            } catch (\Exception $e) {
+                \Filament\Notifications\Notification::make()
+                    ->title('Error de Serie')
+                    ->body($e->getMessage())
+                    ->danger()
+                    ->send();
+
+                return;
+            }
 
             // Creamos la comanda inicial con totales en cero
             $sale = \Percy\Core\Models\Sale::create([
@@ -81,7 +93,7 @@ class PosRestaurant extends Page
                 'table_id' => $table->id,
                 'document_type' => '00',
                 'series' => $serieRecord->serie,
-                'correlative' => $serieRecord->correlative,
+                'correlative' => $nuevoCorrelativo,
                 'status' => 'pending', // 🌟 ESTADO CLAVE: Pendiente
                 'sold_at' => now(),
                 'op_gravadas' => 0,
@@ -91,7 +103,6 @@ class PosRestaurant extends Page
                 'total' => 0,
                 'payment_method' => 'Efectivo',
             ]);
-
         }
 
         // 3. Redirigimos al mozo a la pantalla de la comanda usando el método nativo de Filament

@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "80001d7359eab3ec0235cb7d3ec7027e",
+    "content-hash": "0e78da78387622a7f317443c364b14e0",
     "packages": [
         {
             "name": "anourvalar/eloquent-serialize",
@@ -4982,17 +4982,11 @@
         },
         {
             "name": "percy/core-business",
-            "version": "dev-main",
-            "source": {
-                "type": "git",
-                "url": "git@github.com:persiero/core-business.git",
-                "reference": "31d76ab81e6054cee47119dfd8845883bb0ea1d5"
-            },
+            "version": "dev-mejora-modular-ventas",
             "dist": {
-                "type": "zip",
-                "url": "https://api.github.com/repos/persiero/core-business/zipball/31d76ab81e6054cee47119dfd8845883bb0ea1d5",
-                "reference": "31d76ab81e6054cee47119dfd8845883bb0ea1d5",
-                "shasum": ""
+                "type": "path",
+                "url": "../core-business",
+                "reference": "5dec505ecb632f94e5a6c272419e758d9e37c9c2"
             },
             "require": {
                 "barryvdh/laravel-dompdf": "^3.1",
@@ -5009,7 +5003,6 @@
             "require-dev": {
                 "orchestra/testbench": "^10.9"
             },
-            "default-branch": true,
             "type": "library",
             "extra": {
                 "laravel": {
@@ -5028,11 +5021,10 @@
                 "MIT"
             ],
             "description": "El nucleo compartido de mis proyectos",
-            "support": {
-                "source": "https://github.com/persiero/core-business/tree/develop",
-                "issues": "https://github.com/persiero/core-business/issues"
-            },
-            "time": "2026-05-04T00:23:44+00:00"
+            "transport-options": {
+                "symlink": true,
+                "relative": true
+            }
         },
         {
             "name": "phpoption/phpoption",
@@ -11752,7 +11744,6 @@
     "prefer-lowest": false,
     "platform": {
         "php": "^8.2",
-        "ext-gd": "*",
         "ext-intl": "*",
         "ext-soap": "*",
         "ext-zip": "*"

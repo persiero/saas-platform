@@ -17,6 +17,7 @@ use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
+use App\Filament\Pages\Auth\Login;
 
 class AdminPanelProvider extends PanelProvider
 {
@@ -26,16 +27,29 @@ class AdminPanelProvider extends PanelProvider
             ->default()
             ->id('admin')
             ->path('panel')
-            ->login()
+            ->login(Login::class)
             // 🌟 REDIRECCIÓN INTELIGENTE
             ->homeUrl(function () {
+                /** @var \Percy\Core\Models\User|null $user */
                 $user = \Illuminate\Support\Facades\Auth::user();
-                // Si es mozo/vendedor, apenas entra se va a las mesas
-                if ($user && $user->hasRole('Vendedor')) {
-                    return \App\Filament\Pages\PosRestaurant::getUrl();
+
+                if (!$user) {
+                    return url('/panel/login');
                 }
-                // Si es cajero o admin, se va al Escritorio normal
-                return url('/admin');
+
+                if ($user->hasRole('Vendedor')) {
+                    if ($user->canAccessRestaurantPos()) {
+                        return \App\Filament\Pages\PosRestaurant::getUrl();
+                    }
+
+                    return \App\Filament\Resources\SaleResource::getUrl('index');
+                }
+
+                if ($user->hasRole('Cajero')) {
+                    return \App\Filament\Resources\SaleResource::getUrl('index');
+                }
+
+                return \App\Filament\Pages\Dashboard::getUrl();
             })
             // 🚀 CONFIGURACIÓN DE BRANDING CON LOGOS PARA MODO CLARO Y OSCURO
             ->brandLogo(asset('images/logo.png')) // Logo para modo claro
@@ -74,10 +88,6 @@ class AdminPanelProvider extends PanelProvider
             ->font('Inter')
             ->sidebarWidth('18rem')
             ->sidebarCollapsibleOnDesktop()
-            // AQUÍ REGISTRAMOS EL MIDDLEWARE
-            ->authMiddleware([
-                \App\Http\Middleware\SetPanelTheme::class,
-            ])
 
             // 🌟 MAGIA: Forzamos el orden global de los grupos del menú
             ->navigationGroups([
@@ -109,6 +119,7 @@ class AdminPanelProvider extends PanelProvider
             ])
             ->authMiddleware([
                 Authenticate::class,
+                \App\Http\Middleware\SetPanelTheme::class,
             ]);
     }
 }

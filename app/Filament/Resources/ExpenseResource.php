@@ -10,6 +10,9 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Auth;
+use Percy\Core\Services\Tenants\TenantPlanService;
 
 class ExpenseResource extends Resource
 {
@@ -21,9 +24,34 @@ class ExpenseResource extends Resource
     protected static ?string $pluralModelLabel = 'Gastos';
     protected static ?int $navigationSort = 2;
 
+    private static function userCanManageExpenses(): bool
+    {
+        /** @var \Percy\Core\Models\User|null $user */
+        $user = Auth::user();
+
+        if (! $user || ! $user->tenant) {
+            return false;
+        }
+
+        if (! $user->canManageCashRegister()) {
+            return false;
+        }
+
+        return app(TenantPlanService::class)->has('has_expenses', $user->tenant);
+    }
+
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()->where('tenant_id', \Illuminate\Support\Facades\Auth::user()->tenant_id);
+        $user = Auth::user();
+
+        $query = parent::getEloquentQuery()
+            ->with(['user', 'cashRegister']);
+
+        if (! $user?->isSuperAdmin()) {
+            $query->where('tenant_id', $user?->tenant_id);
+        }
+
+        return $query;
     }
 
     /**
@@ -31,35 +59,63 @@ class ExpenseResource extends Resource
      */
     public static function canViewAny(): bool
     {
-        /** @var \Percy\Core\Models\User $user */
-        $user = \Illuminate\Support\Facades\Auth::user();
-
-        // 🌟 COMBINADO: Debe pertenecer a una empresa Y NO ser Vendedor
-        return $user->tenant_id !== null && !$user->hasRole('Vendedor');
+        return self::userCanManageExpenses();
     }
 
     // 🔒 1. Solo el Admin puede editar un gasto registrado
-    public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
+    public static function canEdit(Model $record): bool
     {
-        /** @var \Percy\Core\Models\User $user */
-        $user = \Illuminate\Support\Facades\Auth::user();
-        return $user->isAdmin();
+        $user = Auth::user();
+
+        if (! self::userCanManageExpenses()) {
+            return false;
+        }
+
+        if (! $user?->isAdmin()) {
+            return false;
+        }
+
+        $record->loadMissing('cashRegister');
+
+        if ($record instanceof Expense && $record->cashRegister?->status === 'closed') {
+            return false;
+        }
+
+        return true;
     }
 
     // 🔒 2. Solo el Admin puede eliminar un gasto individualmente
-    public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    public static function canDelete(Model $record): bool
     {
-        /** @var \Percy\Core\Models\User $user */
-        $user = \Illuminate\Support\Facades\Auth::user();
-        return $user->isAdmin();
+        $user = Auth::user();
+
+        if (! self::userCanManageExpenses()) {
+            return false;
+        }
+
+        if (! $user?->isAdmin()) {
+            return false;
+        }
+
+        $record->loadMissing('cashRegister');
+
+        if ($record instanceof Expense && $record->cashRegister?->status === 'closed') {
+            return false;
+        }
+
+        return true;
     }
 
     // 🔒 3. Solo el Admin puede usar el botón rojo de borrado masivo
     public static function canDeleteAny(): bool
     {
-        /** @var \Percy\Core\Models\User $user */
-        $user = \Illuminate\Support\Facades\Auth::user();
-        return $user->isAdmin();
+        return self::userCanManageExpenses()
+            && (Auth::user()?->isAdmin() ?? false);
+    }
+
+    public static function canCreate(): bool
+    {
+        return self::userCanManageExpenses();
     }
 
     public static function form(Form $form): Form
@@ -128,7 +184,7 @@ class ExpenseResource extends Resource
                     ->date('d/m/Y')
                     ->sortable()
                     ->icon('heroicon-o-calendar')
-                    ->description(fn (Expense $record): string => $record->expense_date->diffForHumans()),
+                    ->description(fn(Expense $record): string => $record->expense_date->diffForHumans()),
 
                 Tables\Columns\TextColumn::make('user.name')
                     ->label('Registrado por')
@@ -137,11 +193,18 @@ class ExpenseResource extends Resource
                     ->searchable()
                     ->toggleable(),
 
+                Tables\Columns\TextColumn::make('cashRegister.id')
+                    ->label('Caja')
+                    ->formatStateUsing(fn($state) => $state ? '#' . $state : 'Sin caja')
+                    ->badge()
+                    ->color(fn($state) => $state ? 'success' : 'gray')
+                    ->toggleable(),
+
                 Tables\Columns\TextColumn::make('category')
                     ->label('Categoría')
                     ->searchable()
                     ->badge()
-                    ->color(fn (string $state): string => match ($state) {
+                    ->color(fn(string $state): string => match ($state) {
                         'Servicios' => 'info',
                         'Suministros' => 'warning',
                         'Alquiler' => 'danger',
@@ -152,7 +215,7 @@ class ExpenseResource extends Resource
                         'Otros' => 'gray',
                         default => 'gray',
                     })
-                    ->icon(fn (string $state): string => match ($state) {
+                    ->icon(fn(string $state): string => match ($state) {
                         'Servicios' => 'heroicon-o-briefcase',
                         'Suministros' => 'heroicon-o-cube',
                         'Alquiler' => 'heroicon-o-building-office',
@@ -176,7 +239,7 @@ class ExpenseResource extends Resource
                     ->label('Descripción')
                     ->limit(40)
                     ->searchable()
-                    ->tooltip(fn (Expense $record): string => $record->description ?? 'Sin descripción')
+                    ->tooltip(fn(Expense $record): string => $record->description ?? 'Sin descripción')
                     ->wrap(),
 
                 Tables\Columns\TextColumn::make('created_at')
@@ -217,8 +280,8 @@ class ExpenseResource extends Resource
                     ->columns(2)
                     ->query(function (Builder $query, array $data): Builder {
                         return $query
-                            ->when($data['from'], fn (Builder $query, $date) => $query->whereDate('expense_date', '>=', $date))
-                            ->when($data['until'], fn (Builder $query, $date) => $query->whereDate('expense_date', '<=', $date));
+                            ->when($data['from'], fn(Builder $query, $date) => $query->whereDate('expense_date', '>=', $date))
+                            ->when($data['until'], fn(Builder $query, $date) => $query->whereDate('expense_date', '<=', $date));
                     })
                     ->indicateUsing(function (array $data): array {
                         $indicators = [];
@@ -251,10 +314,10 @@ class ExpenseResource extends Resource
                         ->modalSubmitActionLabel('Sí, eliminar')
                         ->modalCancelActionLabel('Cancelar'),
                 ])
-                ->label('Acciones')
-                ->icon('heroicon-o-ellipsis-vertical')
-                ->button()
-                ->color('gray'),
+                    ->label('Acciones')
+                    ->icon('heroicon-o-ellipsis-vertical')
+                    ->button()
+                    ->color('gray'),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([

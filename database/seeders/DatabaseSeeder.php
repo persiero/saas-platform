@@ -19,7 +19,16 @@ class DatabaseSeeder extends Seeder
             \Percy\Core\Database\Seeders\SunatSeeder::class,
             \Percy\Core\Database\Seeders\RoleSeeder::class,
             \Percy\Core\Database\Seeders\UbigeoSeeder::class,
+            \Percy\Core\Database\Seeders\PlanSeeder::class,
         ]);
+
+        $premiumPlanId = \Percy\Core\Models\Plan::where('slug', 'premium')->value('id');
+
+        if ($premiumPlanId) {
+            \Percy\Core\Models\Tenant::whereNull('plan_id')->update([
+                'plan_id' => $premiumPlanId,
+            ]);
+        }
 
         // Luego crear o actualizar el Super Administrador
         $superAdmin = User::updateOrCreate(

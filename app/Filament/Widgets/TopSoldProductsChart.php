@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Auth;
 
 class TopSoldProductsChart extends ChartWidget
 {
-    protected static ?string $heading = 'Top 5 Conceptos Más Vendidos (Este Mes)';
+    protected static ?string $heading = 'Productos y Servicios Más Vendidos del Mes';
     protected static ?int $sort = 4;
     protected int | string | array $columnSpan = 'full';
     protected static ?string $maxHeight = '300px';
@@ -35,8 +35,12 @@ class TopSoldProductsChart extends ChartWidget
             ->whereHas('sale', function ($query) use ($tenantId, $startOfMonth, $endOfMonth) {
                 $query->where('tenant_id', $tenantId)
                     ->whereBetween('sold_at', [$startOfMonth, $endOfMonth])
-                    ->where('status', '!=', 'canceled')
-                    ->where('sunat_status', '!=', 'rejected');
+                    ->where('status', 'completed')
+                    ->whereIn('document_type', ['00', '01', '03'])
+                    ->where(function ($query) {
+                        $query->whereNull('sunat_status')
+                            ->orWhere('sunat_status', '!=', 'rejected');
+                    });
             })
             ->groupBy('grouped_name')
             ->orderBy('total_quantity', 'desc')
