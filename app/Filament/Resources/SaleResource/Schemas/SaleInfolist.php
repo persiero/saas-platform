@@ -8,6 +8,7 @@ use Filament\Infolists\Components\TextEntry;
 use Filament\Infolists\Components\RepeatableEntry;
 use Filament\Infolists\Components\Grid;
 use App\Filament\Resources\CashRegisterResource;
+use Percy\Core\Models\Sale;
 
 class SaleInfolist
 {
@@ -49,7 +50,13 @@ class SaleInfolist
 
                         TextEntry::make('customer.name')
                             ->label('Cliente')
-                            ->placeholder('Público en General') // Por si no hay cliente registrado
+                            ->state(function (Sale $record): string {
+                                if ($record->channel === 'ecommerce') {
+                                    return self::extractWebNote($record, 'Nombre') ?? 'Cliente Web';
+                                }
+
+                                return $record->customer?->name ?? 'Público en General';
+                            })
                             ->icon('heroicon-o-user'),
 
                         // 🌟 EL CAJERO: Quien cobró (Dueño de la caja donde se pagó)
@@ -62,10 +69,25 @@ class SaleInfolist
 
                         // 🌟 EL MOZO: Quien creó la comanda
                         TextEntry::make('user.name')
-                            ->label('Atendido por (Mozo)')
+                            ->label(fn(Sale $record): string => $record->channel === 'ecommerce' ? 'Procesado por' : 'Atendido por')
+                            ->state(function (Sale $record): string {
+                                if ($record->channel === 'ecommerce' && $record->status === 'pending_payment') {
+                                    return 'Pendiente de procesar';
+                                }
+
+                                if ($record->channel === 'ecommerce' && $record->status === 'canceled') {
+                                    return 'Pedido cancelado';
+                                }
+
+                                return $record->user?->name ?? 'No registrado';
+                            })
                             ->icon('heroicon-o-user')
                             ->weight('bold')
-                            ->color('primary'),
+                            ->color(fn(Sale $record): string => match ($record->status) {
+                                'pending_payment' => 'warning',
+                                'canceled' => 'danger',
+                                default => 'primary',
+                            }),
 
                         TextEntry::make('sold_at')
                             ->label('Fecha de Emisión')
@@ -73,24 +95,84 @@ class SaleInfolist
                             ->icon('heroicon-o-calendar'),
                     ])->columns(4), // Cambiado a 4 columnas para que no se vea tan apretado
 
+                Section::make('Pedido Web')
+                    ->icon('heroicon-o-globe-alt')
+                    ->visible(fn(Sale $record): bool => $record->channel === 'ecommerce')
+                    ->schema([
+                        TextEntry::make('web_order_status')
+                            ->label('Estado del pedido')
+                            ->state(fn(Sale $record): string => match ($record->status) {
+                                'pending_payment' => 'Pendiente de procesar',
+                                'completed' => 'Procesado',
+                                'canceled' => 'Cancelado',
+                                default => ucfirst($record->status ?? 'Sin estado'),
+                            })
+                            ->badge()
+                            ->color(fn(Sale $record): string => match ($record->status) {
+                                'pending_payment' => 'warning',
+                                'completed' => 'success',
+                                'canceled' => 'danger',
+                                default => 'gray',
+                            }),
+
+                        TextEntry::make('web_customer_name')
+                            ->label('Cliente')
+                            ->state(fn(Sale $record): string => self::extractWebNote($record, 'Nombre') ?? 'Cliente Web')
+                            ->icon('heroicon-o-user'),
+
+                        TextEntry::make('web_customer_phone')
+                            ->label('Celular / WhatsApp')
+                            ->state(fn(Sale $record): string => self::extractWebNote($record, 'Celular') ?? 'No registrado')
+                            ->icon('heroicon-o-phone'),
+
+                        TextEntry::make('web_delivery_type')
+                            ->label('Tipo de entrega')
+                            ->state(function (Sale $record): string {
+                                if (str_contains($record->kitchen_notes ?? '', 'RECOJO EN TIENDA')) {
+                                    return 'Recojo en tienda';
+                                }
+
+                                return 'Delivery';
+                            })
+                            ->badge()
+                            ->color('info'),
+
+                        TextEntry::make('web_district')
+                            ->label('Distrito')
+                            ->state(fn(Sale $record): string => self::extractWebNote($record, 'Distrito') ?? '-')
+                            ->visible(fn(Sale $record): bool => str_contains($record->kitchen_notes ?? '', 'Distrito:')),
+
+                        TextEntry::make('web_address')
+                            ->label('Dirección')
+                            ->state(fn(Sale $record): string => self::extractWebNote($record, 'Dirección') ?? '-')
+                            ->columnSpanFull()
+                            ->visible(fn(Sale $record): bool => str_contains($record->kitchen_notes ?? '', 'Dirección:')),
+
+                        TextEntry::make('web_notes')
+                            ->label('Notas del cliente')
+                            ->state(fn(Sale $record): string => self::extractWebNote($record, 'Notas') ?? 'Sin notas adicionales')
+                            ->columnSpanFull(),
+                    ])
+                    ->columns(3),
+
                 Section::make('Caja Asociada')
                     ->icon('heroicon-o-calculator')
-                    ->visible(fn ($record) => filled($record->cash_register_id))
+                    ->visible(fn($record) => filled($record->cash_register_id))
                     ->schema([
                         TextEntry::make('cashRegister.id')
                             ->label('Caja')
-                            ->formatStateUsing(fn ($state) => '#' . $state)
+                            ->formatStateUsing(fn($state) => '#' . $state)
                             ->badge()
                             ->color('primary')
-                            ->url(fn ($record) => $record->cash_register_id
+                            ->url(fn($record) => $record->cash_register_id
                                 ? CashRegisterResource::getUrl('view', ['record' => $record->cash_register_id])
                                 : null),
 
                         TextEntry::make('cashRegister.status')
                             ->label('Estado de Caja')
-                            ->formatStateUsing(fn ($state) => $state === 'open' ? 'Abierta' : 'Cerrada')
+                            ->formatStateUsing(fn($state) => $state === 'open' ? 'Abierta' : 'Cerrada')
                             ->badge()
-                            ->color(fn ($state) => $state === 'open' ? 'success' : 'gray'),
+                            ->color(fn($state) => $state === 'open' ? 'success' : 'gray'),
 
                         TextEntry::make('cashRegister.user.name')
                             ->label('Caja abierta por')
@@ -218,5 +300,20 @@ class SaleInfolist
                         ]),
                     ])->columns(2),
             ]);
+    }
+
+    private static function extractWebNote(Sale $record, string $label): ?string
+    {
+        if (! $record->kitchen_notes) {
+            return null;
+        }
+
+        $pattern = '/^' . preg_quote($label, '/') . ':\s*(.+)$/mi';
+
+        if (preg_match($pattern, $record->kitchen_notes, $matches)) {
+            return trim($matches[1]);
+        }
+
+        return null;
     }
 }

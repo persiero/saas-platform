@@ -8,6 +8,8 @@ use Percy\Core\Models\Sale;
 use Percy\Core\Models\CashRegister;
 use Percy\Core\Models\Product;
 use Illuminate\Support\Facades\Auth;
+use App\Filament\Resources\SaleResource;
+use Percy\Core\Services\Tenants\TenantPlanService;
 
 class StatsOverview extends BaseWidget
 {
@@ -22,7 +24,7 @@ class StatsOverview extends BaseWidget
 
     protected function getColumns(): int
     {
-        return 4;
+        return self::tenantHasOnlineStore() ? 3 : 4;
     }
 
     protected function getStats(): array
@@ -89,7 +91,53 @@ class StatsOverview extends BaseWidget
             ->where('type', 'product')
             ->count();
 
-        return [
+        $hasOnlineStore = self::tenantHasOnlineStore();
+
+        $pendingWebOrders = 0;
+        $pendingWebAmount = 0;
+
+        $completedWebOrdersToday = 0;
+        $completedWebAmountToday = 0;
+
+        if ($hasOnlineStore) {
+            $pendingWebOrders = Sale::query()
+                ->where('tenant_id', $tenantId)
+                ->where('channel', 'ecommerce')
+                ->where('status', 'pending_payment')
+                ->count();
+
+            $pendingWebAmount = Sale::query()
+                ->where('tenant_id', $tenantId)
+                ->where('channel', 'ecommerce')
+                ->where('status', 'pending_payment')
+                ->sum('total');
+
+            $completedWebOrdersToday = Sale::query()
+                ->where('tenant_id', $tenantId)
+                ->where('channel', 'ecommerce')
+                ->where('status', 'completed')
+                ->whereIn('document_type', ['00', '01', '03'])
+                ->where(function ($query) {
+                    $query->whereNull('sunat_status')
+                        ->orWhere('sunat_status', '!=', 'rejected');
+                })
+                ->whereDate('sold_at', today())
+                ->count();
+
+            $completedWebAmountToday = Sale::query()
+                ->where('tenant_id', $tenantId)
+                ->where('channel', 'ecommerce')
+                ->where('status', 'completed')
+                ->whereIn('document_type', ['00', '01', '03'])
+                ->where(function ($query) {
+                    $query->whereNull('sunat_status')
+                        ->orWhere('sunat_status', '!=', 'rejected');
+                })
+                ->whereDate('sold_at', today())
+                ->sum('total');
+        }
+
+        $stats = [
             Stat::make('Ventas de Hoy', 'S/ ' . number_format($todaySales, 2))
                 ->description(
                     $todayCount . ' venta' . ($todayCount !== 1 ? 's' : '') .
@@ -99,30 +147,46 @@ class StatsOverview extends BaseWidget
                 ->descriptionIcon($trend >= 0 ? 'heroicon-m-arrow-trending-up' : 'heroicon-m-arrow-trending-down')
                 ->color($trend >= 0 ? 'success' : 'danger')
                 ->chart($this->getSalesChart($tenantId)),
-
-            Stat::make('Ventas del Mes', 'S/ ' . number_format($monthSales, 2))
-                ->description($monthCount . ' comprobante' . ($monthCount !== 1 ? 's' : '') . ' emitido' . ($monthCount !== 1 ? 's' : ''))
-                ->descriptionIcon('heroicon-m-calendar-days')
-                ->color('info'),
-
-            Stat::make('Estado de Caja', $openCash ? 'ABIERTA' : 'CERRADA')
-                ->description(
-                    $openCash
-                        ? 'Apertura: S/ ' . number_format($openCash->opening_amount, 2) . ' | ' . $openCash->opened_at->format('H:i')
-                        : 'Abre caja para iniciar operaciones'
-                )
-                ->descriptionIcon($openCash ? 'heroicon-m-check-circle' : 'heroicon-m-x-circle')
-                ->color($openCash ? 'success' : 'danger'),
-
-            Stat::make('Inventario', $totalProducts . ' producto' . ($totalProducts !== 1 ? 's' : ''))
-                ->description(
-                    $lowStock > 0
-                        ? $lowStock . ' con stock bajo'
-                        : 'Stock saludable'
-                )
-                ->descriptionIcon($lowStock > 0 ? 'heroicon-m-exclamation-triangle' : 'heroicon-m-check-circle')
-                ->color($lowStock > 0 ? 'warning' : 'success'),
         ];
+
+        if ($hasOnlineStore) {
+            $stats[] = Stat::make('Pedidos Web Pendientes', $pendingWebOrders)
+                ->description('S/ ' . number_format($pendingWebAmount, 2) . ' por procesar')
+                ->descriptionIcon($pendingWebOrders > 0 ? 'heroicon-m-clock' : 'heroicon-m-check-circle')
+                ->color($pendingWebOrders > 0 ? 'warning' : 'success')
+                ->url(SaleResource::getUrl('index'));
+
+            $stats[] = Stat::make('Ventas Online Hoy', 'S/ ' . number_format($completedWebAmountToday, 2))
+                ->description($completedWebOrdersToday . ' pedido' . ($completedWebOrdersToday !== 1 ? 's' : '') . ' procesado' . ($completedWebOrdersToday !== 1 ? 's' : ''))
+                ->descriptionIcon('heroicon-m-globe-alt')
+                ->color('info')
+                ->url(SaleResource::getUrl('index'));
+        }
+
+        $stats[] = Stat::make('Ventas del Mes', 'S/ ' . number_format($monthSales, 2))
+            ->description($monthCount . ' comprobante' . ($monthCount !== 1 ? 's' : '') . ' emitido' . ($monthCount !== 1 ? 's' : ''))
+            ->descriptionIcon('heroicon-m-calendar-days')
+            ->color('info');
+
+        $stats[] = Stat::make('Estado de Caja', $openCash ? 'ABIERTA' : 'CERRADA')
+            ->description(
+                $openCash
+                    ? 'Apertura: S/ ' . number_format($openCash->opening_amount, 2) . ' | ' . $openCash->opened_at->format('H:i')
+                    : 'Abre caja para iniciar operaciones'
+            )
+            ->descriptionIcon($openCash ? 'heroicon-m-check-circle' : 'heroicon-m-x-circle')
+            ->color($openCash ? 'success' : 'danger');
+
+        $stats[] = Stat::make('Inventario', $totalProducts . ' producto' . ($totalProducts !== 1 ? 's' : ''))
+            ->description(
+                $lowStock > 0
+                    ? $lowStock . ' con stock bajo'
+                    : 'Stock saludable'
+            )
+            ->descriptionIcon($lowStock > 0 ? 'heroicon-m-exclamation-triangle' : 'heroicon-m-check-circle')
+            ->color($lowStock > 0 ? 'warning' : 'success');
+
+        return $stats;
     }
 
     protected function getSalesChart(int $tenantId): array
@@ -144,5 +208,23 @@ class StatsOverview extends BaseWidget
         }
 
         return $sales;
+    }
+
+    private static function tenantPlanHas(string $feature): bool
+    {
+        /** @var \Percy\Core\Models\User|null $user */
+        $user = Auth::user();
+
+        if (! $user || ! $user->tenant) {
+            return false;
+        }
+
+        return app(TenantPlanService::class)->has($feature, $user->tenant);
+    }
+
+    private static function tenantHasOnlineStore(): bool
+    {
+        return self::tenantPlanHas('has_online_store')
+            || self::tenantPlanHas('has_web_orders');
     }
 }

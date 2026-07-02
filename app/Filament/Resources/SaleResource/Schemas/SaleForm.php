@@ -24,16 +24,50 @@ class SaleForm
         return $form
             ->schema([
                 // 🌟 1. AVISO PARA EL CAJERO (Solo visible en ventas web pendientes)
-                Forms\Components\Section::make('🛍️ PEDIDO WEB PENDIENTE DE COBRO')
-                    ->description('Verifique el pago con el cliente y asigne el tipo de comprobante. Al "Guardar cambios", se emitirá el documento final y no podrá editarse más.')
+                Forms\Components\Section::make('🛍️ Pedido web pendiente de atención')
+                    ->description('Verifica los datos del cliente, confirma el pago y selecciona el comprobante antes de procesar el pedido. Al guardar, el pedido pasará a venta completada, se descontará stock y se registrará el Kardex.')
                     ->schema([
-                        Forms\Components\Placeholder::make('kitchen_notes')
-                            ->label('Datos ingresados por el cliente en la tienda web:')
-                            ->content(fn(?Sale $record) => $record ? $record->kitchen_notes : 'Sin datos')
-                            ->extraAttributes(['class' => 'font-mono text-sm text-gray-700 bg-yellow-50 p-4 rounded-lg'])
+                        Forms\Components\Placeholder::make('web_customer_name')
+                            ->label('Cliente')
+                            ->content(fn(?Sale $record): string => self::extractWebNote($record, 'Nombre') ?? 'No registrado'),
+
+                        Forms\Components\Placeholder::make('web_customer_phone')
+                            ->label('Celular / WhatsApp')
+                            ->content(fn(?Sale $record): string => self::extractWebNote($record, 'Celular') ?? 'No registrado'),
+
+                        Forms\Components\Placeholder::make('web_delivery_type')
+                            ->label('Tipo de entrega')
+                            ->content(function (?Sale $record): string {
+                                if (! $record?->kitchen_notes) {
+                                    return 'No registrado';
+                                }
+
+                                return str_contains($record->kitchen_notes, 'RECOJO EN TIENDA')
+                                    ? 'Recojo en tienda'
+                                    : 'Delivery';
+                            }),
+
+                        Forms\Components\Placeholder::make('web_district')
+                            ->label('Distrito')
+                            ->content(fn(?Sale $record): string => self::extractWebNote($record, 'Distrito') ?? '-')
+                            ->visible(fn(?Sale $record): bool => $record && str_contains($record->kitchen_notes ?? '', 'Distrito:')),
+
+                        Forms\Components\Placeholder::make('web_address')
+                            ->label('Dirección')
+                            ->content(fn(?Sale $record): string => self::extractWebNote($record, 'Dirección') ?? '-')
+                            ->columnSpanFull()
+                            ->visible(fn(?Sale $record): bool => $record && str_contains($record->kitchen_notes ?? '', 'Dirección:')),
+
+                        Forms\Components\Placeholder::make('web_notes')
+                            ->label('Notas del cliente')
+                            ->content(fn(?Sale $record): string => self::extractWebNote($record, 'Notas') ?? 'Sin notas adicionales')
+                            ->columnSpanFull(),
                     ])
-                    // 🌟 SOLUCIÓN: Quitamos ->color() y usamos extraAttributes para darle un borde amarillo llamativo
-                    ->extraAttributes(['class' => 'ring-2 ring-amber-500'])
+                    ->columns([
+                        'default' => 1,
+                        'md' => 2,
+                    ])
+                    ->extraAttributes(['class' => 'ring-2 ring-amber-500 bg-amber-50/40 rounded-xl'])
                     ->visible(fn(?Sale $record) => $record && $record->channel === 'ecommerce' && $record->status === 'pending_payment'),
 
                 Forms\Components\Group::make()->schema([
@@ -715,5 +749,20 @@ class SaleForm
         }
 
         return false;
+    }
+
+    private static function extractWebNote(?Sale $record, string $label): ?string
+    {
+        if (! $record?->kitchen_notes) {
+            return null;
+        }
+
+        $pattern = '/^' . preg_quote($label, '/') . ':\s*(.+)$/mi';
+
+        if (preg_match($pattern, $record->kitchen_notes, $matches)) {
+            return trim($matches[1]);
+        }
+
+        return null;
     }
 }

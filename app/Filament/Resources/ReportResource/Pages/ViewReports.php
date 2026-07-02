@@ -27,6 +27,11 @@ class ViewReports extends Page
     public bool $canViewProfitability = false;
     public bool $canViewAdvancedReports = false;
 
+    public $salesByChannel = [];
+    public $pendingWebOrdersSummary = [];
+
+    public bool $canViewOnlineStoreReports = false;
+
     public function mount(): void
     {
         $this->startDate = now()->startOfMonth()->format('Y-m-d');
@@ -52,6 +57,9 @@ class ViewReports extends Page
     {
         $this->canViewProfitability = $this->tenantPlanHas('has_profitability_reports');
         $this->canViewAdvancedReports = $this->tenantPlanHas('has_advanced_reports');
+
+        $this->canViewOnlineStoreReports = $this->tenantPlanHas('has_online_store')
+            || $this->tenantPlanHas('has_web_orders');
     }
 
     protected function getFormSchema(): array
@@ -115,6 +123,14 @@ class ViewReports extends Page
             $this->cashStatus = $service->cashRegisterStatus($tenantId);
             $this->paymentMethodsData = $service->paymentMethods($tenantId, $this->startDate, $this->endDate);
 
+            $this->salesByChannel = $this->canViewOnlineStoreReports
+                ? $service->salesByChannel($tenantId, $this->startDate, $this->endDate)
+                : [];
+
+            $this->pendingWebOrdersSummary = $this->canViewOnlineStoreReports
+                ? $service->pendingWebOrdersSummary($tenantId, $this->startDate, $this->endDate)
+                : [];
+
             $this->profitability = $this->canViewProfitability
                 ? $service->profitability($tenantId, $this->startDate, $this->endDate)
                 : [];
@@ -172,6 +188,7 @@ class ViewReports extends Page
                 'Cajero',
                 'Metodo de Pago',
                 'Estado SUNAT',
+                'Canal',
                 'Producto',          // <-- NUEVO
                 'Cantidad',          // <-- NUEVO
                 'Precio Unit. (S/)', // <-- NUEVO
@@ -190,6 +207,7 @@ class ViewReports extends Page
                 $nomCliente = $sale->customer ? ($sale->customer->name ?? 'CLIENTES VARIOS') : 'CLIENTES VARIOS';
                 $nomCajero  = $sale->user ? ($sale->user->name ?? 'Sistema') : 'Sistema';
                 $serieNum   = $sale->series . '-' . str_pad($sale->correlative, 6, '0', STR_PAD_LEFT);
+                $canal = $sale->channel === 'ecommerce' ? 'Tienda Online' : 'Presencial';
 
                 // 🌟 LÓGICA DE DETALLE: Recorremos los ítems de esta venta
                 if ($sale->items && $sale->items->count() > 0) {
@@ -217,6 +235,7 @@ class ViewReports extends Page
                             $nomCajero,
                             $sale->payment_method ?? 'No especificado',
                             strtoupper($sale->sunat_status ?? 'NO ENVIADO'),
+                            $canal,
                             $nombreProducto,
                             $item->quantity,
                             number_format($precioUnitario, 2, '.', ''),

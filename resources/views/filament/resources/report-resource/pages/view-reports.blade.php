@@ -84,6 +84,63 @@
             </div>
         </x-filament::section>
 
+        @if($canViewOnlineStoreReports)
+            <x-filament::section>
+                <x-slot name="heading">
+                    <div class="flex items-center gap-2">
+                        <x-heroicon-o-globe-alt class="w-5 h-5 text-primary-500" />
+                        <span class="text-lg font-semibold">Ventas por Canal</span>
+                    </div>
+                </x-slot>
+                <x-slot name="description">
+                    Comparativa entre ventas presenciales y ventas provenientes de la tienda online.
+                </x-slot>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="text-sm font-medium text-gray-600 dark:text-gray-300">Ventas Presenciales</div>
+                            <x-heroicon-o-building-storefront class="w-6 h-6 text-gray-500" />
+                        </div>
+                        <div class="text-2xl font-bold">
+                            S/ {{ number_format($salesByChannel['local']['total_amount'] ?? 0, 2) }}
+                        </div>
+                        <div class="text-xs text-gray-500 mt-1">
+                            {{ $salesByChannel['local']['transaction_count'] ?? 0 }} operaciones |
+                            {{ $salesByChannel['local']['percentage'] ?? 0 }}% del total
+                        </div>
+                    </div>
+
+                    <div class="bg-white dark:bg-gray-800 p-6 rounded-xl border border-primary-200 dark:border-primary-800 shadow-sm">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="text-sm font-medium text-primary-700 dark:text-primary-300">Ventas Online Procesadas</div>
+                            <x-heroicon-o-globe-alt class="w-6 h-6 text-primary-600" />
+                        </div>
+                        <div class="text-2xl font-bold text-primary-700 dark:text-primary-300">
+                            S/ {{ number_format($salesByChannel['ecommerce']['total_amount'] ?? 0, 2) }}
+                        </div>
+                        <div class="text-xs text-primary-600 dark:text-primary-400 mt-1">
+                            {{ $salesByChannel['ecommerce']['transaction_count'] ?? 0 }} pedidos procesados |
+                            {{ $salesByChannel['ecommerce']['percentage'] ?? 0 }}% del total
+                        </div>
+                    </div>
+
+                    <div class="bg-warning-50 dark:bg-warning-500/10 p-6 rounded-xl border border-warning-200 dark:border-warning-500/20 shadow-sm">
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="text-sm font-medium text-warning-700 dark:text-warning-300">Pedidos Web Pendientes</div>
+                            <x-heroicon-o-clock class="w-6 h-6 text-warning-600" />
+                        </div>
+                        <div class="text-2xl font-bold text-warning-900 dark:text-warning-100">
+                            {{ $pendingWebOrdersSummary['count'] ?? 0 }}
+                        </div>
+                        <div class="text-xs text-warning-600 dark:text-warning-400 mt-1">
+                            Monto referencial: S/ {{ number_format($pendingWebOrdersSummary['total_amount'] ?? 0, 2) }}
+                        </div>
+                    </div>
+                </div>
+            </x-filament::section>
+        @endif
+
         @if($canViewProfitability)
             {{-- Rentabilidad --}}
             <x-filament::section>
