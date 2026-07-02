@@ -32,7 +32,7 @@ class RevenueChart extends ChartWidget
 
             $sum = Sale::where('tenant_id', $tenantId)
                 ->whereDate('sold_at', $date->toDateString())
-                ->where('status', '!=', 'canceled')
+                ->where('status', 'completed')
                 ->whereIn('document_type', ['00', '01', '03'])
                 ->where(function ($query) {
                     $query->whereNull('sunat_status')

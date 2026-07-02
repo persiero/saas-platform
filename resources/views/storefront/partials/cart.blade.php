@@ -33,78 +33,125 @@
 <script>
     let cart = JSON.parse(localStorage.getItem('carrito_{{ $tenant->id }}')) || [];
 
-    function saveCart() { localStorage.setItem('carrito_{{ $tenant->id }}', JSON.stringify(cart)); }
+    // Limpieza por si antes había productos guardados sin product_id
+    cart = cart.filter(item => item.product_id);
+    saveCart();
 
-    function decreaseQuantity(name) {
-        let itemIndex = cart.findIndex(i => i.name === name);
+    function saveCart() {
+        localStorage.setItem('carrito_{{ $tenant->id }}', JSON.stringify(cart));
+    }
+
+    function decreaseQuantity(productId) {
+        let itemIndex = cart.findIndex(i => Number(i.product_id) === Number(productId));
+
         if (itemIndex !== -1) {
-            if (cart[itemIndex].quantity > 1) cart[itemIndex].quantity--;
-            else cart.splice(itemIndex, 1);
-            saveCart(); updateCartUI();
+            if (cart[itemIndex].quantity > 1) {
+                cart[itemIndex].quantity--;
+            } else {
+                cart.splice(itemIndex, 1);
+            }
+
+            saveCart();
+            updateCartUI();
         }
     }
 
-    function addToCart(name, price, unit = 'NIU') {
-        let item = cart.find(i => i.name === name);
-        if (item) item.quantity++;
-        else cart.push({ name: name, price: price, quantity: 1, unit: unit });
-        saveCart(); updateCartUI();
+    function addToCart(productId, name, price, unit = 'NIU') {
+        let item = cart.find(i => Number(i.product_id) === Number(productId));
+
+        if (item) {
+            item.quantity++;
+        } else {
+            cart.push({
+                product_id: productId,
+                name: name,
+                price: Number(price),
+                quantity: 1,
+                unit: unit
+            });
+        }
+
+        saveCart();
+        updateCartUI();
 
         const drawer = document.getElementById('cart-drawer');
-        if (drawer.classList.contains('translate-x-full')) toggleCart();
+
+        if (drawer.classList.contains('translate-x-full')) {
+            toggleCart();
+        }
     }
 
     function updateCartUI() {
-        let totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
+        let totalItems = cart.reduce((sum, item) => sum + Number(item.quantity), 0);
 
-        // Protegemos esto por si en la página de checkout no existe la bolita roja
         const countBadge = document.getElementById('cart-count');
-        if(countBadge) countBadge.innerText = totalItems;
+
+        if (countBadge) {
+            countBadge.innerText = totalItems;
+        }
 
         let cartHtml = '';
         let subtotal = 0;
 
         cart.forEach((item) => {
-            let itemTotal = item.price * item.quantity;
+            let itemTotal = Number(item.price) * Number(item.quantity);
             subtotal += itemTotal;
+
             cartHtml += `
                 <div class="flex justify-between items-center mb-2 bg-white p-2.5 rounded-xl border border-gray-100 shadow-sm">
                     <div class="flex-1 pr-2">
                         <p class="font-bold text-xs text-gray-800 leading-tight line-clamp-2">${item.name}</p>
-                        <p class="text-[10px] text-gray-400 font-bold uppercase mt-0.5">S/ ${item.price.toFixed(2)} <span class="font-normal lowercase">x ${item.unit}</span></p>
+                        <p class="text-[10px] text-gray-400 font-bold uppercase mt-0.5">
+                            S/ ${Number(item.price).toFixed(2)}
+                            <span class="font-normal lowercase">x ${item.unit}</span>
+                        </p>
                     </div>
                     <div class="flex flex-col items-end gap-1">
                         <span class="font-black text-sm text-brand">S/ ${itemTotal.toFixed(2)}</span>
                         <div class="flex items-center bg-gray-50 border border-gray-200 rounded-lg">
-                            <button onclick="decreaseQuantity('${item.name}')" class="w-6 h-6 flex items-center justify-center font-bold text-gray-500 hover:text-brand transition">-</button>
+                            <button onclick="decreaseQuantity(${item.product_id})" class="w-6 h-6 flex items-center justify-center font-bold text-gray-500 hover:text-brand transition">-</button>
                             <span class="w-5 text-center font-bold text-xs">${item.quantity}</span>
-                            <button onclick="addToCart('${item.name}', ${item.price}, '${item.unit}')" class="w-6 h-6 flex items-center justify-center font-bold text-gray-500 hover:text-brand transition">+</button>
+                            <button onclick='addToCart(${item.product_id}, ${JSON.stringify(item.name)}, ${Number(item.price)}, ${JSON.stringify(item.unit)})' class="w-6 h-6 flex items-center justify-center font-bold text-gray-500 hover:text-brand transition">+</button>
                         </div>
                     </div>
                 </div>`;
         });
 
         const cartItemsDiv = document.getElementById('cart-items');
-        if(cartItemsDiv) {
-            cartItemsDiv.innerHTML = cartHtml || `<div class="text-center py-10 text-gray-400"><p class="text-sm font-medium">Tu carrito está vacío</p></div>`;
+
+        if (cartItemsDiv) {
+            cartItemsDiv.innerHTML = cartHtml || `
+                <div class="text-center py-10 text-gray-400">
+                    <p class="text-sm font-medium">Tu carrito está vacío</p>
+                </div>`;
         }
 
         const totalDiv = document.getElementById('cart-drawer-total');
-        if(totalDiv) totalDiv.innerText = 'S/ ' + subtotal.toFixed(2);
+
+        if (totalDiv) {
+            totalDiv.innerText = 'S/ ' + subtotal.toFixed(2);
+        }
     }
 
     function toggleCart() {
         const drawer = document.getElementById('cart-drawer');
         const backdrop = document.getElementById('cart-backdrop');
+
         if (drawer.classList.contains('translate-x-full')) {
             backdrop.classList.remove('hidden');
+
             setTimeout(() => backdrop.classList.remove('opacity-0'), 10);
+
             drawer.classList.remove('translate-x-full');
             document.body.style.overflow = 'hidden';
         } else {
             backdrop.classList.add('opacity-0');
             drawer.classList.add('translate-x-full');
-            setTimeout(() => { backdrop.classList.add('hidden'); document.body.style.overflow = 'auto'; }, 300);
+
+            setTimeout(() => {
+                backdrop.classList.add('hidden');
+                document.body.style.overflow = 'auto';
+            }, 300);
         }
     }
 

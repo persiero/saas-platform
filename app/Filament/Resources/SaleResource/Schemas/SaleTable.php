@@ -150,6 +150,7 @@ class SaleTable
                     ->label('Estado')
                     ->badge()
                     ->icon(fn(string $state, Sale $record): string => match (true) {
+                        $record->status === 'pending_payment' => 'heroicon-o-clock',
                         $record->status === 'canceled' => 'heroicon-o-archive-box-x-mark',
                         $record->document_type === '00' => 'heroicon-o-building-storefront',
                         $state === 'accepted' => 'heroicon-o-check-circle',
@@ -158,6 +159,7 @@ class SaleTable
                         default => 'heroicon-o-question-mark-circle',
                     })
                     ->color(fn(string $state, Sale $record): string => match (true) {
+                        $record->status === 'pending_payment' => 'warning',
                         $record->status === 'canceled' => 'danger',
                         $record->document_type === '00' => 'gray',
                         $state === 'accepted' => 'success',
@@ -166,6 +168,7 @@ class SaleTable
                         default => 'gray',
                     })
                     ->formatStateUsing(fn(string $state, Sale $record): string => match (true) {
+                        $record->status === 'pending_payment' => 'Pendiente Web',
                         $record->status === 'canceled' => 'Anulado',
                         $record->document_type === '00' => 'Uso Interno',
                         $state === 'accepted' => 'Aceptado',

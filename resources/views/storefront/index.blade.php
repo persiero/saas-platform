@@ -55,7 +55,8 @@
                         </div>
 
                         {{-- Botón (Se estira en móvil, tamaño normal en PC) --}}
-                        <button onclick="addToCart('{{ addslashes($product->name) }}', {{ $product->price }}, '{{ $unidadAmigable }}')" class="w-full min-[400px]:w-auto bg-brand text-white text-xs sm:text-sm px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl flex items-center justify-center hover:opacity-90 transition font-bold shadow-sm shadow-brand/30 active:scale-95">
+                        <button onclick="addToCart({{ $product->id }}, @js($product->name), {{ $product->price }}, @js($unidadAmigable))"
+                                class="w-full min-[400px]:w-auto bg-brand text-white text-xs sm:text-sm px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl flex items-center justify-center hover:opacity-90 transition font-bold shadow-sm shadow-brand/30 active:scale-95">
                             Agregar
                         </button>
                     </div>

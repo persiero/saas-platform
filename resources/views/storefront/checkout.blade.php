@@ -56,6 +56,10 @@
                         <input type="text" id="chk-nombre" class="w-full p-3 border-gray-200 bg-gray-50 border rounded-xl outline-none focus:ring-2 focus:ring-brand">
                     </div>
                     <div>
+                        <label class="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">Celular / WhatsApp *</label>
+                        <input type="text" id="chk-phone" class="w-full p-3 border-gray-200 bg-gray-50 border rounded-xl outline-none focus:ring-2 focus:ring-brand">
+                    </div>
+                    <div>
                         <label class="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">DNI / RUC (Opcional)</label>
                         <input type="number" id="chk-dni" class="w-full p-3 border-gray-200 bg-gray-50 border rounded-xl outline-none focus:ring-2 focus:ring-brand">
                     </div>
@@ -71,7 +75,9 @@
 
                             {{-- 🌟 MAGIA: Leemos las zonas desde la Base de Datos --}}
                             @forelse($deliveryZones as $zone)
-                                <option value="{{ $zone->district->name }}" data-price="{{ $zone->price }}">
+                                <option value="{{ $zone->id }}"
+                                        data-price="{{ $zone->price }}"
+                                        data-name="{{ $zone->district->name }}">
                                     {{ $zone->district->name }} (S/ {{ number_format($zone->price, 2) }})
                                 </option>
                             @empty
@@ -156,6 +162,16 @@
     // 1. Leemos el carrito de la memoria
     let chkCart = JSON.parse(localStorage.getItem('carrito_{{ $tenant->id }}')) || [];
 
+    chkCart = chkCart
+        .filter(item => item.product_id && Number(item.quantity) > 0)
+        .map(item => ({
+            product_id: Number(item.product_id),
+            name: item.name || 'Producto',
+            price: Number(item.price || 0),
+            quantity: Number(item.quantity || 1),
+            unit: item.unit || 'Und.'
+        }));
+
     // 🌟 2. FUNCIÓN PARA PINTAR LOS PRODUCTOS Y TOTALES
     function updateCheckoutTotal() {
         if (chkCart.length === 0) {
@@ -171,7 +187,10 @@
 
         // Dibujamos cada producto en el panel derecho
         chkCart.forEach((item) => {
-            let itemTotal = item.price * item.quantity;
+            let itemPrice = Number(item.price || 0);
+            let itemQuantity = Number(item.quantity || 0);
+            let itemTotal = itemPrice * itemQuantity;
+
             subtotal += itemTotal;
             cartHtml += `
                 <div class="flex justify-between items-center bg-white p-3 rounded-xl border border-gray-100 shadow-sm">
@@ -179,7 +198,7 @@
                         <span class="bg-gray-100 text-gray-600 font-bold px-2 py-1 rounded-md text-xs">${item.quantity}</span>
                         <div>
                             <p class="font-bold text-sm text-gray-800 leading-tight">${item.name}</p>
-                            <p class="text-xs text-gray-400">S/ ${item.price.toFixed(2)} x ${item.unit}</p>
+                            <p class="text-xs text-gray-400">S/ ${itemPrice.toFixed(2)} x ${item.unit}</p>
                         </div>
                     </div>
                     <span class="font-bold text-brand">S/ ${itemTotal.toFixed(2)}</span>
@@ -213,30 +232,48 @@
     }
 
     // 🌟 3. FUNCIÓN PARA GUARDAR EN BASE DE DATOS Y WHATSAPP
-    async function processCheckout(phone) {
+    async function processCheckout(storePhone) {
         if (chkCart.length === 0) return;
 
         const nombre = document.getElementById('chk-nombre').value.trim();
+        const customerPhone = document.getElementById('chk-phone').value.trim();
         const dni = document.getElementById('chk-dni').value.trim();
         const notas = document.getElementById('chk-notas').value.trim();
         const orderType = document.querySelector('input[name="order_type"]:checked').value;
 
         if (!nombre) { alert('Ingresa tu nombre.'); document.getElementById('chk-nombre').focus(); return; }
 
+        if (!customerPhone) {
+            alert('Ingresa tu celular o WhatsApp.');
+            document.getElementById('chk-phone').focus();
+            return;
+        }
         let distrito = '';
+        let deliveryZoneId = '';
         let direccion = '';
         let currentDeliveryFee = 0;
 
         if (orderType === 'delivery') {
             const distritoSelect = document.getElementById('chk-distrito');
-            distrito = distritoSelect.value;
+
+            deliveryZoneId = distritoSelect.value;
             direccion = document.getElementById('chk-direccion').value.trim();
 
-            if (!distrito) { alert('Por favor, selecciona un distrito.'); distritoSelect.focus(); return; }
-            if (!direccion) { alert('Por favor, ingresa tu dirección.'); document.getElementById('chk-direccion').focus(); return; }
+            if (!deliveryZoneId) {
+                alert('Por favor, selecciona un distrito.');
+                distritoSelect.focus();
+                return;
+            }
+
+            if (!direccion) {
+                alert('Por favor, ingresa tu dirección.');
+                document.getElementById('chk-direccion').focus();
+                return;
+            }
 
             let selectedOption = distritoSelect.options[distritoSelect.selectedIndex];
             currentDeliveryFee = parseFloat(selectedOption.getAttribute('data-price')) || 0;
+            distrito = selectedOption.getAttribute('data-name') || selectedOption.textContent.trim();
         }
 
         // Protegemos el botón para evitar doble clic
@@ -247,13 +284,16 @@
 
         // Preparamos los datos para enviar a Laravel
         const payload = {
-            cart: chkCart,
+            cart: chkCart.map(item => ({
+                product_id: item.product_id,
+                quantity: item.quantity
+            })),
             customer_name: nombre,
+            customer_phone: customerPhone,
             customer_dni: dni,
             order_type: orderType,
-            district: distrito,
+            delivery_zone_id: deliveryZoneId,
             address: direccion,
-            delivery_fee: currentDeliveryFee,
             notes: notas
         };
 
@@ -263,7 +303,8 @@
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Accept': 'application/json'
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
                 },
                 body: JSON.stringify(payload)
             });
@@ -282,6 +323,7 @@
             text += `*Orden Ref: ${data.ticket_number}*\n\n`;
 
             text += `[ DATOS DEL CLIENTE ]\nNombre: ${nombre}\n`;
+            text += `Celular: ${customerPhone}\n`;
             if (dni) text += `DNI/RUC: ${dni}\n`;
 
             let finalTotal = 0;
@@ -307,7 +349,7 @@
             text += `------------------------\n*TOTAL A PAGAR: S/ ${finalTotal.toFixed(2)}*\n------------------------\n`;
             if (notas) text += `\n[ NOTAS ADICIONALES ]\n${notas}`;
 
-            let waPhone = phone ? phone.replace(/[^0-9]/g, '') : '';
+            let waPhone = storePhone ? storePhone.replace(/[^0-9]/g, '') : '';
             if(waPhone.length === 9) waPhone = '51' + waPhone;
 
             const encodedText = encodeURIComponent(text);

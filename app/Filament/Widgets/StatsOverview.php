@@ -32,7 +32,7 @@ class StatsOverview extends BaseWidget
 
         $baseSalesQuery = Sale::query()
             ->where('tenant_id', $tenantId)
-            ->where('status', '!=', 'canceled')
+            ->where('status', 'completed')
             ->whereIn('document_type', ['00', '01', '03'])
             ->where(function ($query) {
                 $query->whereNull('sunat_status')
@@ -133,7 +133,7 @@ class StatsOverview extends BaseWidget
             $date = today()->subDays($i);
 
             $sales[] = Sale::where('tenant_id', $tenantId)
-                ->where('status', '!=', 'canceled')
+                ->where('status', 'completed')
                 ->whereIn('document_type', ['00', '01', '03'])
                 ->where(function ($query) {
                     $query->whereNull('sunat_status')

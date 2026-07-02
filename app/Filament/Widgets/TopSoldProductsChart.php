@@ -35,7 +35,7 @@ class TopSoldProductsChart extends ChartWidget
             ->whereHas('sale', function ($query) use ($tenantId, $startOfMonth, $endOfMonth) {
                 $query->where('tenant_id', $tenantId)
                     ->whereBetween('sold_at', [$startOfMonth, $endOfMonth])
-                    ->where('status', '!=', 'canceled')
+                    ->where('status', 'completed')
                     ->whereIn('document_type', ['00', '01', '03'])
                     ->where(function ($query) {
                         $query->whereNull('sunat_status')
