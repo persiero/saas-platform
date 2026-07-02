@@ -17,10 +17,8 @@ use Filament\Infolists\Components\Section;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Infolists\Components\Grid;
 use Illuminate\Support\Facades\Auth;
-use Percy\Core\Models\Sale;
-use Percy\Core\Models\Expense;
 use Percy\Core\Services\Cash\CashRegisterService;
-use App\Filament\Resources\CashRegisterResource\RelationManagers;
+use App\Filament\Resources\CashRegisterResource\RelationManagers\SalesRelationManager;
 
 class CashRegisterResource extends Resource
 {
@@ -370,11 +368,6 @@ class CashRegisterResource extends Resource
         return self::cashRegisterService()->expectedCashForDisplay($record);
     }
 
-    private static function cashDifference(CashRegister $record): float
-    {
-        return self::cashRegisterService()->cashDifference($record);
-    }
-
     private static function cashDifferenceForDisplay(CashRegister $record): float
     {
         return self::cashRegisterService()->cashDifferenceForDisplay($record);
@@ -523,7 +516,7 @@ class CashRegisterResource extends Resource
     public static function getRelations(): array
     {
         return [
-            RelationManagers\SalesRelationManager::class,
+            SalesRelationManager::class,
         ];
     }
 
