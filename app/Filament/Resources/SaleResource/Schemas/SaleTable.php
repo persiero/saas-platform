@@ -24,7 +24,8 @@ class SaleTable
                     ->weight('bold')
                     // 🌟 CAMBIO: Evaluamos primero si está anulado
                     ->icon(fn(Sale $record): string => match (true) {
-                        $record->status === 'canceled' => 'heroicon-o-x-circle', // Ícono de anulación
+                        $record->channel === 'ecommerce' && $record->status === 'pending_payment' => 'heroicon-o-clock',
+                        $record->status === 'canceled' => 'heroicon-o-x-circle',
                         $record->document_type === '01' => 'heroicon-o-document-text',
                         $record->document_type === '03' => 'heroicon-o-receipt-percent',
                         $record->document_type === '07' => 'heroicon-o-arrow-uturn-left',
@@ -33,6 +34,7 @@ class SaleTable
                     })
                     // 🌟 CAMBIO: Color rojo si está anulado
                     ->color(fn(Sale $record): string => match (true) {
+                        $record->channel === 'ecommerce' && $record->status === 'pending_payment' => 'warning',
                         $record->status === 'canceled' => 'danger',
                         $record->document_type === '07' => 'danger',
                         $record->document_type === '08' => 'warning',
@@ -42,10 +44,10 @@ class SaleTable
                     })
                     // 🌟 MAGIA VISUAL AQUÍ: Agregamos la validación para Facturas y Boletas
                     ->description(fn(Sale $record): ?string => match (true) {
+                        $record->channel === 'ecommerce' && $record->status === 'pending_payment' => 'Pedido Web Pendiente',
                         $record->status === 'canceled' => 'Anulado',
                         in_array($record->document_type, ['07', '08']) => "Ref: {$record->affected_document_series}-{$record->affected_document_correlative}",
 
-                        // Si es Factura o Boleta Y tiene un documento afectado (la nota original), lo mostramos:
                         $record->document_type === '01' => $record->affected_document_series ? "Factura (Ex {$record->affected_document_series}-{$record->affected_document_correlative})" : 'Factura',
                         $record->document_type === '03' => $record->affected_document_series ? "Boleta (Ex {$record->affected_document_series}-{$record->affected_document_correlative})" : 'Boleta',
 
@@ -56,7 +58,13 @@ class SaleTable
                 // 🌟 1. COLUMNA CLIENTE (Omnicanal Corregido)
                 Tables\Columns\TextColumn::make('customer.name')
                     ->label('Cliente')
-                    ->default('Público en General') // 🌟 CAMBIO CLAVE: Usamos default en lugar de placeholder
+                    ->state(function (Sale $record): string {
+                        if ($record->channel === 'ecommerce') {
+                            return self::extractWebNote($record, 'Nombre') ?: 'Cliente Web';
+                        }
+
+                        return $record->customer?->name ?? 'Público en General';
+                    })
                     ->sortable()
                     ->searchable()
                     ->icon(fn(Sale $record): string => match ($record->channel) {
@@ -68,12 +76,25 @@ class SaleTable
                         default => 'gray',
                     })
                     ->weight(fn(Sale $record) => $record->channel === 'ecommerce' ? 'bold' : 'normal')
-                    ->description(fn(Sale $record): ?string => match ($record->channel) {
-                        'ecommerce' => '🌐 Tienda Online',
-                        default => '🏪 Venta en Local',
+                    ->description(function (Sale $record): ?string {
+                        if ($record->channel === 'ecommerce') {
+                            $phone = self::extractWebNote($record, 'Celular');
+
+                            return $phone
+                                ? '🌐 Tienda Online | 📱 ' . $phone
+                                : '🌐 Tienda Online';
+                        }
+
+                        return '🏪 Venta en Local';
                     })
                     ->limit(30)
-                    ->tooltip(fn(Sale $record): ?string => $record->customer?->name ?? 'Público en General'),
+                    ->tooltip(function (Sale $record): ?string {
+                        if ($record->channel === 'ecommerce') {
+                            return self::extractWebNote($record, 'Nombre') ?: 'Cliente Web';
+                        }
+
+                        return $record->customer?->name ?? 'Público en General';
+                    }),
 
                 // 🌟 2. COLUMNA ATENCIÓN / COBRO
                 Tables\Columns\TextColumn::make('user.name')
@@ -85,22 +106,26 @@ class SaleTable
                     ->icon(fn(Sale $record) => $record->channel === 'ecommerce' ? 'heroicon-o-shopping-cart' : 'heroicon-o-user')
                     ->weight('bold')
                     ->description(function (Sale $record): ?string {
-                        $isPaid = $record->status === 'completed' || !empty($record->payment_method);
+                        $isPaid = $record->status === 'completed';
 
-                        // 🌟 SOLUCIÓN: Leemos directamente al usuario, no a la caja registradora
                         $cajeroNombre = $record->user ? explode(' ', $record->user->name)[0] : 'Desconocido';
 
-                        // 🍔 CASO 1: RESTAURANTE (Tiene mesa asignada)
                         if (!empty($record->table_id)) {
                             return $isPaid ? "💰 Cobró: {$cajeroNombre}" : '⏳ Comiendo en mesa';
                         }
 
-                        // 🌐 CASO 2: E-COMMERCE (Tienda Web)
                         if ($record->channel === 'ecommerce') {
-                            return $isPaid ? "✅ Atendido por: {$cajeroNombre}" : '⏳ Pendiente de atención';
+                            if ($record->status === 'pending_payment') {
+                                return '⏳ Pendiente de procesar';
+                            }
+
+                            if ($record->status === 'canceled') {
+                                return '❌ Pedido cancelado';
+                            }
+
+                            return "✅ Atendido por: {$cajeroNombre}";
                         }
 
-                        // 🏪 CASO 3: MINIMARKET / PRESENCIAL
                         return null;
                     })
                     ->limit(20)
@@ -149,8 +174,8 @@ class SaleTable
                 Tables\Columns\TextColumn::make('sunat_status')
                     ->label('Estado')
                     ->badge()
-                    ->icon(fn(string $state, Sale $record): string => match (true) {
-                        $record->status === 'pending_payment' => 'heroicon-o-clock',
+                    ->icon(fn(?string $state, Sale $record): string => match (true) {
+                        $record->channel === 'ecommerce' && $record->status === 'pending_payment' => 'heroicon-o-clock',
                         $record->status === 'canceled' => 'heroicon-o-archive-box-x-mark',
                         $record->document_type === '00' => 'heroicon-o-building-storefront',
                         $state === 'accepted' => 'heroicon-o-check-circle',
@@ -158,8 +183,8 @@ class SaleTable
                         $state === 'rejected' => 'heroicon-o-x-circle',
                         default => 'heroicon-o-question-mark-circle',
                     })
-                    ->color(fn(string $state, Sale $record): string => match (true) {
-                        $record->status === 'pending_payment' => 'warning',
+                    ->color(fn(?string $state, Sale $record): string => match (true) {
+                        $record->channel === 'ecommerce' && $record->status === 'pending_payment' => 'warning',
                         $record->status === 'canceled' => 'danger',
                         $record->document_type === '00' => 'gray',
                         $state === 'accepted' => 'success',
@@ -167,14 +192,14 @@ class SaleTable
                         $state === 'rejected' => 'danger',
                         default => 'gray',
                     })
-                    ->formatStateUsing(fn(string $state, Sale $record): string => match (true) {
-                        $record->status === 'pending_payment' => 'Pendiente Web',
+                    ->formatStateUsing(fn(?string $state, Sale $record): string => match (true) {
+                        $record->channel === 'ecommerce' && $record->status === 'pending_payment' => 'Pendiente Web',
                         $record->status === 'canceled' => 'Anulado',
                         $record->document_type === '00' => 'Uso Interno',
                         $state === 'accepted' => 'Aceptado',
                         $state === 'pending' => 'Pendiente SUNAT',
                         $state === 'rejected' => 'Rechazado SUNAT',
-                        default => ucfirst($state),
+                        default => $state ? ucfirst($state) : 'Sin estado',
                     })
                     ->tooltip(
                         fn(Sale $record): ?string =>
@@ -193,13 +218,31 @@ class SaleTable
             ])
             ->defaultSort('sold_at', 'desc')
             ->filters([
+                Tables\Filters\Filter::make('web_pending')
+                    ->label('Pedidos web por procesar')
+                    ->query(
+                        fn(Builder $query): Builder =>
+                        $query->where('channel', 'ecommerce')
+                            ->where('status', 'pending_payment')
+                    ),
+
                 Tables\Filters\SelectFilter::make('document_type')
                     ->label('Tipo')
                     ->options([
+                        '00' => 'Notas de Venta',
                         '01' => 'Facturas',
                         '03' => 'Boletas',
                         '07' => 'Notas de Crédito',
                         '08' => 'Notas de Débito',
+                    ])
+                    ->multiple(),
+
+                Tables\Filters\SelectFilter::make('status')
+                    ->label('Estado de venta')
+                    ->options([
+                        'pending_payment' => 'Pendiente Web',
+                        'completed' => 'Completada',
+                        'canceled' => 'Anulada',
                     ])
                     ->multiple(),
 
@@ -254,5 +297,20 @@ class SaleTable
                     //Tables\Actions\DeleteBulkAction::make(),
                 ]),
             ]);
+    }
+
+    private static function extractWebNote(Sale $record, string $label): ?string
+    {
+        if (! $record->kitchen_notes) {
+            return null;
+        }
+
+        $pattern = '/^' . preg_quote($label, '/') . ':\s*(.+)$/mi';
+
+        if (preg_match($pattern, $record->kitchen_notes, $matches)) {
+            return trim($matches[1]);
+        }
+
+        return null;
     }
 }
