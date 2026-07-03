@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\SaleResource\Actions;
 
+use Filament\Support\Enums\ActionSize;
 use Filament\Tables;
 
 class SaleTableActions
@@ -17,8 +18,10 @@ class SaleTableActions
                 ...SaleSunatActions::get(),
             ])
                 ->label('Opciones')
+                ->tooltip('Opciones')
                 ->icon('heroicon-m-ellipsis-vertical')
-                ->button()
+                ->iconButton()
+                ->size(ActionSize::Large)
                 ->color('gray'),
         ];
     }

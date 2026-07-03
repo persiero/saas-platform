@@ -6,8 +6,8 @@ use Filament\Forms;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Facades\Auth;
 use Percy\Core\Models\Sale;
+use App\Filament\Resources\SaleResource;
 use App\Filament\Resources\SaleResource\Actions\SaleTableActions;
 
 class SaleTable
@@ -15,7 +15,59 @@ class SaleTable
     public static function configure(Table $table): Table
     {
         return $table
+            ->striped()
+            ->paginated([10, 25, 50, 100])
+            ->defaultPaginationPageOption(25)
+            ->persistSearchInSession()
+            ->persistFiltersInSession()
+            ->persistSortInSession()
+            ->recordUrl(fn(Sale $record): string => SaleResource::getUrl('view', ['record' => $record]))
+            ->recordClasses(fn(Sale $record): ?string => match (true) {
+                $record->channel === 'ecommerce' && $record->status === 'pending_payment' => 'bg-warning-50/60 dark:bg-warning-900/10',
+                $record->status === 'canceled' => 'bg-danger-50/50 dark:bg-danger-900/10 opacity-75',
+                default => null,
+            })
+            ->emptyStateIcon('heroicon-o-shopping-bag')
+            ->emptyStateHeading('Sin ventas registradas')
+            ->emptyStateDescription('Cuando registres ventas o recibas pedidos web, aparecerán en este listado.')
             ->columns([
+                Tables\Columns\TextColumn::make('mobile_summary')
+                    ->label('Venta')
+                    ->state(fn(Sale $record): string => self::documentNumber($record))
+                    ->description(function (Sale $record): string {
+                        $cliente = $record->channel === 'ecommerce'
+                            ? (self::extractWebNote($record, 'Nombre') ?: 'Cliente Web')
+                            : ($record->customer?->name ?? 'Público en General');
+
+                        $estado = match (true) {
+                            $record->channel === 'ecommerce' && $record->status === 'pending_payment' => 'Pendiente Web',
+                            $record->status === 'canceled' => 'Anulado',
+                            $record->status === 'completed' => 'Completado',
+                            default => ucfirst($record->status ?? 'Sin estado'),
+                        };
+
+                        return $cliente
+                            . ' · S/ ' . number_format((float) $record->total, 2)
+                            . ' · ' . $estado
+                            . ' · ' . $record->sold_at?->format('d/m/Y H:i');
+                    })
+                    ->icon(fn(Sale $record): string => match (true) {
+                        $record->channel === 'ecommerce' && $record->status === 'pending_payment' => 'heroicon-o-clock',
+                        $record->channel === 'ecommerce' => 'heroicon-o-globe-alt',
+                        $record->status === 'canceled' => 'heroicon-o-x-circle',
+                        default => 'heroicon-o-shopping-bag',
+                    })
+                    ->color(fn(Sale $record): string => match (true) {
+                        $record->channel === 'ecommerce' && $record->status === 'pending_payment' => 'warning',
+                        $record->channel === 'ecommerce' => 'info',
+                        $record->status === 'canceled' => 'danger',
+                        default => 'gray',
+                    })
+                    ->weight('black')
+                    ->wrap()
+                    ->searchable(['series', 'correlative'])
+                    ->hiddenFrom('md'),
+
                 Tables\Columns\TextColumn::make('document_number')
                     ->label('Comprobante')
                     ->state(fn(Sale $record): string => "{$record->series}-{$record->correlative}")
@@ -53,7 +105,8 @@ class SaleTable
 
                         $record->document_type === '00' => 'Nota de Venta',
                         default => null,
-                    }),
+                    })
+                    ->visibleFrom('md'),
 
                 // 🌟 1. COLUMNA CLIENTE (Omnicanal Corregido)
                 Tables\Columns\TextColumn::make('customer.name')
@@ -94,7 +147,8 @@ class SaleTable
                         }
 
                         return $record->customer?->name ?? 'Público en General';
-                    }),
+                    })
+                    ->visibleFrom('md'),
 
                 // 🌟 2. COLUMNA ATENCIÓN / COBRO
                 Tables\Columns\TextColumn::make('user.name')
@@ -131,15 +185,27 @@ class SaleTable
                     ->limit(20)
                     ->toggleable()
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->visibleFrom('2xl'),
 
                 Tables\Columns\TextColumn::make('total')
                     ->label('Total')
                     ->money('PEN')
                     ->sortable()
-                    ->weight('bold')
+                    ->weight('black')
                     ->alignment('right')
-                    ->size('lg'),
+                    ->size('lg')
+                    ->description(function (Sale $record): string {
+                        $payment = $record->payment_method ?: 'Pendiente';
+
+                        return 'Pago: ' . $payment;
+                    })
+                    ->color(fn(Sale $record): string => match (true) {
+                        $record->status === 'canceled' => 'danger',
+                        $record->channel === 'ecommerce' && $record->status === 'pending_payment' => 'warning',
+                        default => 'gray',
+                    })
+                    ->visibleFrom('md'),
 
                 Tables\Columns\TextColumn::make('payment_method')
                     ->label('Pago')
@@ -169,7 +235,8 @@ class SaleTable
                         null, '', 'Pendiente' => 'danger',  // Rojo intenso (Como tiene badge=true, este sí tendrá fondo rojo)
                         default => 'gray',
                     })
-                    ->toggleable(),
+                    ->toggleable()
+                    ->visibleFrom('2xl'),
 
                 Tables\Columns\TextColumn::make('sunat_status')
                     ->label('Estado')
@@ -206,7 +273,8 @@ class SaleTable
                         $record->sent_at
                             ? "Enviado: {$record->sent_at->format('d/m/Y H:i')}"
                             : $record->sunat_description
-                    ),
+                    )
+                    ->visibleFrom('md'),
 
                 Tables\Columns\TextColumn::make('sold_at')
                     ->label('Fecha')
@@ -214,7 +282,8 @@ class SaleTable
                     ->sortable()
                     ->icon('heroicon-o-calendar')
                     ->since()
-                    ->tooltip(fn(Sale $record): string => $record->sold_at->format('d/m/Y H:i:s')),
+                    ->tooltip(fn(Sale $record): string => $record->sold_at->format('d/m/Y H:i:s'))
+                    ->visibleFrom('lg'),
             ])
             ->defaultSort('sold_at', 'desc')
             ->filters([
@@ -289,7 +358,7 @@ class SaleTable
                         return $indicators;
                     }),
             ])
-            ->filtersFormWidth('md')
+            ->filtersFormWidth('lg')
             ->filtersFormColumns(2)
             ->actions(SaleTableActions::get())
             ->bulkActions([
@@ -297,6 +366,14 @@ class SaleTable
                     //Tables\Actions\DeleteBulkAction::make(),
                 ]),
             ]);
+    }
+
+    private static function documentNumber(Sale $record): string
+    {
+        $series = $record->series ?: 'WEB';
+        $correlative = $record->correlative ?: 'Pendiente';
+
+        return "{$series}-{$correlative}";
     }
 
     private static function extractWebNote(Sale $record, string $label): ?string
