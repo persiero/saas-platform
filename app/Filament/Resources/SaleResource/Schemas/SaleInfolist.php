@@ -93,7 +93,11 @@ class SaleInfolist
                             ->label('Fecha de Emisión')
                             ->dateTime('d/m/Y h:i A')
                             ->icon('heroicon-o-calendar'),
-                    ])->columns(4), // Cambiado a 4 columnas para que no se vea tan apretado
+                    ])->columns([
+                        'default' => 1,
+                        'sm' => 2,
+                        'xl' => 4,
+                    ]), // Cambiado a 4 columnas para que no se vea tan apretado
 
                 Section::make('Pedido Web')
                     ->icon('heroicon-o-globe-alt')
@@ -153,7 +157,11 @@ class SaleInfolist
                             ->state(fn(Sale $record): string => self::extractWebNote($record, 'Notas') ?? 'Sin notas adicionales')
                             ->columnSpanFull(),
                     ])
-                    ->columns(3),
+                    ->columns([
+                        'default' => 1,
+                        'md' => 2,
+                        'xl' => 3,
+                    ]),
 
                 Section::make('Caja Asociada')
                     ->icon('heroicon-o-calculator')
@@ -195,7 +203,12 @@ class SaleInfolist
                             ->icon('heroicon-o-lock-closed')
                             ->placeholder('Aún abierta'),
                     ])
-                    ->columns(3),
+                    ->columns([
+                        'default' => 1,
+                        'md' => 2,
+                        'xl' => 3,
+                    ])
+                    ->collapsible(),
 
                 // 🌟 DETALLE: La Comanda / Ticket
                 Section::make('Detalle de Productos')
@@ -244,19 +257,37 @@ class SaleInfolist
                                 // Esto es vital contablemente: muestra el nombre exacto que tenía el producto en el momento de la venta
                                 TextEntry::make('item_name')
                                     ->label('Producto')
-                                    ->weight('bold'),
+                                    ->weight('bold')
+                                    ->columnSpan([
+                                        'default' => 1,
+                                        'md' => 5,
+                                        'xl' => 7,
+                                    ]),
 
                                 TextEntry::make('unit_price')
                                     ->label('Precio Unit.')
-                                    ->money('PEN'),
+                                    ->money('PEN')
+                                    ->columnSpan([
+                                        'default' => 1,
+                                        'md' => 2,
+                                        'xl' => 2,
+                                    ]),
 
                                 TextEntry::make('total')
                                     ->label('Subtotal')
                                     ->money('PEN')
                                     ->color('success')
-                                    ->weight('bold'),
+                                    ->weight('bold')
+                                    ->columnSpan([
+                                        'default' => 1,
+                                        'md' => 3,
+                                        'xl' => 2,
+                                    ]),
                             ])
-                            ->columns(4)
+                            ->columns([
+                                'default' => 1,
+                                'md' => 12,
+                            ])
                             ->grid(1) // 🌟 IMPORTANTE: Forza a que cada producto ocupe una fila entera, como un recibo
                     ]),
 
@@ -279,7 +310,10 @@ class SaleInfolist
                             ->money('PEN'),
 
                         // Parte inferior: Totales y Método de Pago
-                        Grid::make(3)->schema([
+                        Grid::make([
+                            'default' => 1,
+                            'md' => 3,
+                        ])->schema([
                             TextEntry::make('payment_method')
                                 ->label('Método de Pago')
                                 ->badge()
@@ -298,7 +332,10 @@ class SaleInfolist
                                 ->color('success')
                                 ->columnSpan(fn($record) => in_array($record->payment_method, ['Efectivo']) ? 2 : 1),
                         ]),
-                    ])->columns(2),
+                    ])->columns([
+                        'default' => 1,
+                        'md' => 2,
+                    ]),
             ]);
     }
 
