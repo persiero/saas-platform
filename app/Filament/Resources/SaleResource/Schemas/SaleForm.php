@@ -356,11 +356,20 @@ class SaleForm
                                 ->content(fn(Get $get): string => 'S/ ' . number_format((float)($get('total') ?? 0), 2))
                                 ->extraAttributes(['class' => 'flex justify-between text-2xl font-black text-primary-600 pt-2']),
 
-                            Forms\Components\Hidden::make('op_gravadas'),
-                            Forms\Components\Hidden::make('op_exoneradas'),
-                            Forms\Components\Hidden::make('op_inafectas'),
-                            Forms\Components\Hidden::make('igv'),
-                            Forms\Components\Hidden::make('total'),
+                            Forms\Components\Hidden::make('op_gravadas')
+                                ->default(0),
+
+                            Forms\Components\Hidden::make('op_exoneradas')
+                                ->default(0),
+
+                            Forms\Components\Hidden::make('op_inafectas')
+                                ->default(0),
+
+                            Forms\Components\Hidden::make('igv')
+                                ->default(0),
+
+                            Forms\Components\Hidden::make('total')
+                                ->default(0),
                         ]),
                 ])->columnSpan(['default' => 1, 'lg' => 1]),
 
@@ -645,9 +654,13 @@ class SaleForm
                             ->disabled(fn(?Sale $record) => $record && $record->channel === 'ecommerce')
                             ->columns(['default' => 1, 'md' => 12])
                             ->defaultItems(0)
+                            ->minItems(1)
                             ->reorderable(false)
                             ->itemLabel(fn(array $state): ?string => $state['item_name'] ?? 'Producto sin seleccionar')
-                            ->addActionLabel('Agregar otro producto'),
+                            ->addActionLabel('Agregar producto')
+                            ->validationMessages([
+                                'min' => 'Debes agregar al menos un producto a la venta.',
+                            ]),
                     ])
                     ->columnSpanFull(),
             ])

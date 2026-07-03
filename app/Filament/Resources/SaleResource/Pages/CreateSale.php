@@ -5,7 +5,6 @@ namespace App\Filament\Resources\SaleResource\Pages;
 use App\Filament\Resources\SaleResource;
 use Filament\Actions;
 use Filament\Resources\Pages\CreateRecord;
-use Percy\Core\Models\CashRegister;
 use Percy\Core\Services\Sales\CorrelativeService;
 use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\Auth;
@@ -110,5 +109,42 @@ class CreateSale extends CreateRecord
     protected function getRedirectUrl(): string
     {
         return $this->getResource()::getUrl('index');
+    }
+
+    protected function beforeCreate(): void
+    {
+        $items = collect($this->data['items'] ?? [])
+            ->filter(function (array $item): bool {
+                return filled($item['product_id'] ?? null)
+                    || filled($item['item_name'] ?? null);
+            });
+
+        if ($items->isEmpty()) {
+            Notification::make()
+                ->title('No puedes registrar una venta vacía')
+                ->body('Agrega al menos un producto antes de registrar la venta.')
+                ->warning()
+                ->persistent()
+                ->send();
+
+            $this->halt();
+        }
+
+        if ((float) ($this->data['total'] ?? 0) <= 0) {
+            Notification::make()
+                ->title('El total de la venta no es válido')
+                ->body('Verifica los productos, cantidades y precios antes de registrar la venta.')
+                ->warning()
+                ->persistent()
+                ->send();
+
+            $this->halt();
+        }
+
+        $this->data['op_gravadas'] = (float) ($this->data['op_gravadas'] ?? 0);
+        $this->data['op_exoneradas'] = (float) ($this->data['op_exoneradas'] ?? 0);
+        $this->data['op_inafectas'] = (float) ($this->data['op_inafectas'] ?? 0);
+        $this->data['igv'] = (float) ($this->data['igv'] ?? 0);
+        $this->data['total'] = (float) ($this->data['total'] ?? 0);
     }
 }
