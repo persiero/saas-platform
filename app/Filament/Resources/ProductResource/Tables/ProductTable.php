@@ -16,15 +16,22 @@ class ProductTable
     public static function configure(Table $table): Table
     {
         return $table
-            ->modifyQueryUsing(fn (Builder $query) => $query->with('category'))
+            ->modifyQueryUsing(fn(Builder $query) => $query->with(['category', 'unidadSunat']))
+            ->striped()
+            ->paginated([10, 25, 50, 100])
+            ->defaultPaginationPageOption(25)
+            ->persistSearchInSession()
+            ->persistFiltersInSession()
+            ->persistSortInSession()
             ->columns(self::columns())
             ->defaultSort('name', 'asc')
             ->filters(self::filters())
             ->actions([
                 Tables\Actions\ActionGroup::make(ProductTableActions::actions())
                     ->label('Acciones')
-                    ->icon('heroicon-o-ellipsis-vertical')
-                    ->button()
+                    ->tooltip('Acciones')
+                    ->icon('heroicon-m-ellipsis-vertical')
+                    ->iconButton()
                     ->color('gray'),
             ])
             ->bulkActions(self::bulkActions())
@@ -36,12 +43,35 @@ class ProductTable
     private static function columns(): array
     {
         return [
+            Tables\Columns\TextColumn::make('mobile_summary')
+                ->label('Producto')
+                ->state(fn(Product $record): string => $record->name)
+                ->description(function (Product $record): string {
+                    $tipo = $record->type === 'service' ? 'Servicio' : 'Producto';
+                    $categoria = $record->category?->name ?? 'Sin categoría';
+                    $stock = self::formatStock($record->current_stock, $record);
+                    $precio = 'S/ ' . number_format((float) $record->price, 2);
+
+                    return "{$tipo} · {$categoria} · {$precio} · Stock: {$stock}";
+                })
+                ->icon(
+                    fn(Product $record): string => $record->type === 'service'
+                        ? 'heroicon-o-wrench-screwdriver'
+                        : 'heroicon-o-cube'
+                )
+                ->color(fn(Product $record): string => $record->type === 'service' ? 'info' : 'gray')
+                ->weight('black')
+                ->wrap()
+                ->searchable(['name', 'barcode'])
+                ->hiddenFrom('md'),
+
             Tables\Columns\ImageColumn::make('image')
                 ->label('Foto')
                 ->disk('r2_public')
                 ->square()
                 ->size(40)
-                ->toggleable(),
+                ->toggleable()
+                ->visibleFrom('md'),
 
             Tables\Columns\TextColumn::make('name')
                 ->label('Producto')
@@ -49,7 +79,8 @@ class ProductTable
                 ->sortable()
                 ->weight('bold')
                 ->icon('heroicon-o-cube')
-                ->description(fn (Product $record): ?string => $record->category?->name),
+                ->description(fn(Product $record): ?string => $record->category?->name)
+                ->visibleFrom('md'),
 
             Tables\Columns\TextColumn::make('barcode')
                 ->label('Cód. Barras')
@@ -64,7 +95,8 @@ class ProductTable
                 ->copyable()
                 ->copyMessage('Código copiado')
                 ->placeholder('Sin código')
-                ->toggleable(),
+                ->toggleable()
+                ->visibleFrom('xl'),
 
             Tables\Columns\TextColumn::make('price')
                 ->label('Precio')
@@ -72,7 +104,9 @@ class ProductTable
                 ->sortable()
                 ->weight('black')
                 ->color('primary')
-                ->size('lg'),
+                ->size('lg')
+                ->description(fn(Product $record): string => $record->type === 'service' ? 'Servicio' : 'Producto')
+                ->visibleFrom('md'),
 
             Tables\Columns\TextColumn::make('current_stock')
                 ->label('Stock')
@@ -82,7 +116,7 @@ class ProductTable
 
                     return (float) $record->current_stock;
                 })
-                ->formatStateUsing(fn (float $state, Product $record): string => self::formatStock($state, $record))
+                ->formatStateUsing(fn(float $state, Product $record): string => self::formatStock($state, $record))
                 ->icon(function (float $state, Product $record): ?string {
                     if ($record->type === 'service') {
                         return null;
@@ -105,29 +139,40 @@ class ProductTable
                         default => 'success',
                     };
                 })
-                ->sortable(),
+                ->sortable()
+                ->visibleFrom('md'),
 
             Tables\Columns\TextColumn::make('unidadSunat.codigo')
                 ->label('Unidad')
                 ->badge()
-                ->color('gray'),
+                ->color('gray')
+                ->visibleFrom('xl'),
 
             Tables\Columns\ToggleColumn::make('active')
                 ->label('Activo')
                 ->sortable()
-                ->disabled(fn (): bool => ! (Auth::user()?->canEditProducts() ?? false)),
+                ->disabled(fn(): bool => ! (Auth::user()?->canEditProducts() ?? false))
+                ->visibleFrom('lg'),
         ];
     }
 
     private static function filters(): array
     {
         return [
+            Tables\Filters\SelectFilter::make('type')
+                ->label('Tipo de ítem')
+                ->options([
+                    'product' => 'Productos físicos',
+                    'service' => 'Servicios',
+                ])
+                ->native(false),
+
             Tables\Filters\SelectFilter::make('category_id')
                 ->label('Categoría')
                 ->relationship(
                     'category',
                     'name',
-                    modifyQueryUsing: fn (Builder $query) => self::scopeToCurrentTenant($query)
+                    modifyQueryUsing: fn(Builder $query) => self::scopeToCurrentTenant($query)
                 )
                 ->multiple()
                 ->preload(),
@@ -145,17 +190,27 @@ class ProductTable
                 ->trueLabel('Con código')
                 ->falseLabel('Sin código')
                 ->queries(
-                    true: fn (Builder $query) => $query->whereNotNull('barcode'),
-                    false: fn (Builder $query) => $query->whereNull('barcode'),
+                    true: fn(Builder $query) => $query->whereNotNull('barcode'),
+                    false: fn(Builder $query) => $query->whereNull('barcode'),
                 ),
 
-            Tables\Filters\Filter::make('low_stock')
-                ->label('Stock bajo')
-                ->query(fn (Builder $query): Builder => $query
-                    ->where('type', 'product')
-                    ->where('current_stock', '<=', 5)
-                )
-                ->toggle(),
+            Tables\Filters\SelectFilter::make('stock_status')
+                ->label('Estado de stock')
+                ->options([
+                    'low' => 'Stock crítico',
+                    'warning' => 'Stock bajo',
+                    'available' => 'Con stock',
+                    'service' => 'Servicios',
+                ])
+                ->query(function (Builder $query, array $data): Builder {
+                    return match ($data['value'] ?? null) {
+                        'low' => $query->where('type', 'product')->where('current_stock', '<=', 5),
+                        'warning' => $query->where('type', 'product')->whereBetween('current_stock', [6, 15]),
+                        'available' => $query->where('type', 'product')->where('current_stock', '>', 15),
+                        'service' => $query->where('type', 'service'),
+                        default => $query,
+                    };
+                }),
 
             TrashedFilter::make(),
         ];
