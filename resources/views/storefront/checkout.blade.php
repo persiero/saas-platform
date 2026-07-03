@@ -3,158 +3,391 @@
 @section('content')
 <style>
     .toggle-radio:checked + div {
-        border-color: {{ $tenant->primary_color ?? '#4f46e5' }} !important;
-        background-color: {{ $tenant->primary_color ?? '#4f46e5' }}15 !important;
-        color: {{ $tenant->primary_color ?? '#4f46e5' }} !important;
+        border-color: var(--brand-color) !important;
+        background-color: color-mix(in srgb, var(--brand-color) 10%, white) !important;
+        color: var(--brand-color) !important;
+        box-shadow: 0 12px 28px color-mix(in srgb, var(--brand-color) 18%, transparent);
+    }
+
+    .checkout-card {
+        background: white;
+        border: 1px solid rgb(241 245 249);
+        border-radius: 1.5rem;
+        box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+    }
+
+    .checkout-input {
+        width: 100%;
+        border: 1px solid rgb(226 232 240);
+        background: rgb(248 250 252);
+        border-radius: 1rem;
+        padding: 0.85rem 1rem;
+        outline: none;
+        font-size: 0.95rem;
+        transition: all .2s ease;
+    }
+
+    .checkout-input:focus {
+        border-color: var(--brand-color) !important;
+        background: white;
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand-color) 16%, transparent);
     }
 </style>
 
-<div class="max-w-6xl mx-auto px-4 py-8">
+<div class="max-w-6xl mx-auto px-4 py-5 md:py-8">
 
-    <div class="mb-6 flex items-center gap-2 text-sm text-gray-500">
-        <a href="/" class="hover:text-brand transition">Tienda</a>
-        <span>/</span>
-        <span class="font-bold text-gray-800">Finalizar Compra</span>
-    </div>
-
-    <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 relative">
-
-        {{-- COLUMNA IZQUIERDA: Formulario de Datos --}}
-        <div class="lg:col-span-7 space-y-6">
-
-            {{-- 1. Método de Entrega --}}
-            <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-                <h3 class="text-lg font-black text-gray-800 mb-4 flex items-center gap-2">
-                    <span class="bg-brand text-white w-6 h-6 rounded-full flex items-center justify-center text-xs">1</span>
-                    ¿Cómo quieres recibir tu pedido?
-                </h3>
-                <div class="flex gap-3">
-                    <label class="flex-1 cursor-pointer">
-                        <input type="radio" name="order_type" value="delivery" class="toggle-radio sr-only" checked onchange="updateCheckoutTotal()">
-                        <div class="text-center py-4 border-2 rounded-xl border-gray-200 text-gray-500 font-bold text-sm transition-all shadow-sm">
-                            🛵 Delivery
-                        </div>
-                    </label>
-                    <label class="flex-1 cursor-pointer">
-                        <input type="radio" name="order_type" value="pickup" class="toggle-radio sr-only" onchange="updateCheckoutTotal()">
-                        <div class="text-center py-4 border-2 rounded-xl border-gray-200 text-gray-500 font-bold text-sm transition-all shadow-sm">
-                            🏪 Recojo en Tienda
-                        </div>
-                    </label>
-                </div>
+    {{-- ENCABEZADO COMPACTO --}}
+    <div class="mb-5 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+        <div>
+            <div class="flex items-center gap-2 text-xs md:text-sm text-slate-500 font-bold mb-1">
+                <a href="/" class="hover:text-brand transition">Tienda</a>
+                <span>/</span>
+                <a href="/productos" class="hover:text-brand transition">Productos</a>
+                <span>/</span>
+                <span class="text-slate-800">Finalizar pedido</span>
             </div>
 
-            {{-- 2. Datos del Cliente --}}
-            <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-                <h3 class="text-lg font-black text-gray-800 mb-4 flex items-center gap-2">
-                    <span class="bg-brand text-white w-6 h-6 rounded-full flex items-center justify-center text-xs">2</span>
-                    Tus Datos
-                </h3>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div class="md:col-span-2">
-                        <label class="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">Nombre Completo *</label>
-                        <input type="text" id="chk-nombre" class="w-full p-3 border-gray-200 bg-gray-50 border rounded-xl outline-none focus:ring-2 focus:ring-brand">
+            <div class="flex items-center gap-3 flex-wrap">
+                <span class="text-xs md:text-sm font-black text-brand uppercase tracking-wider">
+                    Checkout
+                </span>
+
+                <span class="text-slate-300 font-bold">|</span>
+
+                <h1 class="text-xl md:text-2xl font-black text-slate-950 leading-none">
+                    Finalizar compra
+                </h1>
+            </div>
+        </div>
+
+        <a
+            href="/productos"
+            class="inline-flex items-center gap-2 bg-white border border-slate-200 text-slate-700 font-black px-4 py-2.5 rounded-2xl hover:bg-slate-50 transition w-fit"
+        >
+            <x-heroicon-o-arrow-left class="w-4 h-4" />
+            Seguir comprando
+        </a>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 relative">
+
+        {{-- COLUMNA IZQUIERDA --}}
+        <div class="lg:col-span-7 space-y-5">
+
+            {{-- MÉTODO DE ENTREGA --}}
+            <section class="checkout-card p-5 md:p-6">
+                <div class="flex items-start gap-3 mb-4">
+                    <div class="bg-brand text-white w-8 h-8 rounded-2xl flex items-center justify-center text-sm font-black shrink-0">
+                        1
                     </div>
+
                     <div>
-                        <label class="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">Celular / WhatsApp *</label>
-                        <input type="text" id="chk-phone" class="w-full p-3 border-gray-200 bg-gray-50 border rounded-xl outline-none focus:ring-2 focus:ring-brand">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">DNI / RUC (Opcional)</label>
-                        <input type="number" id="chk-dni" class="w-full p-3 border-gray-200 bg-gray-50 border rounded-xl outline-none focus:ring-2 focus:ring-brand">
+                        <h2 class="text-lg font-black text-slate-900">
+                            Método de entrega
+                        </h2>
+                        <p class="text-sm text-slate-500 mt-0.5">
+                            Elige cómo quieres recibir tu pedido.
+                        </p>
                     </div>
                 </div>
 
-                <div id="checkout-delivery-fields" class="mt-4 space-y-4">
-                    <hr class="border-dashed border-gray-200">
-                    <div>
-                        <label class="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">Distrito *</label>
-                        <div>
-                        <select id="chk-distrito" onchange="updateCheckoutTotal()" class="w-full p-3 border-gray-200 bg-gray-50 border rounded-xl outline-none focus:ring-2 focus:ring-brand appearance-none">
-                            <option value="" disabled selected data-price="0">Selecciona tu distrito...</option>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <label class="cursor-pointer">
+                        <input
+                            type="radio"
+                            name="order_type"
+                            value="delivery"
+                            class="toggle-radio sr-only"
+                            checked
+                            onchange="updateCheckoutTotal()"
+                        >
 
-                            {{-- 🌟 MAGIA: Leemos las zonas desde la Base de Datos --}}
-                            @forelse($deliveryZones as $zone)
-                                <option value="{{ $zone->id }}"
-                                        data-price="{{ $zone->price }}"
-                                        data-name="{{ $zone->district->name }}">
-                                    {{ $zone->district->name }} (S/ {{ number_format($zone->price, 2) }})
-                                </option>
-                            @empty
-                                <option value="" disabled>No hay zonas de reparto configuradas</option>
-                            @endforelse
+                        <div class="border-2 border-slate-200 rounded-2xl p-4 text-slate-600 transition-all hover:border-brand hover:bg-slate-50">
+                            <div class="flex items-center gap-3">
+                                <div class="w-11 h-11 rounded-2xl bg-slate-100 flex items-center justify-center text-xl">
+                                    🛵
+                                </div>
 
-                        </select>
+                                <div>
+                                    <p class="font-black text-sm">Delivery</p>
+                                    <p class="text-xs text-slate-500 mt-0.5">Envío a domicilio</p>
+                                </div>
+                            </div>
+                        </div>
+                    </label>
+
+                    <label class="cursor-pointer">
+                        <input
+                            type="radio"
+                            name="order_type"
+                            value="pickup"
+                            class="toggle-radio sr-only"
+                            onchange="updateCheckoutTotal()"
+                        >
+
+                        <div class="border-2 border-slate-200 rounded-2xl p-4 text-slate-600 transition-all hover:border-brand hover:bg-slate-50">
+                            <div class="flex items-center gap-3">
+                                <div class="w-11 h-11 rounded-2xl bg-slate-100 flex items-center justify-center text-xl">
+                                    🏪
+                                </div>
+
+                                <div>
+                                    <p class="font-black text-sm">Recojo en tienda</p>
+                                    <p class="text-xs text-slate-500 mt-0.5">Recoge tu pedido</p>
+                                </div>
+                            </div>
+                        </div>
+                    </label>
+                </div>
+            </section>
+
+            {{-- DATOS DEL CLIENTE --}}
+            <section class="checkout-card p-5 md:p-6">
+                <div class="flex items-start gap-3 mb-4">
+                    <div class="bg-brand text-white w-8 h-8 rounded-2xl flex items-center justify-center text-sm font-black shrink-0">
+                        2
                     </div>
-                    </div>
+
                     <div>
-                        <label class="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">Dirección Exacta *</label>
-                        <input type="text" id="chk-direccion" placeholder="Ej: Av. Principal 123, Mz A Lote 4" class="w-full p-3 border-gray-200 bg-gray-50 border rounded-xl outline-none focus:ring-2 focus:ring-brand">
+                        <h2 class="text-lg font-black text-slate-900">
+                            Datos del cliente
+                        </h2>
+                        <p class="text-sm text-slate-500 mt-0.5">
+                            Usaremos estos datos para confirmar tu pedido.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="md:col-span-2">
+                        <label class="block text-xs font-black text-slate-500 mb-1.5 uppercase tracking-wider">
+                            Nombre completo *
+                        </label>
+
+                        <input
+                            type="text"
+                            id="chk-nombre"
+                            placeholder="Ej: Juan Pérez"
+                            class="checkout-input"
+                        >
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-black text-slate-500 mb-1.5 uppercase tracking-wider">
+                            Celular / WhatsApp *
+                        </label>
+
+                        <input
+                            type="text"
+                            id="chk-phone"
+                            placeholder="Ej: 987654321"
+                            class="checkout-input"
+                        >
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-black text-slate-500 mb-1.5 uppercase tracking-wider">
+                            DNI / RUC opcional
+                        </label>
+
+                        <input
+                            type="number"
+                            id="chk-dni"
+                            placeholder="Opcional"
+                            class="checkout-input"
+                        >
+                    </div>
+                </div>
+
+                {{-- CAMPOS DELIVERY --}}
+                <div id="checkout-delivery-fields" class="mt-5 space-y-4">
+                    <div class="border-t border-dashed border-slate-200 pt-5">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-black text-slate-500 mb-1.5 uppercase tracking-wider">
+                                    Distrito *
+                                </label>
+
+                                <div class="relative">
+                                    <select
+                                        id="chk-distrito"
+                                        onchange="updateCheckoutTotal()"
+                                        class="checkout-input appearance-none pr-10"
+                                    >
+                                        <option value="" disabled selected data-price="0">
+                                            Selecciona tu distrito...
+                                        </option>
+
+                                        @forelse($deliveryZones as $zone)
+                                            <option
+                                                value="{{ $zone->id }}"
+                                                data-price="{{ $zone->price }}"
+                                                data-name="{{ $zone->district->name }}"
+                                            >
+                                                {{ $zone->district->name }} (S/ {{ number_format($zone->price, 2) }})
+                                            </option>
+                                        @empty
+                                            <option value="" disabled>
+                                                No hay zonas de reparto configuradas
+                                            </option>
+                                        @endforelse
+                                    </select>
+
+                                    <div class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
+                                        <x-heroicon-o-chevron-down class="w-5 h-5 text-slate-400" />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-black text-slate-500 mb-1.5 uppercase tracking-wider">
+                                    Dirección exacta *
+                                </label>
+
+                                <input
+                                    type="text"
+                                    id="chk-direccion"
+                                    placeholder="Ej: Av. Principal 123"
+                                    class="checkout-input"
+                                >
+                            </div>
+                        </div>
                     </div>
                 </div>
 
                 <div class="mt-4">
-                    <label class="block text-xs font-bold text-gray-500 mb-1 uppercase tracking-wider">Notas Adicionales</label>
-                    <textarea id="chk-notas" rows="2" placeholder="Ej: Sin cebolla, pagaré con billete de S/ 50" class="w-full p-3 border-gray-200 bg-gray-50 border rounded-xl outline-none focus:ring-2 focus:ring-brand"></textarea>
-                </div>
-            </div>
+                    <label class="block text-xs font-black text-slate-500 mb-1.5 uppercase tracking-wider">
+                        Notas adicionales
+                    </label>
 
-            {{-- 3. Método de Pago --}}
-            <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-                <h3 class="text-lg font-black text-gray-800 mb-4 flex items-center gap-2">
-                    <span class="bg-brand text-white w-6 h-6 rounded-full flex items-center justify-center text-xs">3</span>
-                    Pago
-                </h3>
+                    <textarea
+                        id="chk-notas"
+                        rows="3"
+                        placeholder="Ej: Sin cebolla, pagaré con billete de S/ 50"
+                        class="checkout-input resize-none"
+                    ></textarea>
+                </div>
+            </section>
+
+            {{-- PAGO --}}
+            <section class="checkout-card p-5 md:p-6">
+                <div class="flex items-start gap-3 mb-4">
+                    <div class="bg-brand text-white w-8 h-8 rounded-2xl flex items-center justify-center text-sm font-black shrink-0">
+                        3
+                    </div>
+
+                    <div>
+                        <h2 class="text-lg font-black text-slate-900">
+                            Pago
+                        </h2>
+                        <p class="text-sm text-slate-500 mt-0.5">
+                            El pedido será confirmado por WhatsApp.
+                        </p>
+                    </div>
+                </div>
 
                 @if($tenant->yape_number)
-                    <div class="bg-[#74006E]/10 border border-[#74006E]/20 rounded-xl p-4 flex items-center gap-4">
-                        <img src="https://upload.wikimedia.org/wikipedia/commons/d/d1/Yape_text_app_icon.png" class="w-12 h-12 object-contain rounded-xl">
-                        <div>
-                            <p class="text-sm text-gray-600 font-medium">Transfiere seguro a nombre del negocio al número:</p>
-                            <p class="font-black text-2xl text-[#74006E] tracking-wide">{{ $tenant->yape_number }}</p>
+                    <div class="rounded-3xl border border-[#74006E]/20 bg-[#74006E]/10 p-4 md:p-5">
+                        <div class="flex items-center gap-4">
+                            <img
+                                src="https://upload.wikimedia.org/wikipedia/commons/d/d1/Yape_text_app_icon.png"
+                                class="w-12 h-12 object-contain rounded-2xl bg-white shadow-sm"
+                                alt="Yape"
+                            >
+
+                            <div>
+                                <p class="text-sm text-slate-600 font-semibold">
+                                    Puedes transferir por Yape al número:
+                                </p>
+
+                                <p class="font-black text-2xl text-[#74006E] tracking-wide">
+                                    {{ $tenant->yape_number }}
+                                </p>
+                            </div>
                         </div>
+
+                        <p class="text-xs text-slate-500 mt-3">
+                            Luego envía tu pedido por WhatsApp para confirmar la atención.
+                        </p>
                     </div>
                 @else
-                    <p class="text-gray-500">El pago se coordinará por WhatsApp.</p>
+                    <div class="rounded-3xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                        El pago se coordinará directamente por WhatsApp al finalizar el pedido.
+                    </div>
                 @endif
-            </div>
-
+            </section>
         </div>
 
-        {{-- COLUMNA DERECHA: Resumen (Sticky) --}}
-        <div class="lg:col-span-5 relative">
-            <div class="bg-gray-50 p-6 rounded-3xl border border-gray-200 lg:sticky lg:top-24">
-                <h3 class="text-lg font-black text-gray-800 mb-4">Resumen de tu pedido</h3>
-
-                {{-- Aquí se inyectan los productos por JS --}}
-                <div id="checkout-items" class="space-y-3 mb-6 max-h-60 overflow-y-auto pr-2 hide-scrollbar"></div>
-
-                <hr class="border-gray-200 mb-4">
-
-                <div class="space-y-2 text-sm text-gray-600 font-medium">
-                    <div class="flex justify-between">
-                        <span>Subtotal</span>
-                        <span id="chk-subtotal">S/ 0.00</span>
+        {{-- COLUMNA DERECHA --}}
+        <aside class="lg:col-span-5 relative">
+            <div class="checkout-card p-5 md:p-6 lg:sticky lg:top-28">
+                <div class="flex items-center justify-between gap-3 mb-4">
+                    <div>
+                        <h2 class="text-lg font-black text-slate-900">
+                            Resumen del pedido
+                        </h2>
+                        <p class="text-sm text-slate-500 mt-0.5">
+                            Revisa tus productos antes de enviar.
+                        </p>
                     </div>
-                    <div class="flex justify-between" id="chk-delivery-row">
-                        <span>Envío</span>
-                        <span id="chk-delivery-fee">S/ 0.00</span>
+
+                    <div class="w-11 h-11 rounded-2xl bg-brand-soft flex items-center justify-center text-brand">
+                        <x-heroicon-o-shopping-cart class="w-6 h-6" />
                     </div>
                 </div>
 
-                <hr class="border-gray-200 my-4">
-
-                <div class="flex justify-between items-center mb-6">
-                    <span class="text-gray-800 font-bold text-lg">Total</span>
-                    <span id="chk-total" class="font-black text-2xl text-brand">S/ 0.00</span>
-                </div>
-
-                <button onclick="processCheckout('{{ $tenant->phone }}')" class="w-full bg-[#25D366] text-white font-black py-4 rounded-xl flex justify-center items-center gap-2 hover:bg-[#128C7E] shadow-lg transition-transform active:scale-95 text-lg">
-                    <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.305-.883-.653-1.48-1.459-1.653-1.756-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 00-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
-                    Enviar Pedido por WhatsApp
+                <button
+                    type="button"
+                    onclick="clearCheckoutCart()"
+                    class="w-full mb-4 border border-red-100 bg-red-50 text-red-600 font-black py-2.5 rounded-2xl hover:bg-red-100 transition text-sm"
+                >
+                    Vaciar carrito
                 </button>
+
+                <div
+                    id="checkout-items"
+                    class="space-y-3 mb-5 max-h-72 overflow-y-auto pr-1 hide-scrollbar"
+                ></div>
+
+                <div class="rounded-3xl bg-slate-50 border border-slate-100 p-4">
+                    <div class="space-y-2 text-sm text-slate-600 font-semibold">
+                        <div class="flex justify-between">
+                            <span>Subtotal</span>
+                            <span id="chk-subtotal" class="text-slate-800">S/ 0.00</span>
+                        </div>
+
+                        <div class="flex justify-between" id="chk-delivery-row">
+                            <span>Envío</span>
+                            <span id="chk-delivery-fee" class="text-slate-800">S/ 0.00</span>
+                        </div>
+                    </div>
+
+                    <div class="border-t border-slate-200 my-4"></div>
+
+                    <div class="flex justify-between items-end">
+                        <span class="text-slate-800 font-black text-lg">Total</span>
+                        <span id="chk-total" class="font-black text-3xl text-brand leading-none">S/ 0.00</span>
+                    </div>
+                </div>
+
+                <button
+                    id="btn-submit-order"
+                    type="button"
+                    onclick="processCheckout('{{ $tenant->phone }}')"
+                    class="mt-5 w-full bg-[#25D366] text-white font-black py-4 rounded-2xl flex justify-center items-center gap-2 hover:bg-[#128C7E] shadow-lg shadow-[#25D366]/25 transition-transform active:scale-95 text-base md:text-lg disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                    <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.305-.883-.653-1.48-1.459-1.653-1.756-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 00-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+                    </svg>
+
+                    Enviar pedido por WhatsApp
+                </button>
+
+                <div class="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700 leading-relaxed">
+                    <strong>Importante:</strong> al enviar el pedido se abrirá WhatsApp para confirmar la compra con la tienda.
+                </div>
             </div>
-        </div>
+        </aside>
     </div>
 </div>
 
@@ -171,6 +404,37 @@
             quantity: Number(item.quantity || 1),
             unit: item.unit || 'Und.'
         }));
+
+    function saveCheckoutCart() {
+        localStorage.setItem('carrito_{{ $tenant->id }}', JSON.stringify(chkCart));
+    }
+
+    function removeCheckoutItem(productId) {
+        chkCart = chkCart.filter(item => Number(item.product_id) !== Number(productId));
+
+        saveCheckoutCart();
+
+        if (chkCart.length === 0) {
+            window.location.href = '/productos';
+            return;
+        }
+
+        updateCheckoutTotal();
+    }
+
+    function clearCheckoutCart() {
+        if (chkCart.length === 0) {
+            return;
+        }
+
+        if (!confirm('¿Deseas vaciar todo el carrito?')) {
+            return;
+        }
+
+        chkCart = [];
+        localStorage.removeItem('carrito_{{ $tenant->id }}');
+        window.location.href = '/productos';
+    }
 
     // 🌟 2. FUNCIÓN PARA PINTAR LOS PRODUCTOS Y TOTALES
     function updateCheckoutTotal() {
@@ -193,15 +457,36 @@
 
             subtotal += itemTotal;
             cartHtml += `
-                <div class="flex justify-between items-center bg-white p-3 rounded-xl border border-gray-100 shadow-sm">
-                    <div class="flex items-center gap-3">
-                        <span class="bg-gray-100 text-gray-600 font-bold px-2 py-1 rounded-md text-xs">${item.quantity}</span>
-                        <div>
-                            <p class="font-bold text-sm text-gray-800 leading-tight">${item.name}</p>
-                            <p class="text-xs text-gray-400">S/ ${itemPrice.toFixed(2)} x ${item.unit}</p>
+                <div class="flex justify-between items-start gap-3 bg-white p-3 rounded-2xl border border-slate-100 shadow-sm">
+                    <div class="flex items-start gap-3 min-w-0">
+                        <span class="bg-brand-soft text-brand font-black min-w-8 h-8 px-2 rounded-xl text-xs flex items-center justify-center">
+                            ${item.quantity}
+                        </span>
+
+                        <div class="min-w-0">
+                            <p class="font-black text-sm text-slate-800 leading-tight line-clamp-2">
+                                ${item.name}
+                            </p>
+
+                            <p class="text-xs text-slate-400 font-bold mt-1">
+                                S/ ${itemPrice.toFixed(2)} x ${item.unit}
+                            </p>
                         </div>
                     </div>
-                    <span class="font-bold text-brand">S/ ${itemTotal.toFixed(2)}</span>
+
+                    <div class="flex flex-col items-end gap-2 shrink-0">
+                        <span class="font-black text-brand whitespace-nowrap">
+                            S/ ${itemTotal.toFixed(2)}
+                        </span>
+
+                        <button
+                            type="button"
+                            onclick="removeCheckoutItem(${item.product_id})"
+                            class="text-xs font-black text-red-500 bg-red-50 hover:bg-red-100 px-2.5 py-1 rounded-xl transition"
+                        >
+                            Eliminar
+                        </button>
+                    </div>
                 </div>
             `;
         });
@@ -277,7 +562,7 @@
         }
 
         // Protegemos el botón para evitar doble clic
-        const btnSubmit = document.querySelector('button[onclick^="processCheckout"]');
+        const btnSubmit = document.getElementById('btn-submit-order');
         const textOriginal = btnSubmit.innerHTML;
         btnSubmit.innerHTML = 'Procesando pedido... ⏳';
         btnSubmit.disabled = true;

@@ -22,6 +22,14 @@
             <span id="cart-drawer-total">S/ 0.00</span>
         </div>
 
+        <button
+            type="button"
+            onclick="clearCart()"
+            class="w-full mb-3 border border-red-100 bg-red-50 text-red-600 font-black py-2.5 rounded-2xl hover:bg-red-100 transition text-sm"
+        >
+            Vaciar carrito
+        </button>
+
         {{-- 🌟 Redirige a la nueva página de Checkout --}}
         <a id="checkout-button" href="/checkout" class="w-full bg-brand text-white font-black py-3.5 rounded-2xl flex justify-center items-center gap-2 hover:opacity-90 shadow-brand transition-all active:scale-95 text-base">
             Continuar Compra
@@ -59,6 +67,28 @@
             window.saveCart();
             window.updateCartUI();
         }
+    };
+
+    window.removeFromCart = function (productId) {
+        cart = cart.filter(item => Number(item.product_id) !== Number(productId));
+
+        window.saveCart();
+        window.updateCartUI();
+    };
+
+    window.clearCart = function () {
+        if (cart.length === 0) {
+            return;
+        }
+
+        if (!confirm('¿Deseas vaciar todo el carrito?')) {
+            return;
+        }
+
+        cart = [];
+
+        window.saveCart();
+        window.updateCartUI();
     };
 
     window.addToCart = function (productId, name, price, unit = 'NIU') {
@@ -113,7 +143,17 @@
                     </div>
 
                     <div class="flex flex-col items-end gap-1">
-                        <span class="font-black text-sm text-brand">S/ ${itemTotal.toFixed(2)}</span>
+                        <div class="flex items-center gap-2">
+                            <span class="font-black text-sm text-brand">S/ ${itemTotal.toFixed(2)}</span>
+
+                            <button
+                                onclick="removeFromCart(${item.product_id})"
+                                class="w-7 h-7 flex items-center justify-center rounded-full bg-red-50 text-red-500 hover:bg-red-100 transition"
+                                title="Eliminar producto"
+                            >
+                                ×
+                            </button>
+                        </div>
 
                         <div class="flex items-center bg-slate-50 border border-slate-200 rounded-xl">
                             <button onclick="decreaseQuantity(${item.product_id})" class="w-8 h-8 flex items-center justify-center font-black text-slate-500 hover:text-brand transition">-</button>
