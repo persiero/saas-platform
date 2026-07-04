@@ -9,6 +9,7 @@ use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Percy\Core\Models\Purchase;
+use App\Filament\Resources\PurchaseResource;
 
 class PurchaseTable
 {
@@ -16,6 +17,7 @@ class PurchaseTable
     {
         return $table
             ->modifyQueryUsing(fn(Builder $query) => $query->with(['supplier']))
+            ->recordUrl(fn(Purchase $record): string => PurchaseResource::getUrl('view', ['record' => $record]))
             ->striped()
             ->paginated([10, 25, 50, 100])
             ->defaultPaginationPageOption(25)

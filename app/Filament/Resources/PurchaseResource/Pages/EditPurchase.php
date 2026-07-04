@@ -25,9 +25,10 @@ class EditPurchase extends EditRecord
                 ->label('Eliminar')
                 ->icon('heroicon-o-trash')
                 ->color('danger')
-                ->visible(fn (): bool =>
+                ->visible(
+                    fn(): bool =>
                     $this->record->status === 'pending' &&
-                    (Auth::user()?->canDeletePurchases() ?? false)
+                        (Auth::user()?->canDeletePurchases() ?? false)
                 )
                 ->requiresConfirmation()
                 ->modalHeading('Eliminar Compra Pendiente')
@@ -45,6 +46,42 @@ class EditPurchase extends EditRecord
     protected function getSavedNotificationTitle(): ?string
     {
         return 'Compra actualizada exitosamente';
+    }
+
+    protected function beforeSave(): void
+    {
+        $items = collect($this->data['items'] ?? [])
+            ->filter(function (array $item): bool {
+                return filled($item['product_id'] ?? null)
+                    && (float) ($item['quantity'] ?? 0) > 0
+                    && (float) ($item['unit_cost'] ?? 0) > 0;
+            });
+
+        if ($items->isEmpty()) {
+            Notification::make()
+                ->title('No puedes guardar una compra vacía')
+                ->body('Agrega al menos un producto con cantidad y costo antes de guardar los cambios.')
+                ->warning()
+                ->persistent()
+                ->send();
+
+            $this->halt();
+        }
+
+        if ((float) ($this->data['total'] ?? 0) <= 0) {
+            Notification::make()
+                ->title('El total de la compra no es válido')
+                ->body('Verifica los productos, cantidades y costos antes de guardar.')
+                ->warning()
+                ->persistent()
+                ->send();
+
+            $this->halt();
+        }
+
+        $this->data['subtotal'] = (float) ($this->data['subtotal'] ?? 0);
+        $this->data['igv'] = (float) ($this->data['igv'] ?? 0);
+        $this->data['total'] = (float) ($this->data['total'] ?? 0);
     }
 
     protected function getSavedNotification(): ?Notification

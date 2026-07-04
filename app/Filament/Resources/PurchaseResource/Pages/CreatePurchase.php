@@ -8,7 +8,6 @@ use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Support\Facades\Auth;
 use Filament\Notifications\Notification;
 use Carbon\Carbon;
-use Filament\Actions\Action;
 
 class CreatePurchase extends CreateRecord
 {
@@ -21,7 +20,7 @@ class CreatePurchase extends CreateRecord
 
     protected function getRedirectUrl(): string
     {
-      return $this->getResource()::getUrl('index');
+        return $this->getResource()::getUrl('index');
     }
 
     protected function mutateFormDataBeforeCreate(array $data): array
@@ -40,21 +39,54 @@ class CreatePurchase extends CreateRecord
     protected function getFormActions(): array
     {
         return [
-            Action::make('create')
-                ->label('Registrar')
-                ->submit('create'), // importante
+            $this->getCreateFormAction()
+                ->label('Registrar Compra')
+                ->icon('heroicon-o-check-circle'),
 
-            Action::make('createAnother')
+            $this->getCreateAnotherFormAction()
                 ->label('Registrar y crear otra')
-                ->submit('createAnother'),
+                ->icon('heroicon-o-plus-circle'),
 
-            Action::make('cancel')
-                ->label('Cancelar')
-                ->color('gray'),
+            $this->getCancelFormAction()
+                ->label('Cancelar'),
         ];
     }
 
+    protected function beforeCreate(): void
+    {
+        $items = collect($this->data['items'] ?? [])
+            ->filter(function (array $item): bool {
+                return filled($item['product_id'] ?? null)
+                    && (float) ($item['quantity'] ?? 0) > 0
+                    && (float) ($item['unit_cost'] ?? 0) > 0;
+            });
 
+        if ($items->isEmpty()) {
+            Notification::make()
+                ->title('No puedes registrar una compra vacía')
+                ->body('Agrega al menos un producto con cantidad y costo antes de registrar la compra.')
+                ->warning()
+                ->persistent()
+                ->send();
+
+            $this->halt();
+        }
+
+        if ((float) ($this->data['total'] ?? 0) <= 0) {
+            Notification::make()
+                ->title('El total de la compra no es válido')
+                ->body('Verifica los productos, cantidades y costos antes de registrar la compra.')
+                ->warning()
+                ->persistent()
+                ->send();
+
+            $this->halt();
+        }
+
+        $this->data['subtotal'] = (float) ($this->data['subtotal'] ?? 0);
+        $this->data['igv'] = (float) ($this->data['igv'] ?? 0);
+        $this->data['total'] = (float) ($this->data['total'] ?? 0);
+    }
 
     protected function getCreatedNotificationTitle(): ?string
     {
@@ -69,5 +101,4 @@ class CreatePurchase extends CreateRecord
             ->body('La compra ha sido registrada correctamente en el sistema.')
             ->icon('heroicon-o-check-circle');
     }
-
 }

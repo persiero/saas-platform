@@ -13,6 +13,8 @@ use Illuminate\Support\Facades\Auth;
 use Filament\Notifications\Notification;
 use App\Filament\Resources\PurchaseResource\Tables\PurchaseTable;
 use App\Filament\Resources\PurchaseResource\Schemas\PurchaseForm;
+use Filament\Infolists\Infolist;
+use App\Filament\Resources\PurchaseResource\Schemas\PurchaseInfolist;
 
 class PurchaseResource extends Resource
 {
@@ -76,7 +78,11 @@ class PurchaseResource extends Resource
         $user = Auth::user();
 
         $query = parent::getEloquentQuery()
-            ->with(['supplier']);
+            ->with([
+                'supplier',
+                'items.product',
+                'items.product.unidadSunat',
+            ]);
 
         if (! $user?->isSuperAdmin()) {
             $query->where('tenant_id', $user?->tenant_id);
@@ -88,6 +94,11 @@ class PurchaseResource extends Resource
     public static function form(Form $form): Form
     {
         return PurchaseForm::configure($form);
+    }
+
+    public static function infolist(Infolist $infolist): Infolist
+    {
+        return PurchaseInfolist::configure($infolist);
     }
 
     public static function table(Table $table): Table
@@ -105,6 +116,7 @@ class PurchaseResource extends Resource
         return [
             'index' => Pages\ListPurchases::route('/'),
             'create' => Pages\CreatePurchase::route('/create'),
+            'view' => Pages\ViewPurchase::route('/{record}'),
             'edit' => Pages\EditPurchase::route('/{record}/edit'),
         ];
     }

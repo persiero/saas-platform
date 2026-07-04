@@ -26,10 +26,14 @@ class PurchaseForm
                 // =========================================================
                 // 🌟 CABECERA (Top): Proveedor, Documento y Resumen
                 // =========================================================
-                Forms\Components\Grid::make(4)->schema([
+                Forms\Components\Grid::make([
+                    'default' => 1,
+                    'xl' => 4,
+                ])->schema([
                     Forms\Components\Group::make()->schema([
                         Forms\Components\Section::make('Datos del Proveedor')
                             ->icon('heroicon-o-building-office-2')
+                            ->description('Selecciona o registra el proveedor de la compra.')
                             ->schema([
                                 Forms\Components\Select::make('supplier_id')
                                     ->relationship(
@@ -43,7 +47,10 @@ class PurchaseForm
                                     ->searchable()
                                     ->preload()
                                     ->native(false)
-                                    ->helperText('Selecciona el proveedor de esta compra')
+                                    ->hintIcon(
+                                        'heroicon-m-question-mark-circle',
+                                        tooltip: 'Selecciona el proveedor de esta compra. Si no existe, puedes registrarlo desde el botón lateral.'
+                                    )
                                     // 🌟 AQUÍ ESTÁ EL TRUCO PARA EL BOTÓN BONITO
                                     ->manageOptionActions(function (\Filament\Forms\Components\Actions\Action $action) {
                                         return $action
@@ -74,7 +81,11 @@ class PurchaseForm
 
                         Forms\Components\Section::make('Detalles del Documento')
                             ->icon('heroicon-o-document-text')
-                            ->columns(3)
+                            ->description('Registra el documento, fecha y estado de la compra.')
+                            ->columns([
+                                'default' => 1,
+                                'md' => 3,
+                            ])
                             ->schema([
                                 Forms\Components\TextInput::make('document_number')
                                     ->label('N° de Documento')
@@ -111,18 +122,24 @@ class PurchaseForm
                                     ->native(false)
                                     ->disabled(fn(?Purchase $record): bool => filled($record))
                                     ->dehydrated(fn(?Purchase $record): bool => blank($record))
-                                    ->helperText(
-                                        fn(?Purchase $record): string => $record
+                                    ->hintIcon(
+                                        'heroicon-m-question-mark-circle',
+                                        tooltip: fn(?Purchase $record): string => $record
                                             ? 'El estado se cambia mediante acciones controladas.'
                                             : 'Completado suma stock. Pendiente queda como borrador y no mueve inventario.'
                                     )
                                     ->columnSpan(1),
                             ]),
-                    ])->columnSpan(['lg' => 3]),
+                    ])->columnSpan([
+                        'default' => 1,
+                        'xl' => 3,
+                    ]),
 
                     Forms\Components\Group::make()->schema([
                         Forms\Components\Section::make('Resumen Financiero')
                             ->icon('heroicon-o-calculator')
+                            ->description('Totales calculados de la compra.')
+                            ->extraAttributes(['class' => 'xl:sticky xl:top-20'])
                             ->schema([
                                 Forms\Components\Placeholder::make('subtotal_label')
                                     ->label('Subtotal (Op. Gravadas)')
@@ -139,18 +156,26 @@ class PurchaseForm
                                     ->content(fn(\Filament\Forms\Get $get): string => 'S/ ' . number_format((float)($get('total') ?? 0), 2))
                                     ->extraAttributes(['class' => 'flex justify-between text-2xl font-black text-primary-600 pt-2']),
 
-                                Forms\Components\Hidden::make('subtotal'),
-                                Forms\Components\Hidden::make('igv'),
-                                Forms\Components\Hidden::make('total'),
+                                Forms\Components\Hidden::make('subtotal')
+                                    ->default(0),
+
+                                Forms\Components\Hidden::make('igv')
+                                    ->default(0),
+
+                                Forms\Components\Hidden::make('total')
+                                    ->default(0),
                             ]),
-                    ])->columnSpan(['lg' => 1]),
+                    ])->columnSpan([
+                        'default' => 1,
+                        'xl' => 1,
+                    ]),
                 ]), // Fin del Grid Principal
 
                 // =========================================================
                 // 🌟 CUERPO (Medio): Tabla de Productos a 100% de Ancho
                 // =========================================================
                 Forms\Components\Section::make('Detalle de Productos')
-                    ->description('Agrega los productos comprados')
+                    ->description('Agrega los productos comprados, sus cantidades, costos, lotes y vencimientos si corresponde.')
                     ->icon('heroicon-o-cube')
                     ->columnSpanFull() // 🚀 TRUCO DE DISEÑO: Esto le da el 100% del ancho de la pantalla
                     ->schema([
@@ -234,16 +259,9 @@ class PurchaseForm
                                     })
                                     // 🌟 MEJORA: Ancho dinámico inteligente
                                     ->columnSpan([
-                                        'default' => 12, // En celular ocupa el 100%
-                                        'md' => function (\Filament\Forms\Get $get) {
-                                            $features = self::tenantFeatures();
-                                            $isPharmacy = ($features['has_lots'] ?? false) || ($features['has_expiry_dates'] ?? false);
-
-                                            if ($isPharmacy) {
-                                                return $get('_is_fractionable') ? 4 : 6;
-                                            }
-                                            return 6; // Tienda general
-                                        }
+                                        'default' => 12,
+                                        'md' => 12,
+                                        '2xl' => 5,
                                     ]),
 
                                 // 🌟 NUEVO CAMPO: Selector de Presentación para Compras
@@ -270,7 +288,11 @@ class PurchaseForm
                                         self::updateTotals($get, $set);
                                     })
                                     // 🌟 Fijo de 2 columnas
-                                    ->columnSpan(['default' => 12, 'md' => 2]),
+                                    ->columnSpan([
+                                        'default' => 12,
+                                        'md' => 3,
+                                        '2xl' => 2,
+                                    ]),
 
                                 Forms\Components\TextInput::make('batch_number')
                                     ->label('N° de Lote')
@@ -340,14 +362,21 @@ class PurchaseForm
                                             ->success()
                                             ->send();
                                     })
-                                    ->helperText(function (Get $get): string {
-                                        if ($get('_existing_batch_id')) {
-                                            return 'Lote existente seleccionado. La compra sumará stock a este lote.';
-                                        }
+                                    ->hintIcon(
+                                        'heroicon-m-question-mark-circle',
+                                        tooltip: function (Get $get): string {
+                                            if ($get('_existing_batch_id')) {
+                                                return 'Lote existente seleccionado. La compra sumará stock a este lote.';
+                                            }
 
-                                        return 'Puedes seleccionar un lote existente o escribir uno nuevo.';
-                                    })
-                                    ->columnSpan(['default' => 12, 'md' => 3]),
+                                            return 'Puedes seleccionar un lote existente o escribir uno nuevo.';
+                                        }
+                                    )
+                                    ->columnSpan([
+                                        'default' => 12,
+                                        'md' => 5,
+                                        '2xl' => 3,
+                                    ]),
 
                                 Forms\Components\DatePicker::make('expiration_date')
                                     ->label('Vencimiento')
@@ -374,14 +403,21 @@ class PurchaseForm
                                             }
                                         },
                                     ])
-                                    ->helperText(function (Get $get): string {
-                                        if ($get('_existing_batch_expiration_date')) {
-                                            return 'Fecha tomada del lote existente.';
-                                        }
+                                    ->hintIcon(
+                                        'heroicon-m-question-mark-circle',
+                                        tooltip: function (Get $get): string {
+                                            if ($get('_existing_batch_expiration_date')) {
+                                                return 'Fecha tomada del lote existente.';
+                                            }
 
-                                        return 'Ingresa la fecha de vencimiento del lote nuevo.';
-                                    })
-                                    ->columnSpan(['default' => 12, 'md' => 3]),
+                                            return 'Ingresa la fecha de vencimiento del lote nuevo.';
+                                        }
+                                    )
+                                    ->columnSpan([
+                                        'default' => 12,
+                                        'md' => 4,
+                                        '2xl' => 2,
+                                    ]),
 
                                 Forms\Components\Placeholder::make('batch_expiration_warning')
                                     ->label('')
@@ -427,11 +463,8 @@ class PurchaseForm
                                     // 🌟 MEJORA: Mucho más espacio para respirar
                                     ->columnSpan([
                                         'default' => 12,
-                                        'md' => function () {
-                                            $features = self::tenantFeatures();
-                                            $isPharmacy = ($features['has_lots'] ?? false) || ($features['has_expiry_dates'] ?? false);
-                                            return $isPharmacy ? 4 : 2;
-                                        }
+                                        'md' => 4,
+                                        '2xl' => 2,
                                     ]),
 
                                 Forms\Components\TextInput::make('unit_cost')
@@ -446,11 +479,8 @@ class PurchaseForm
                                     // 🌟 MEJORA: Suficiente espacio para el prefijo "S/" y los decimales
                                     ->columnSpan([
                                         'default' => 12,
-                                        'md' => function () {
-                                            $features = self::tenantFeatures();
-                                            $isPharmacy = ($features['has_lots'] ?? false) || ($features['has_expiry_dates'] ?? false);
-                                            return $isPharmacy ? 4 : 2;
-                                        }
+                                        'md' => 4,
+                                        '2xl' => 2,
                                     ]),
 
                                 Forms\Components\TextInput::make('subtotal')
@@ -462,11 +492,8 @@ class PurchaseForm
                                     // 🌟 MEJORA: Ancho equitativo con los otros dos
                                     ->columnSpan([
                                         'default' => 12,
-                                        'md' => function () {
-                                            $features = self::tenantFeatures();
-                                            $isPharmacy = ($features['has_lots'] ?? false) || ($features['has_expiry_dates'] ?? false);
-                                            return $isPharmacy ? 4 : 2;
-                                        }
+                                        'md' => 4,
+                                        '2xl' => 2,
                                     ]),
 
                                 // CAMPOS OCULTOS
@@ -479,9 +506,13 @@ class PurchaseForm
                             ])
                             ->columns(12)
                             ->defaultItems(1)
-                            ->addActionLabel('+ Agregar Producto')
-                            ->reorderableWithButtons()
+                            ->minItems(1)
+                            ->addActionLabel('Agregar producto')
+                            ->reorderable(false)
                             ->collapsible()
+                            ->validationMessages([
+                                'min' => 'Debes agregar al menos un producto a la compra.',
+                            ])
                             ->itemLabel(function (array $state): ?string {
                                 if (empty($state['product_id'])) {
                                     return 'Nuevo producto';
@@ -496,12 +527,12 @@ class PurchaseForm
                 // 🌟 PIE (Bottom): Notas Adicionales
                 // =========================================================
                 Forms\Components\Section::make('Notas Adicionales')
-                    ->icon('heroicon-o-document-text')
+                    ->icon('heroicon-o-chat-bubble-left-right')
                     ->columnSpanFull()
                     ->schema([
                         Forms\Components\Textarea::make('notes')
                             ->label('Observaciones')
-                            ->rows(3)
+                            ->rows(2)
                             ->placeholder('Agrega notas o comentarios sobre esta compra...')
                     ])->collapsible(),
             ]);
