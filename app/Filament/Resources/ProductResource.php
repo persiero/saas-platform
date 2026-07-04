@@ -16,6 +16,8 @@ use Percy\Core\Services\Tenants\TenantFeatureService;
 use App\Filament\Resources\ProductResource\Tables\ProductTable;
 use App\Filament\Resources\ProductResource\Schemas\ProductForm;
 use Percy\Core\Services\Tenants\TenantPlanService;
+use Filament\Infolists\Infolist;
+use App\Filament\Resources\ProductResource\Schemas\ProductInfolist;
 
 class ProductResource extends Resource
 {
@@ -140,6 +142,11 @@ class ProductResource extends Resource
     public static function form(Form $form): Form
     {
         return ProductForm::configure($form);
+    }
+
+    public static function infolist(Infolist $infolist): Infolist
+    {
+        return ProductInfolist::configure($infolist);
     }
 
     public static function table(Table $table): Table
