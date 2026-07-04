@@ -15,14 +15,27 @@ class PurchaseTable
     public static function configure(Table $table): Table
     {
         return $table
+            ->modifyQueryUsing(fn(Builder $query) => $query->with(['supplier']))
+            ->striped()
+            ->paginated([10, 25, 50, 100])
+            ->defaultPaginationPageOption(25)
+            ->persistSearchInSession()
+            ->persistFiltersInSession()
+            ->persistSortInSession()
             ->columns(self::columns())
             ->defaultSort('purchase_date', 'desc')
             ->filters(self::filters())
+            ->filtersFormColumns([
+                'default' => 1,
+                'md' => 2,
+                'xl' => 3,
+            ])
             ->actions([
                 Tables\Actions\ActionGroup::make(PurchaseTableActions::actions())
                     ->label('Acciones')
-                    ->icon('heroicon-o-ellipsis-vertical')
-                    ->button()
+                    ->tooltip('Acciones')
+                    ->icon('heroicon-m-ellipsis-vertical')
+                    ->iconButton()
                     ->color('gray'),
             ])
             ->bulkActions([
@@ -38,6 +51,29 @@ class PurchaseTable
     private static function columns(): array
     {
         return [
+            Tables\Columns\TextColumn::make('mobile_summary')
+                ->label('Compra')
+                ->state(fn(Purchase $record): string => $record->supplier?->name ?? 'Proveedor no registrado')
+                ->description(function (Purchase $record): string {
+                    $fecha = $record->purchase_date?->format('d/m/Y') ?? 'Sin fecha';
+                    $documento = $record->document_number ?: 'Sin documento';
+                    $total = 'S/ ' . number_format((float) $record->total, 2);
+
+                    $estado = match ($record->status) {
+                        'pending' => 'Pendiente',
+                        'completed' => 'Completado',
+                        'canceled' => 'Cancelado',
+                        default => ucfirst($record->status ?? 'Sin estado'),
+                    };
+
+                    return "{$fecha} · {$documento} · {$total} · {$estado}";
+                })
+                ->icon('heroicon-o-shopping-bag')
+                ->weight('black')
+                ->wrap()
+                ->searchable(['document_number'])
+                ->hiddenFrom('md'),
+
             Tables\Columns\TextColumn::make('id')
                 ->label('ID')
                 ->sortable()
@@ -49,7 +85,8 @@ class PurchaseTable
                 ->date('d/m/Y')
                 ->sortable()
                 ->icon('heroicon-o-calendar')
-                ->description(fn(Purchase $record): string => $record->purchase_date->diffForHumans()),
+                ->description(fn(Purchase $record): string => $record->purchase_date->diffForHumans())
+                ->visibleFrom('md'),
 
             Tables\Columns\TextColumn::make('supplier.name')
                 ->label('Proveedor')
@@ -60,14 +97,16 @@ class PurchaseTable
                 ->description(
                     fn(Purchase $record): ?string =>
                     $record->document_number ? "Doc: {$record->document_number}" : null
-                ),
+                )
+                ->visibleFrom('md'),
 
             Tables\Columns\TextColumn::make('items_count')
                 ->label('Productos')
                 ->counts('items')
                 ->icon('heroicon-o-cube')
                 ->badge()
-                ->color('info'),
+                ->color('info')
+                ->visibleFrom('lg'),
 
             Tables\Columns\TextColumn::make('total')
                 ->label('Total')
@@ -75,7 +114,8 @@ class PurchaseTable
                 ->sortable()
                 ->weight('bold')
                 ->color('success')
-                ->icon('heroicon-o-banknotes'),
+                ->icon('heroicon-o-banknotes')
+                ->visibleFrom('md'),
 
             Tables\Columns\TextColumn::make('status')
                 ->label('Estado')
@@ -97,7 +137,8 @@ class PurchaseTable
                     'completed' => 'heroicon-o-check-circle',
                     'canceled' => 'heroicon-o-x-circle',
                     default => 'heroicon-o-question-mark-circle',
-                }),
+                })
+                ->visibleFrom('lg'),
 
             Tables\Columns\TextColumn::make('created_at')
                 ->label('Registrado')
@@ -140,7 +181,10 @@ class PurchaseTable
                         ->native(false)
                         ->displayFormat('d/m/Y'),
                 ])
-                ->columns(2)
+                ->columns([
+                    'default' => 1,
+                    'md' => 2,
+                ])
                 ->query(function (Builder $query, array $data): Builder {
                     return $query
                         ->when(

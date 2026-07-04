@@ -1,13 +1,41 @@
 <x-filament-panels::page>
     <style>
         /* 🌟 COLORES DE ESTADO (Mantenemos los que ya funcionan perfecto) */
-        .mesa-available { background-color: #dcfce7; color: #166534; border-color: #86efac; }
-        .mesa-occupied { background-color: #ffe4e6; color: #9f1239; border-color: #fda4af; }
-        .mesa-cleaning { background-color: #fef3c7; color: #92400e; border-color: #fcd34d; }
+        .mesa-available {
+            background-color: #dcfce7;
+            color: #166534;
+            border-color: #86efac;
+        }
 
-        .dark .mesa-available { background-color: rgba(22, 101, 52, 0.4); color: #86efac; border-color: #14532d; }
-        .dark .mesa-occupied { background-color: rgba(159, 18, 57, 0.4); color: #fda4af; border-color: #881337; }
-        .dark .mesa-cleaning { background-color: rgba(146, 64, 14, 0.4); color: #fcd34d; border-color: #78350f; }
+        .mesa-occupied {
+            background-color: #ffe4e6;
+            color: #9f1239;
+            border-color: #fda4af;
+        }
+
+        .mesa-cleaning {
+            background-color: #fef3c7;
+            color: #92400e;
+            border-color: #fcd34d;
+        }
+
+        .dark .mesa-available {
+            background-color: rgba(22, 101, 52, 0.4);
+            color: #86efac;
+            border-color: #14532d;
+        }
+
+        .dark .mesa-occupied {
+            background-color: rgba(159, 18, 57, 0.4);
+            color: #fda4af;
+            border-color: #881337;
+        }
+
+        .dark .mesa-cleaning {
+            background-color: rgba(146, 64, 14, 0.4);
+            color: #fcd34d;
+            border-color: #78350f;
+        }
 
         /* 🌟 GRILLA Y TARJETAS SIMÉTRICAS */
         .mesas-grid {
@@ -40,7 +68,8 @@
     <div class="space-y-8">
         @forelse($zones as $zone)
             {{-- 🌟 Contenedor del Salón (Estilo igual al del Hotel) --}}
-            <div class="bg-white/50 dark:bg-gray-800/50 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+            <div
+                class="bg-white/50 dark:bg-gray-800/50 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
 
                 {{-- Cabecera del Salón --}}
                 <div class="flex items-center gap-3 mb-6 border-b border-gray-200 dark:border-gray-700 pb-3">
@@ -48,7 +77,8 @@
                     <h2 class="text-xl font-black text-gray-800 dark:text-gray-200 uppercase tracking-wider">
                         {{ $zone->name }}
                     </h2>
-                    <span class="ml-auto text-xs font-bold text-gray-500 bg-gray-100 dark:bg-gray-700 px-3 py-1 rounded-full">
+                    <span
+                        class="ml-auto text-xs font-bold text-gray-500 bg-gray-100 dark:bg-gray-700 px-3 py-1 rounded-full">
                         {{ $zone->tables->count() }} Mesas
                     </span>
                 </div>
@@ -56,14 +86,14 @@
                 <div class="mesas-grid">
                     @forelse($zone->tables as $table)
                         @php
-                            $statusClass = match($table->status) {
+                            $statusClass = match ($table->status) {
                                 'available' => 'mesa-available',
                                 'occupied' => 'mesa-occupied',
                                 'cleaning' => 'mesa-cleaning',
                                 default => 'bg-gray-100 text-gray-800 border-gray-300',
                             };
 
-                            $icon = match($table->status) {
+                            $icon = match ($table->status) {
                                 'available' => 'heroicon-o-check-circle',
                                 'occupied' => 'heroicon-o-user-group',
                                 'cleaning' => 'heroicon-o-sparkles',
@@ -71,15 +101,15 @@
                             };
                         @endphp
 
-                        <button
-                            wire:click="openTable({{ $table->id }})"
-                            class="cursor-pointer group mesa-btn {{ $statusClass }}"
-                        >
+                        <button wire:click="openTable({{ $table->id }})"
+                            class="cursor-pointer group mesa-btn {{ $statusClass }}">
                             {{-- 🌟 PARTE SUPERIOR (Siempre fija arriba) --}}
                             <div class="flex flex-col items-center w-full">
-                                <x-dynamic-component :component="$icon" class="w-8 h-8 mb-2 opacity-70 group-hover:opacity-100 transition-opacity" />
+                                <x-dynamic-component :component="$icon"
+                                    class="w-8 h-8 mb-2 opacity-70 group-hover:opacity-100 transition-opacity" />
                                 <span class="font-bold text-xl text-center leading-tight">{{ $table->name }}</span>
-                                <span class="text-[11px] mt-1 opacity-75 font-bold tracking-wide">{{ $table->capacity }} Sillas</span>
+                                <span class="text-[11px] mt-1 opacity-75 font-bold tracking-wide">{{ $table->capacity }}
+                                    Sillas</span>
                             </div>
 
                             {{-- 🌟 PARTE INFERIOR (Ocupa el espacio vacío, mantiene la simetría) --}}
@@ -89,8 +119,9 @@
                                     $ventaPendiente = $table->sales->first();
                                 @endphp
 
-                                @if($table->status === 'occupied' && $ventaPendiente)
-                                    <div class="text-[10px] font-bold uppercase tracking-wider bg-white/50 dark:bg-black/20 px-3 py-1 rounded-lg flex items-center justify-center gap-1.5 shadow-inner">
+                                @if ($table->status === 'occupied' && $ventaPendiente)
+                                    <div
+                                        class="text-[10px] font-bold uppercase tracking-wider bg-white/50 dark:bg-black/20 px-3 py-1 rounded-lg flex items-center justify-center gap-1.5 shadow-inner">
                                         <x-heroicon-s-user class="w-3 h-3" />
                                         {{ explode(' ', $ventaPendiente->user->name)[0] ?? 'Mozo' }}
                                     </div>
@@ -98,20 +129,23 @@
                             </div>
                         </button>
                     @empty
-                        <div class="col-span-full text-center text-gray-500 py-8 font-medium bg-gray-50 dark:bg-gray-800/50 rounded-xl border border-dashed border-gray-300 dark:border-gray-700">
+                        <div
+                            class="col-span-full text-center text-gray-500 py-8 font-medium bg-gray-50 dark:bg-gray-800/50 rounded-xl border border-dashed border-gray-300 dark:border-gray-700">
                             No hay mesas configuradas en este salón.
                         </div>
                     @endforelse
                 </div>
             </div>
         @empty
-            <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-12 flex flex-col items-center justify-center text-center">
+            <div
+                class="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-12 flex flex-col items-center justify-center text-center">
                 <div class="p-4 rounded-full bg-gray-50 dark:bg-gray-900 mb-4 inline-flex">
                     <x-heroicon-o-exclamation-circle class="text-gray-400" style="width: 48px; height: 48px;" />
                 </div>
                 <h3 class="text-xl font-bold text-gray-900 dark:text-gray-100">No hay salones configurados</h3>
                 <p class="mt-2 text-sm text-gray-500 max-w-sm mx-auto">
-                    Aún no has dibujado el mapa de tu restaurante. Ve a <strong>Configuración > Zonas y Pisos</strong> para crear tu primer salón.
+                    Aún no has dibujado el mapa de tu restaurante. Ve a <strong>Configuración > Zonas y Pisos</strong>
+                    para crear tu primer salón.
                 </p>
             </div>
         @endforelse
