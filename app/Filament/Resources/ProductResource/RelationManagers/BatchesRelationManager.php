@@ -73,7 +73,11 @@ class BatchesRelationManager extends RelationManager
                         return $features['has_lots'] ?? false;
                     })
                     ->maxLength(255)
-                    ->extraInputAttributes(['style' => 'text-transform: uppercase']),
+                    ->extraInputAttributes(['style' => 'text-transform: uppercase'])
+                    ->columnSpan([
+                        'default' => 1,
+                        'md' => 2,
+                    ]),
 
                 Forms\Components\DatePicker::make('manufacturing_date')
                     ->label('Fecha de Fabricación')
@@ -84,14 +88,16 @@ class BatchesRelationManager extends RelationManager
                     ->visible(function () {
                         $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
                         return $features['has_lots'] ?? false;
-                    }),
+                    })
+                    ->columnSpan(1),
 
                 Forms\Components\DatePicker::make('expiration_date')
                     ->label('Fecha de Vencimiento') // 🌟 Le quité "(DIGEMID)" para que sirva tanto para medicinas como abarrotes
                     ->required()
                     ->native(false)
                     ->displayFormat('d/m/Y')
-                    ->minDate(now()), // No puede estar vencido al registrarlo
+                    ->minDate(now())
+                    ->columnSpan(1), // No puede estar vencido al registrarlo
 
                 Forms\Components\TextInput::make('initial_quantity')
                     ->label('Cantidad Ingresada')
@@ -124,13 +130,21 @@ class BatchesRelationManager extends RelationManager
                         },
                     ])
                     ->disabledOn('edit')
-                    ->dehydrated(),
+                    ->dehydrated()
+                    ->columnSpan([
+                        'default' => 1,
+                        'md' => 2,
+                    ]),
 
                 Forms\Components\Hidden::make('current_quantity')
                     ->default(fn(Forms\Get $get) => $get('initial_quantity')),
 
                 Forms\Components\Hidden::make('tenant_id')
                     ->default(fn() => Auth::user()->tenant_id),
+            ])
+            ->columns([
+                'default' => 1,
+                'md' => 2,
             ]);
     }
 
@@ -138,7 +152,51 @@ class BatchesRelationManager extends RelationManager
     {
         return $table
             ->recordTitleAttribute('batch_number')
+            ->striped()
+            ->paginated([5, 10, 25, 50])
+            ->defaultPaginationPageOption(10)
+            ->emptyStateIcon('heroicon-o-archive-box')
+            ->emptyStateHeading(
+                fn(): string => self::hasLots()
+                    ? 'Sin lotes registrados'
+                    : 'Sin vencimientos registrados'
+            )
+            ->emptyStateDescription(
+                fn(): string => self::hasLots()
+                    ? 'Registra el primer lote para controlar stock y vencimiento.'
+                    : 'Registra una fecha de vencimiento para este producto.'
+            )
             ->columns([
+                Tables\Columns\TextColumn::make('mobile_summary')
+                    ->label(fn(): string => self::hasLots() ? 'Lote' : 'Vencimiento')
+                    ->state(function (ProductBatch $record): string {
+                        if (self::hasLots()) {
+                            return $record->batch_number ?: 'Sin lote';
+                        }
+
+                        return $record->expiration_date
+                            ? Carbon::parse($record->expiration_date)->format('d/m/Y')
+                            : 'Sin vencimiento';
+                    })
+                    ->description(function (ProductBatch $record): string {
+                        $stock = number_format(
+                            (float) $record->current_quantity,
+                            (float) $record->current_quantity == floor((float) $record->current_quantity) ? 0 : 3
+                        );
+
+                        $vencimiento = $record->expiration_date
+                            ? Carbon::parse($record->expiration_date)->format('d/m/Y')
+                            : 'Sin vencimiento';
+
+                        return self::hasLots()
+                            ? "Vence: {$vencimiento} · Stock: {$stock}"
+                            : "Stock: {$stock}";
+                    })
+                    ->icon('heroicon-o-archive-box')
+                    ->weight('bold')
+                    ->wrap()
+                    ->hiddenFrom('md'),
+
                 Tables\Columns\TextColumn::make('batch_number')
                     ->label(fn(): string => self::hasLots() ? 'Lote' : 'Código interno')
                     ->searchable()
@@ -153,7 +211,8 @@ class BatchesRelationManager extends RelationManager
                         self::hasLots()
                             ? null
                             : 'Generado automáticamente'
-                    ),
+                    )
+                    ->visibleFrom('md'),
 
                 Tables\Columns\TextColumn::make('expiration_date')
                     ->label('Vencimiento')
@@ -177,7 +236,8 @@ class BatchesRelationManager extends RelationManager
                         }
 
                         return 'success';
-                    }),
+                    })
+                    ->visibleFrom('md'),
 
                 Tables\Columns\TextColumn::make('current_quantity')
                     ->label('Stock Actual')
@@ -188,7 +248,8 @@ class BatchesRelationManager extends RelationManager
 
                         return number_format($value, $value == floor($value) ? 0 : 3);
                     })
-                    ->color(fn($state): string => (float) $state <= 5 ? 'danger' : 'success'),
+                    ->color(fn($state): string => (float) $state <= 5 ? 'danger' : 'success')
+                    ->visibleFrom('md'),
             ])
             ->filters([
                 //
@@ -197,6 +258,8 @@ class BatchesRelationManager extends RelationManager
                 Tables\Actions\CreateAction::make()
                     ->label(fn(): string => self::hasLots() ? 'Registrar Lote' : 'Registrar Vencimiento')
                     ->icon('heroicon-o-plus-circle')
+                    ->modalWidth('3xl')
+                    ->slideOver()
                     ->mutateFormDataUsing(function (array $data): array {
                         $data['current_quantity'] = $data['initial_quantity'];
                         $data['tenant_id'] = Auth::user()->tenant_id;
@@ -238,50 +301,68 @@ class BatchesRelationManager extends RelationManager
                 // 🌟 NUEVA ACCIÓN DE EDITAR (Restringida y Segura)
                 Tables\Actions\EditAction::make()
                     ->label('Editar')
+                    ->tooltip('Editar lote / vencimiento')
+                    ->icon('heroicon-o-pencil-square')
+                    ->iconButton()
                     ->color('warning')
-                    // 🚀 Sobrescribimos el formulario solo para la edición
+                    ->modalWidth('3xl')
+                    ->slideOver()
                     ->form([
-                        Forms\Components\TextInput::make('batch_number')
-                            ->label('Número de Lote')
-                            ->maxLength(255)
-                            ->extraInputAttributes(['style' => 'text-transform: uppercase'])
-                            ->visible(function () {
-                                $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
-                                return $features['has_lots'] ?? false;
-                            })
-                            ->required(function () {
-                                $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
-                                return $features['has_lots'] ?? false;
-                            }),
+                        Forms\Components\Section::make('Datos del lote / vencimiento')
+                            ->description('Actualiza solo los datos informativos. El stock se protege por Kardex.')
+                            ->schema([
+                                Forms\Components\TextInput::make('batch_number')
+                                    ->label('Número de Lote')
+                                    ->maxLength(255)
+                                    ->extraInputAttributes(['style' => 'text-transform: uppercase'])
+                                    ->visible(function () {
+                                        $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                                        return $features['has_lots'] ?? false;
+                                    })
+                                    ->required(function () {
+                                        $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                                        return $features['has_lots'] ?? false;
+                                    })
+                                    ->columnSpanFull(),
 
-                        Forms\Components\DatePicker::make('manufacturing_date')
-                            ->label('Fecha de Fabricación')
-                            ->native(false)
-                            ->displayFormat('d/m/Y')
-                            ->maxDate(now()),
+                                Forms\Components\DatePicker::make('manufacturing_date')
+                                    ->label('Fecha de Fabricación')
+                                    ->native(false)
+                                    ->displayFormat('d/m/Y')
+                                    ->maxDate(now())
+                                    ->visible(function () {
+                                        $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                                        return $features['has_lots'] ?? false;
+                                    }),
 
-                        Forms\Components\DatePicker::make('expiration_date')
-                            ->label('Fecha de Vencimiento')
-                            ->native(false)
-                            ->displayFormat('d/m/Y')
-                            // Ojo: Aquí quité el minDate(now()) porque si se equivocaron
-                            // y el producto ya venció ayer, necesitan poder registrar la fecha real.
-                            ->visible(function () {
-                                $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
-                                return $features['has_expiry_dates'] ?? false;
-                            })
-                            ->required(function () {
-                                $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
-                                return $features['has_expiry_dates'] ?? false;
-                            }),
+                                Forms\Components\DatePicker::make('expiration_date')
+                                    ->label('Fecha de Vencimiento')
+                                    ->native(false)
+                                    ->displayFormat('d/m/Y')
+                                    ->visible(function () {
+                                        $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                                        return $features['has_expiry_dates'] ?? false;
+                                    })
+                                    ->required(function () {
+                                        $features = \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features ?? [];
+                                        return $features['has_expiry_dates'] ?? false;
+                                    }),
 
-                        // 🌟 BLINDAJE DE KARDEX: Mostramos el stock, pero BLOQUEADO
-                        Forms\Components\TextInput::make('current_quantity')
-                            ->label('Stock Actual')
-                            ->numeric()
-                            ->disabled() // El usuario no puede hacer clic ni escribir aquí
-                            ->dehydrated(false) // Le dice a Filament: "Ignora este campo al guardar en BD"
-                            ->helperText('El stock no se puede modificar manualmente por seguridad del Kardex.'),
+                                Forms\Components\TextInput::make('current_quantity')
+                                    ->label('Stock Actual')
+                                    ->numeric()
+                                    ->disabled()
+                                    ->dehydrated(false)
+                                    ->hintIcon(
+                                        'heroicon-m-lock-closed',
+                                        tooltip: 'El stock no se modifica manualmente. Se controla mediante movimientos de inventario y Kardex.'
+                                    )
+                                    ->columnSpanFull(),
+                            ])
+                            ->columns([
+                                'default' => 1,
+                                'md' => 2,
+                            ]),
                     ])
                     ->mutateFormDataUsing(function (array $data): array {
                         // Aseguramos que si editan el lote, se guarde en mayúsculas
@@ -293,7 +374,9 @@ class BatchesRelationManager extends RelationManager
 
                 Tables\Actions\DeleteAction::make()
                     ->label('Eliminar')
+                    ->tooltip('Eliminar lote / vencimiento')
                     ->icon('heroicon-o-trash')
+                    ->iconButton()
                     ->color('danger')
                     ->requiresConfirmation()
                     ->modalHeading('Eliminar lote / vencimiento')
