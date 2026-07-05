@@ -13,6 +13,14 @@ class Dashboard extends BaseDashboard
         return Auth::check();
     }
 
+    public function getColumns(): int | string | array
+    {
+        return [
+            'default' => 1,
+            'xl' => 2,
+        ];
+    }
+
     public function mount()
     {
         /** @var \Percy\Core\Models\User|null $user */

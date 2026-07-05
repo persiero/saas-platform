@@ -9,9 +9,13 @@ use Filament\Widgets\ChartWidget;
 class RevenueChart extends ChartWidget
 {
     protected static ?string $heading = 'Evolución de Ingresos (Últimos 14 días)';
+
     protected static ?int $sort = 3;
 
-    protected int | string | array $columnSpan = 'full';
+    protected int | string | array $columnSpan = [
+        'default' => 'full',
+        'xl' => 1,
+    ];
 
     protected static ?string $maxHeight = '300px';
 

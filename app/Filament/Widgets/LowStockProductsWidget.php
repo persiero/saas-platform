@@ -10,9 +10,12 @@ use Percy\Core\Models\Product;
 
 class LowStockProductsWidget extends BaseWidget
 {
-    protected int | string | array $columnSpan = 'full';
+    protected int | string | array $columnSpan = [
+        'default' => 'full',
+        'xl' => 1,
+    ];
 
-    protected static ?int $sort = 2;
+    protected static ?int $sort = 5;
 
     public static function canView(): bool
     {
@@ -45,27 +48,47 @@ class LowStockProductsWidget extends BaseWidget
             ->emptyStateDescription('No hay productos con stock bajo.')
             ->emptyStateIcon('heroicon-o-check-badge')
             ->columns([
+                Tables\Columns\TextColumn::make('mobile_summary')
+                    ->label('Producto')
+                    ->state(fn(Product $record): string => $record->name)
+                    ->description(function (Product $record): string {
+                        $categoria = $record->category?->name ?? 'Sin categoría';
+                        $stock = self::formatStock($record->current_stock, $record);
+                        $precio = 'S/ ' . number_format((float) $record->price, 2);
+
+                        return "{$categoria} · Stock: {$stock} · {$precio}";
+                    })
+                    ->icon('heroicon-o-cube')
+                    ->weight('black')
+                    ->wrap()
+                    ->searchable(['name'])
+                    ->hiddenFrom('md'),
+
                 Tables\Columns\TextColumn::make('name')
                     ->label('Producto')
                     ->weight('bold')
                     ->searchable()
-                    ->description(fn(Product $record): ?string => $record->category?->name),
+                    ->description(fn(Product $record): ?string => $record->category?->name)
+                    ->visibleFrom('md'),
 
                 Tables\Columns\TextColumn::make('current_stock')
                     ->label('Stock actual')
                     ->badge()
                     ->color('warning')
-                    ->formatStateUsing(fn($state, Product $record): string => self::formatStock($state, $record)),
+                    ->formatStateUsing(fn($state, Product $record): string => self::formatStock($state, $record))
+                    ->visibleFrom('md'),
 
                 Tables\Columns\TextColumn::make('price')
                     ->label('Precio venta')
                     ->money('PEN')
-                    ->sortable(),
+                    ->sortable()
+                    ->visibleFrom('lg'),
 
                 Tables\Columns\TextColumn::make('updated_at')
                     ->label('Última actualización')
                     ->since()
-                    ->sortable(),
+                    ->sortable()
+                    ->visibleFrom('xl'),
             ])
             ->paginated([5])
             ->striped();

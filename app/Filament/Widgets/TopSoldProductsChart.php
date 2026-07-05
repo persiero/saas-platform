@@ -2,17 +2,29 @@
 
 namespace App\Filament\Widgets;
 
+use Filament\Support\RawJs;
 use Filament\Widgets\ChartWidget;
-use Percy\Core\Models\SaleItem;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Percy\Core\Models\SaleItem;
 
 class TopSoldProductsChart extends ChartWidget
 {
-    protected static ?string $heading = 'Productos y Servicios Más Vendidos del Mes';
+    protected static ?string $heading = 'Top 5 Productos y Servicios del Mes';
+
     protected static ?int $sort = 4;
-    protected int | string | array $columnSpan = 'full';
-    protected static ?string $maxHeight = '300px';
+
+    protected int | string | array $columnSpan = [
+        'default' => 'full',
+        'xl' => 1,
+    ];
+
+    protected static ?string $maxHeight = '360px';
+
+    public static function canView(): bool
+    {
+        return Auth::check() && Auth::user()?->tenant_id !== null;
+    }
 
     protected function getData(): array
     {
@@ -20,7 +32,6 @@ class TopSoldProductsChart extends ChartWidget
         $startOfMonth = now()->startOfMonth();
         $endOfMonth = now()->endOfMonth();
 
-        // 🌟 MAGIA SQL: Usamos LEFT JOIN y un CASE para limpiar los nombres antes de agruparlos
         $topProducts = SaleItem::leftJoin('products', 'sale_items.product_id', '=', 'products.id')
             ->select(
                 DB::raw("
@@ -50,15 +61,67 @@ class TopSoldProductsChart extends ChartWidget
         return [
             'datasets' => [
                 [
-                    'label' => 'Unidades / Noches',
-                    'data' => $topProducts->pluck('total_quantity')->toArray(),
-                    'backgroundColor' => '#10b981',
-                    'borderColor' => '#047857',
+                    'label' => 'Cantidad vendida',
+                    'data' => $topProducts
+                        ->pluck('total_quantity')
+                        ->map(fn($value) => round((float) $value, 2))
+                        ->toArray(),
                     'borderRadius' => 6,
                 ],
             ],
             'labels' => $topProducts->pluck('grouped_name')->toArray(),
         ];
+    }
+
+    protected function getOptions(): RawJs
+    {
+        return RawJs::make(<<<JS
+        {
+            indexAxis: 'y',
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return ' Cantidad vendida: ' + context.parsed.x;
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    beginAtZero: true,
+                    ticks: {
+                        precision: 0
+                    },
+                    grid: {
+                        display: true
+                    }
+                },
+                y: {
+                    ticks: {
+                        autoSkip: false,
+                        callback: function(value) {
+                            const label = this.getLabelForValue(value);
+                            const maxLength = window.innerWidth < 640 ? 18 : 30;
+
+                            if (label.length > maxLength) {
+                                return label.substring(0, maxLength) + '…';
+                            }
+
+                            return label;
+                        }
+                    },
+                    grid: {
+                        display: false
+                    }
+                }
+            }
+        }
+        JS);
     }
 
     protected function getType(): string

@@ -7,9 +7,14 @@ use Filament\Widgets\StatsOverviewWidget\Stat;
 use Percy\Core\Models\Sale;
 use Percy\Core\Models\CashRegister;
 use Percy\Core\Models\Product;
+use Percy\Core\Models\ProductBatch;
+use Percy\Core\Models\Expense;
 use Illuminate\Support\Facades\Auth;
 use App\Filament\Resources\SaleResource;
+use App\Filament\Resources\ProductResource;
+use App\Filament\Resources\ExpenseResource;
 use Percy\Core\Services\Tenants\TenantPlanService;
+
 
 class StatsOverview extends BaseWidget
 {
@@ -24,7 +29,7 @@ class StatsOverview extends BaseWidget
 
     protected function getColumns(): int
     {
-        return self::tenantHasOnlineStore() ? 3 : 4;
+        return 4;
     }
 
     protected function getStats(): array
@@ -92,6 +97,10 @@ class StatsOverview extends BaseWidget
             ->count();
 
         $hasOnlineStore = self::tenantHasOnlineStore();
+        $hasCashRegister = self::tenantPlanHas('has_cash_register');
+        $hasBasicInventory = self::tenantPlanHas('has_basic_inventory');
+        $hasExpenses = self::tenantPlanHas('has_expenses');
+        $hasExpiryDates = self::tenantHasExpiryDates();
 
         $pendingWebOrders = 0;
         $pendingWebAmount = 0;
@@ -137,6 +146,45 @@ class StatsOverview extends BaseWidget
                 ->sum('total');
         }
 
+        $monthExpenses = 0;
+        $monthExpensesCount = 0;
+
+        if ($hasExpenses) {
+            $monthExpenses = Expense::query()
+                ->where('tenant_id', $tenantId)
+                ->whereBetween('expense_date', [
+                    now()->startOfMonth(),
+                    now()->endOfMonth(),
+                ])
+                ->sum('amount');
+
+            $monthExpensesCount = Expense::query()
+                ->where('tenant_id', $tenantId)
+                ->whereBetween('expense_date', [
+                    now()->startOfMonth(),
+                    now()->endOfMonth(),
+                ])
+                ->count();
+        }
+
+        $expiredBatches = 0;
+        $expiringSoonBatches = 0;
+
+        if ($hasExpiryDates) {
+            $expiredBatches = ProductBatch::query()
+                ->where('tenant_id', $tenantId)
+                ->where('current_quantity', '>', 0)
+                ->whereDate('expiration_date', '<', today())
+                ->count();
+
+            $expiringSoonBatches = ProductBatch::query()
+                ->where('tenant_id', $tenantId)
+                ->where('current_quantity', '>', 0)
+                ->whereDate('expiration_date', '>=', today())
+                ->whereDate('expiration_date', '<=', today()->addDays(90))
+                ->count();
+        }
+
         $stats = [
             Stat::make('Ventas de Hoy', 'S/ ' . number_format($todaySales, 2))
                 ->description(
@@ -147,7 +195,68 @@ class StatsOverview extends BaseWidget
                 ->descriptionIcon($trend >= 0 ? 'heroicon-m-arrow-trending-up' : 'heroicon-m-arrow-trending-down')
                 ->color($trend >= 0 ? 'success' : 'danger')
                 ->chart($this->getSalesChart($tenantId)),
+
+            Stat::make('Ventas del Mes', 'S/ ' . number_format($monthSales, 2))
+                ->description($monthCount . ' comprobante' . ($monthCount !== 1 ? 's' : '') . ' emitido' . ($monthCount !== 1 ? 's' : ''))
+                ->descriptionIcon('heroicon-m-calendar-days')
+                ->color('info'),
         ];
+
+        if ($hasCashRegister) {
+            $stats[] = Stat::make('Estado de Caja', $openCash ? 'ABIERTA' : 'CERRADA')
+                ->description(
+                    $openCash
+                        ? 'Apertura: S/ ' . number_format($openCash->opening_amount, 2) . ' | ' . $openCash->opened_at->format('H:i')
+                        : 'Abre caja para iniciar operaciones'
+                )
+                ->descriptionIcon($openCash ? 'heroicon-m-check-circle' : 'heroicon-m-x-circle')
+                ->color($openCash ? 'success' : 'danger');
+        }
+
+        if ($hasBasicInventory) {
+            $stats[] = Stat::make('Inventario', $totalProducts . ' producto' . ($totalProducts !== 1 ? 's' : ''))
+                ->description(
+                    $lowStock > 0
+                        ? $lowStock . ' con stock bajo'
+                        : 'Stock saludable'
+                )
+                ->descriptionIcon($lowStock > 0 ? 'heroicon-m-exclamation-triangle' : 'heroicon-m-check-circle')
+                ->color($lowStock > 0 ? 'warning' : 'success')
+                ->url(ProductResource::getUrl('index'));
+        }
+
+        if ($hasExpiryDates) {
+            $totalExpiryAlerts = $expiredBatches + $expiringSoonBatches;
+
+            $stats[] = Stat::make('Vencimientos Próximos', $totalExpiryAlerts)
+                ->description(
+                    $expiredBatches > 0
+                        ? $expiredBatches . ' vencido' . ($expiredBatches !== 1 ? 's' : '') . ' | ' . $expiringSoonBatches . ' por vencer'
+                        : ($expiringSoonBatches > 0
+                            ? $expiringSoonBatches . ' lote' . ($expiringSoonBatches !== 1 ? 's' : '') . ' por vencer en 90 días'
+                            : 'Sin vencimientos críticos'
+                        )
+                )
+                ->descriptionIcon(
+                    $expiredBatches > 0
+                        ? 'heroicon-m-exclamation-circle'
+                        : ($expiringSoonBatches > 0 ? 'heroicon-m-clock' : 'heroicon-m-check-circle')
+                )
+                ->color(
+                    $expiredBatches > 0
+                        ? 'danger'
+                        : ($expiringSoonBatches > 0 ? 'warning' : 'success')
+                )
+                ->url(ProductResource::getUrl('index'));
+        }
+
+        if ($hasExpenses) {
+            $stats[] = Stat::make('Gastos del Mes', 'S/ ' . number_format($monthExpenses, 2))
+                ->description($monthExpensesCount . ' gasto' . ($monthExpensesCount !== 1 ? 's' : '') . ' registrado' . ($monthExpensesCount !== 1 ? 's' : ''))
+                ->descriptionIcon('heroicon-m-banknotes')
+                ->color($monthExpenses > 0 ? 'danger' : 'success')
+                ->url(ExpenseResource::getUrl('index'));
+        }
 
         if ($hasOnlineStore) {
             $stats[] = Stat::make('Pedidos Web Pendientes', $pendingWebOrders)
@@ -162,29 +271,6 @@ class StatsOverview extends BaseWidget
                 ->color('info')
                 ->url(SaleResource::getUrl('index'));
         }
-
-        $stats[] = Stat::make('Ventas del Mes', 'S/ ' . number_format($monthSales, 2))
-            ->description($monthCount . ' comprobante' . ($monthCount !== 1 ? 's' : '') . ' emitido' . ($monthCount !== 1 ? 's' : ''))
-            ->descriptionIcon('heroicon-m-calendar-days')
-            ->color('info');
-
-        $stats[] = Stat::make('Estado de Caja', $openCash ? 'ABIERTA' : 'CERRADA')
-            ->description(
-                $openCash
-                    ? 'Apertura: S/ ' . number_format($openCash->opening_amount, 2) . ' | ' . $openCash->opened_at->format('H:i')
-                    : 'Abre caja para iniciar operaciones'
-            )
-            ->descriptionIcon($openCash ? 'heroicon-m-check-circle' : 'heroicon-m-x-circle')
-            ->color($openCash ? 'success' : 'danger');
-
-        $stats[] = Stat::make('Inventario', $totalProducts . ' producto' . ($totalProducts !== 1 ? 's' : ''))
-            ->description(
-                $lowStock > 0
-                    ? $lowStock . ' con stock bajo'
-                    : 'Stock saludable'
-            )
-            ->descriptionIcon($lowStock > 0 ? 'heroicon-m-exclamation-triangle' : 'heroicon-m-check-circle')
-            ->color($lowStock > 0 ? 'warning' : 'success');
 
         return $stats;
     }
@@ -226,5 +312,19 @@ class StatsOverview extends BaseWidget
     {
         return self::tenantPlanHas('has_online_store')
             || self::tenantPlanHas('has_web_orders');
+    }
+
+    private static function tenantHasExpiryDates(): bool
+    {
+        /** @var \Percy\Core\Models\User|null $user */
+        $user = Auth::user();
+
+        if (! $user || ! $user->tenant || ! $user->tenant->businessSector) {
+            return false;
+        }
+
+        $features = $user->tenant->businessSector->features ?? [];
+
+        return (bool) ($features['has_expiry_dates'] ?? false);
     }
 }
