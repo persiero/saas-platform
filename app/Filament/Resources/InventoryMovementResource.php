@@ -14,6 +14,9 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Illuminate\Support\Facades\Auth;
 use Percy\Core\Services\Tenants\TenantPlanService;
+use Filament\Infolists\Infolist;
+use Filament\Infolists\Components\Section;
+use Filament\Infolists\Components\TextEntry;
 
 class InventoryMovementResource extends Resource
 {
@@ -65,7 +68,11 @@ class InventoryMovementResource extends Resource
 
         return parent::getEloquentQuery()
             ->where('tenant_id', $user->tenant_id)
-            ->with(['product.unidadSunat']);
+            ->with([
+                'product.unidadSunat',
+                'batch',
+                'user',
+            ]);
     }
 
     // El Kardex es principalmente de auditoría, por ahora bloqueamos la creación manual directa aquí
@@ -94,6 +101,57 @@ class InventoryMovementResource extends Resource
     public static function canForceDelete(\Illuminate\Database\Eloquent\Model $record): bool
     {
         return false;
+    }
+
+    private static function formatInventoryQuantity(InventoryMovement $record, mixed $value, bool $withSign = false): string
+    {
+        $product = $record->product;
+
+        if (! $product) {
+            return (string) $value;
+        }
+
+        $numericValue = (float) $value;
+        $absoluteValue = abs($numericValue);
+
+        $sign = '';
+
+        if ($withSign) {
+            $sign = $record->type === 'IN' ? '+ ' : '- ';
+        }
+
+        if ($product->is_fractionable && $product->units_per_box > 0) {
+            $boxes = floor($absoluteValue);
+            $fraction = $absoluteValue - $boxes;
+            $units = round($fraction * $product->units_per_box);
+
+            $text = [];
+
+            if ($boxes > 0) {
+                $text[] = "{$boxes} Cajas";
+            }
+
+            if ($units > 0) {
+                $text[] = "{$units} Und";
+            }
+
+            return $sign . (empty($text) ? '0 Und' : implode(' y ', $text));
+        }
+
+        if ($product->is_weighable) {
+            $unitCode = $product->unidadSunat?->codigo ?? '';
+
+            $suffix = match ($unitCode) {
+                'KGM' => 'Kg',
+                'LTR' => 'Lt',
+                'GLL' => 'Gal',
+                default => '',
+            };
+
+            return $sign . number_format($absoluteValue, 2) . " {$suffix}";
+        }
+
+        return $sign . number_format($absoluteValue, 0) . ' Und';
     }
 
     public static function form(Form $form): Form
@@ -136,20 +194,119 @@ class InventoryMovementResource extends Resource
             ]);
     }
 
+    public static function infolist(Infolist $infolist): Infolist
+    {
+        return $infolist
+            ->schema([
+                Section::make('Detalle del Movimiento')
+                    ->icon('heroicon-o-clipboard-document-list')
+                    ->description('Historial inmutable del stock generado por compras, ventas o ajustes.')
+                    ->schema([
+                        TextEntry::make('product.name')
+                            ->label('Producto')
+                            ->weight('black')
+                            ->icon('heroicon-o-cube')
+                            ->columnSpanFull(),
+
+                        TextEntry::make('batch.batch_number')
+                            ->label('Lote')
+                            ->badge()
+                            ->color('gray')
+                            ->placeholder('No aplica'),
+
+                        TextEntry::make('type')
+                            ->label('Tipo')
+                            ->badge()
+                            ->formatStateUsing(fn(string $state): string => $state === 'IN' ? 'INGRESO' : 'SALIDA')
+                            ->color(fn(string $state): string => $state === 'IN' ? 'success' : 'danger')
+                            ->icon(
+                                fn(string $state): string => $state === 'IN'
+                                    ? 'heroicon-m-arrow-down-right'
+                                    : 'heroicon-m-arrow-up-right'
+                            ),
+
+                        TextEntry::make('quantity')
+                            ->label('Cantidad')
+                            ->weight('black')
+                            ->color(fn(InventoryMovement $record): string => $record->type === 'IN' ? 'success' : 'danger')
+                            ->formatStateUsing(fn($state, InventoryMovement $record): string => self::formatInventoryQuantity($record, $state, true)),
+
+                        TextEntry::make('balance_after')
+                            ->label('Saldo posterior')
+                            ->weight('black')
+                            ->formatStateUsing(fn($state, InventoryMovement $record): string => self::formatInventoryQuantity($record, $state)),
+
+                        TextEntry::make('reason')
+                            ->label('Motivo')
+                            ->placeholder('Sin motivo'),
+
+                        TextEntry::make('user.name')
+                            ->label('Usuario')
+                            ->icon('heroicon-o-user')
+                            ->placeholder('No registrado'),
+
+                        TextEntry::make('created_at')
+                            ->label('Fecha y hora')
+                            ->dateTime('d/m/Y h:i A')
+                            ->icon('heroicon-o-clock'),
+
+                        TextEntry::make('notes')
+                            ->label('Notas / Referencia')
+                            ->placeholder('Sin notas')
+                            ->columnSpanFull(),
+                    ])
+                    ->columns([
+                        'default' => 1,
+                        'md' => 2,
+                    ]),
+            ]);
+    }
+
     public static function table(Table $table): Table
     {
         return $table
+            ->striped()
+            ->paginated([10, 25, 50, 100])
+            ->defaultPaginationPageOption(25)
+            ->persistSearchInSession()
+            ->persistFiltersInSession()
+            ->persistSortInSession()
+            ->recordUrl(null)
+            ->recordAction('view')
             ->columns([
+                Tables\Columns\TextColumn::make('mobile_summary')
+                    ->label('Movimiento')
+                    ->state(fn(InventoryMovement $record): string => $record->product?->name ?? 'Producto no disponible')
+                    ->description(function (InventoryMovement $record): string {
+                        $type = $record->type === 'IN' ? 'Ingreso' : 'Salida';
+                        $quantity = self::formatInventoryQuantity($record, $record->quantity, true);
+                        $date = $record->created_at?->format('d/m/Y H:i') ?? 'Sin fecha';
+
+                        return "{$type} · {$quantity} · {$date}";
+                    })
+                    ->icon(
+                        fn(InventoryMovement $record): string => $record->type === 'IN'
+                            ? 'heroicon-o-arrow-down-tray'
+                            : 'heroicon-o-arrow-up-tray'
+                    )
+                    ->color(fn(InventoryMovement $record): string => $record->type === 'IN' ? 'success' : 'danger')
+                    ->weight('black')
+                    ->wrap()
+                    ->searchable(['reason', 'notes'])
+                    ->hiddenFrom('md'),
+
                 Tables\Columns\TextColumn::make('created_at')
                     ->label('Fecha y Hora')
                     ->dateTime('d/m/Y H:i')
-                    ->sortable(),
+                    ->sortable()
+                    ->visibleFrom('md'),
 
                 Tables\Columns\TextColumn::make('product.name')
                     ->label('Producto')
                     ->searchable()
                     ->weight('bold')
-                    ->limit(30),
+                    ->limit(30)
+                    ->visibleFrom('md'),
 
                 // 🌟 LA MAGIA MULTI-TENANT: Columna exclusiva para Farmacias
                 Tables\Columns\TextColumn::make('batch.batch_number')
@@ -157,99 +314,36 @@ class InventoryMovementResource extends Resource
                     ->badge()
                     ->color('gray')
                     ->searchable()
-                    ->visible(fn() => \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features['has_lots'] ?? false),
+                    ->visible(fn() => \Illuminate\Support\Facades\Auth::user()->tenant->businessSector->features['has_lots'] ?? false)
+                    ->visibleFrom('xl'),
 
                 Tables\Columns\TextColumn::make('type')
                     ->label('Tipo')
                     ->badge()
                     ->formatStateUsing(fn(string $state): string => $state === 'IN' ? 'INGRESO' : 'SALIDA')
                     ->color(fn(string $state): string => $state === 'IN' ? 'success' : 'danger')
-                    ->icon(fn(string $state): string => $state === 'IN' ? 'heroicon-m-arrow-down-right' : 'heroicon-m-arrow-up-right'),
+                    ->icon(fn(string $state): string => $state === 'IN' ? 'heroicon-m-arrow-down-right' : 'heroicon-m-arrow-up-right')
+                    ->visibleFrom('md'),
 
                 Tables\Columns\TextColumn::make('quantity')
                     ->label('Cant.')
                     ->sortable()
                     ->weight('black')
-                    ->color(fn($record) => $record->type === 'IN' ? 'success' : 'danger')
-                    ->formatStateUsing(function ($state, $record) {
-                        $product = $record->product;
-                        if (!$product) return $state;
-
-                        $signo = $record->type === 'IN' ? '+' : '-';
-                        $valorAbsoluto = abs((float) $state);
-
-                        // Si es fraccionable (Farmacia)
-                        if ($product->is_fractionable && $product->units_per_box > 0) {
-                            $cajas = floor($valorAbsoluto);
-                            $fraccion = $valorAbsoluto - $cajas;
-                            $unidades = round($fraccion * $product->units_per_box);
-
-                            $texto = [];
-                            if ($cajas > 0) $texto[] = "{$cajas} Cajas";
-                            if ($unidades > 0) $texto[] = "{$unidades} Und";
-
-                            $resultado = empty($texto) ? '0 Und' : implode(' y ', $texto);
-                            return "{$signo} {$resultado}";
-                        }
-
-                        // Si es granel (Peso/Volumen)
-                        if ($product->is_weighable) {
-                            $codigoUnidad = $product->unidadSunat ? $product->unidadSunat->codigo : '';
-                            $sufijo = match ($codigoUnidad) {
-                                'KGM' => 'Kg',
-                                'LTR' => 'Lt',
-                                'GLL' => 'Gal',
-                                default => ''
-                            };
-                            return "{$signo} " . number_format($valorAbsoluto, 2) . " {$sufijo}";
-                        }
-
-                        // Normal
-                        return "{$signo} " . number_format($valorAbsoluto, 0) . ' Und';
-                    }),
+                    ->color(fn(InventoryMovement $record): string => $record->type === 'IN' ? 'success' : 'danger')
+                    ->formatStateUsing(fn($state, InventoryMovement $record): string => self::formatInventoryQuantity($record, $state, true))
+                    ->visibleFrom('md'),
 
                 Tables\Columns\TextColumn::make('balance_after')
                     ->label('Saldo')
                     ->sortable()
                     ->description('Stock final')
-                    ->formatStateUsing(function ($state, $record) {
-                        $product = $record->product;
-                        if (!$product) return $state;
-
-                        $valorAbsoluto = (float) $state;
-
-                        // Si es fraccionable (Farmacia)
-                        if ($product->is_fractionable && $product->units_per_box > 0) {
-                            $cajas = floor($valorAbsoluto);
-                            $fraccion = $valorAbsoluto - $cajas;
-                            $unidades = round($fraccion * $product->units_per_box);
-
-                            $texto = [];
-                            if ($cajas > 0) $texto[] = "{$cajas} Cajas";
-                            if ($unidades > 0) $texto[] = "{$unidades} Und";
-
-                            return empty($texto) ? '0 Und' : implode(' y ', $texto);
-                        }
-
-                        // Si es granel
-                        if ($product->is_weighable) {
-                            $codigoUnidad = $product->unidadSunat ? $product->unidadSunat->codigo : '';
-                            $sufijo = match ($codigoUnidad) {
-                                'KGM' => 'Kg',
-                                'LTR' => 'Lt',
-                                'GLL' => 'Gal',
-                                default => ''
-                            };
-                            return number_format($valorAbsoluto, 2) . " {$sufijo}";
-                        }
-
-                        // Normal
-                        return number_format($valorAbsoluto, 0) . ' Und';
-                    }),
+                    ->formatStateUsing(fn($state, InventoryMovement $record): string => self::formatInventoryQuantity($record, $state))
+                    ->visibleFrom('lg'),
 
                 Tables\Columns\TextColumn::make('reason')
                     ->label('Motivo')
-                    ->searchable(),
+                    ->searchable()
+                    ->visibleFrom('lg'),
 
                 Tables\Columns\TextColumn::make('user.name')
                     ->label('Usuario')
@@ -270,10 +364,16 @@ class InventoryMovementResource extends Resource
                     ->relationship('product', 'name')
                     ->searchable(),
             ])
+            ->filtersFormColumns([
+                'default' => 1,
+                'md' => 2,
+            ])
             ->actions([
                 Tables\Actions\ViewAction::make()
                     ->label('Ver detalles')
+                    ->tooltip('Ver detalles')
                     ->icon('heroicon-o-eye')
+                    ->iconButton()
                     ->color('info'),
             ])
             ->bulkActions([

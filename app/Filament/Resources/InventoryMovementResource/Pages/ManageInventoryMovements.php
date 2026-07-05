@@ -3,7 +3,6 @@
 namespace App\Filament\Resources\InventoryMovementResource\Pages;
 
 use App\Filament\Resources\InventoryMovementResource;
-use Filament\Actions;
 use Filament\Resources\Pages\ManageRecords;
 
 class ManageInventoryMovements extends ManageRecords
@@ -12,8 +11,6 @@ class ManageInventoryMovements extends ManageRecords
 
     protected function getHeaderActions(): array
     {
-        return [
-            Actions\CreateAction::make(),
-        ];
+        return [];
     }
 }
