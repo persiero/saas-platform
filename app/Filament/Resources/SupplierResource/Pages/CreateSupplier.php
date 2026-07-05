@@ -7,7 +7,6 @@ use Filament\Actions;
 use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Support\Facades\Auth;
 use Filament\Notifications\Notification;
-use Filament\Actions\Action;
 
 class CreateSupplier extends CreateRecord
 {
@@ -23,20 +22,31 @@ class CreateSupplier extends CreateRecord
         return $this->getResource()::getUrl('index');
     }
 
+    protected function getHeaderActions(): array
+    {
+        return [
+            Actions\Action::make('back')
+                ->label('Volver a la lista')
+                ->icon('heroicon-o-arrow-left')
+                ->color('gray')
+                // Apuntamos la URL de regreso a la ruta 'index' (la tabla principal)
+                ->url(fn() => $this->getResource()::getUrl('index')),
+        ];
+    }
+
     protected function getFormActions(): array
     {
         return [
-            Action::make('create')
-                ->label('Registrar')
-                ->submit('create'), // importante
+            $this->getCreateFormAction()
+                ->label('Registrar Proveedor')
+                ->icon('heroicon-o-check-circle'),
 
-            Action::make('createAnother')
-                ->label('Registrar y crear otra')
-                ->submit('createAnother'),
+            $this->getCreateAnotherFormAction()
+                ->label('Registrar y crear otro')
+                ->icon('heroicon-o-plus-circle'),
 
-            Action::make('cancel')
-                ->label('Cancelar')
-                ->color('gray'),
+            $this->getCancelFormAction()
+                ->label('Cancelar'),
         ];
     }
 

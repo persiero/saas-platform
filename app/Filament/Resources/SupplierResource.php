@@ -14,6 +14,9 @@ use Filament\Tables\Filters\TrashedFilter;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Illuminate\Support\Facades\Auth;
 use Percy\Core\Services\Tenants\TenantPlanService;
+use Filament\Infolists\Infolist;
+use Filament\Infolists\Components\Section;
+use Filament\Infolists\Components\TextEntry;
 
 class SupplierResource extends Resource
 {
@@ -106,7 +109,7 @@ class SupplierResource extends Resource
                 // COLUMNA IZQUIERDA (Principal)
                 Forms\Components\Group::make()->schema([
                     Forms\Components\Section::make('Identidad Comercial')
-                        ->description('Datos principales de la empresa')
+                        ->description('Datos principales del proveedor para compras e inventario.')
                         ->icon('heroicon-o-building-storefront')
                         ->schema([
                             Forms\Components\TextInput::make('name')
@@ -114,7 +117,7 @@ class SupplierResource extends Resource
                                 ->required()
                                 ->maxLength(255)
                                 ->placeholder('Ej: Distribuidora ABC S.A.C.')
-                                ->columnSpan(2),
+                                ->columnSpanFull(),
 
                             Forms\Components\TextInput::make('ruc')
                                 ->label('RUC')
@@ -123,8 +126,11 @@ class SupplierResource extends Resource
                                 ->numeric()
                                 ->placeholder('20123456789')
                                 ->prefixIcon('heroicon-o-identification')
-                                ->columnSpan(2),
-                        ])->columns(2),
+                                ->columnSpanFull(),
+                        ])->columns([
+                            'default' => 1,
+                            'md' => 2,
+                        ]),
 
                     Forms\Components\Section::make('Información de Contacto')
                         ->description('Medios para comunicarte con el proveedor')
@@ -148,37 +154,139 @@ class SupplierResource extends Resource
 
                             Forms\Components\Textarea::make('address')
                                 ->label('Dirección')
-                                ->rows(3)
+                                ->rows(2)
                                 ->placeholder('Av. Principal 123, Distrito, Provincia, Departamento')
                                 ->columnSpanFull(),
-                        ])->columns(2),
-                ])->columnSpan(['lg' => 2]),
+                        ])->columns([
+                            'default' => 1,
+                            'md' => 2,
+                        ]),
+                ])->columnSpan([
+                    'default' => 1,
+                    'xl' => 2,
+                ]),
 
                 // COLUMNA DERECHA (Barra Lateral)
                 Forms\Components\Group::make()->schema([
                     Forms\Components\Section::make('Estado')
+                        ->icon('heroicon-o-check-circle')
+                        ->description('Controla si el proveedor estará disponible al registrar compras.')
+                        ->extraAttributes(['class' => 'xl:sticky xl:top-20'])
                         ->schema([
                             Forms\Components\Toggle::make('active')
                                 ->label('Proveedor Activo')
                                 ->default(true)
-                                ->helperText('Desactiva si ya no trabajas con este proveedor')
+                                ->hintIcon(
+                                    'heroicon-m-question-mark-circle',
+                                    tooltip: 'Desactiva este proveedor si ya no trabajas con él. No aparecerá como opción principal en compras.'
+                                ),
                         ]),
-                ])->columnSpan(['lg' => 1]),
+                ])->columnSpan([
+                    'default' => 1,
+                    'xl' => 1,
+                ]),
             ])
-            ->columns(3);
+            ->columns([
+                'default' => 1,
+                'xl' => 3,
+            ]);
+    }
+
+    public static function infolist(Infolist $infolist): Infolist
+    {
+        return $infolist
+            ->schema([
+                Section::make('Detalle del Proveedor')
+                    ->icon('heroicon-o-building-office-2')
+                    ->description('Información registrada para compras, inventario y contacto.')
+                    ->schema([
+                        TextEntry::make('name')
+                            ->label('Proveedor')
+                            ->weight('black')
+                            ->size(TextEntry\TextEntrySize::Large)
+                            ->icon('heroicon-o-building-office-2')
+                            ->columnSpanFull(),
+
+                        TextEntry::make('ruc')
+                            ->label('RUC')
+                            ->copyable()
+                            ->copyMessage('RUC copiado')
+                            ->placeholder('Sin RUC'),
+
+                        TextEntry::make('active')
+                            ->label('Estado')
+                            ->formatStateUsing(fn(bool $state): string => $state ? 'Activo' : 'Inactivo')
+                            ->badge()
+                            ->color(fn(bool $state): string => $state ? 'success' : 'danger'),
+
+                        TextEntry::make('phone')
+                            ->label('Teléfono')
+                            ->icon('heroicon-o-phone')
+                            ->copyable()
+                            ->copyMessage('Teléfono copiado')
+                            ->placeholder('Sin teléfono'),
+
+                        TextEntry::make('email')
+                            ->label('Correo electrónico')
+                            ->icon('heroicon-o-envelope')
+                            ->copyable()
+                            ->copyMessage('Correo copiado')
+                            ->placeholder('Sin correo'),
+
+                        TextEntry::make('address')
+                            ->label('Dirección')
+                            ->icon('heroicon-o-map-pin')
+                            ->placeholder('Sin dirección')
+                            ->columnSpanFull(),
+
+                        TextEntry::make('created_at')
+                            ->label('Registrado')
+                            ->dateTime('d/m/Y h:i A')
+                            ->icon('heroicon-o-calendar'),
+                    ])
+                    ->columns([
+                        'default' => 1,
+                        'md' => 2,
+                    ]),
+            ]);
     }
 
     public static function table(Table $table): Table
     {
         return $table
+            ->striped()
+            ->paginated([10, 25, 50, 100])
+            ->defaultPaginationPageOption(25)
+            ->persistSearchInSession()
+            ->persistFiltersInSession()
+            ->persistSortInSession()
+            ->recordUrl(null)
+            ->recordAction('view')
             ->columns([
+                Tables\Columns\TextColumn::make('mobile_summary')
+                    ->label('Proveedor')
+                    ->state(fn(Supplier $record): string => $record->name)
+                    ->description(function (Supplier $record): string {
+                        $ruc = $record->ruc ? "RUC: {$record->ruc}" : 'Sin RUC';
+                        $telefono = $record->phone ?: 'Sin teléfono';
+                        $estado = $record->active ? 'Activo' : 'Inactivo';
+
+                        return "{$ruc} · {$telefono} · {$estado}";
+                    })
+                    ->icon('heroicon-o-building-office-2')
+                    ->weight('black')
+                    ->wrap()
+                    ->searchable(['name', 'ruc', 'phone', 'email'])
+                    ->hiddenFrom('md'),
+
                 Tables\Columns\TextColumn::make('name')
                     ->label('Proveedor')
                     ->searchable()
                     ->sortable()
                     ->weight('bold')
                     ->icon('heroicon-o-building-office-2')
-                    ->description(fn(Supplier $record): ?string => $record->ruc ? "RUC: {$record->ruc}" : null),
+                    ->description(fn(Supplier $record): ?string => $record->ruc ? "RUC: {$record->ruc}" : null)
+                    ->visibleFrom('md'),
 
                 Tables\Columns\TextColumn::make('phone')
                     ->label('Teléfono')
@@ -187,7 +295,8 @@ class SupplierResource extends Resource
                     ->placeholder('Sin teléfono')
                     ->copyable()
                     ->copyMessage('Teléfono copiado')
-                    ->copyMessageDuration(1500),
+                    ->copyMessageDuration(1500)
+                    ->visibleFrom('lg'),
 
                 Tables\Columns\TextColumn::make('email')
                     ->label('Correo Electrónico')
@@ -197,7 +306,8 @@ class SupplierResource extends Resource
                     ->copyable()
                     ->copyMessage('Email copiado')
                     ->copyMessageDuration(1500)
-                    ->limit(30),
+                    ->limit(30)
+                    ->visibleFrom('lg'),
 
                 Tables\Columns\TextColumn::make('address')
                     ->label('Dirección')
@@ -206,11 +316,13 @@ class SupplierResource extends Resource
                     ->searchable()
                     ->placeholder('Sin dirección')
                     ->tooltip(fn(Supplier $record): ?string => $record->address)
-                    ->toggleable(isToggledHiddenByDefault: true),
+                    ->toggleable(isToggledHiddenByDefault: true)
+                    ->visibleFrom('xl'),
 
                 Tables\Columns\ToggleColumn::make('active')
                     ->label('Activo')
-                    ->sortable(),
+                    ->sortable()
+                    ->visibleFrom('md'),
 
                 Tables\Columns\TextColumn::make('created_at')
                     ->label('Registrado')
@@ -257,9 +369,11 @@ class SupplierResource extends Resource
                         ->modalHeading('Restaurar Proveedor')
                         ->modalDescription('¿Deseas rescatar este proveedor de la papelera? Volverá a estar visible y activo en el sistema.'),
 
-                ])->label('Acciones')
-                    ->icon('heroicon-o-ellipsis-vertical')
-                    ->button()
+                ])
+                    ->label('Acciones')
+                    ->tooltip('Acciones')
+                    ->icon('heroicon-m-ellipsis-vertical')
+                    ->iconButton()
                     ->color('gray'),
             ])
             ->bulkActions([

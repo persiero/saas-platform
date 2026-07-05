@@ -48,8 +48,13 @@ class CreateProduct extends CreateRecord
     {
         return [
             $this->getCreateFormAction()
-                ->label('Guardar Producto')
+                ->label('Registrar Producto')
                 ->icon('heroicon-o-check-circle'),
+
+            $this->getCreateAnotherFormAction()
+                ->label('Registrar y crear otro')
+                ->icon('heroicon-o-plus-circle'),
+
             $this->getCancelFormAction()
                 ->label('Cancelar'),
         ];

@@ -20,8 +20,11 @@ class ListSuppliers extends ListRecords
         return [
             Actions\CreateAction::make()
                 ->label('Nuevo Proveedor')
-                ->icon('heroicon-o-plus')
-                ->color('primary'),
+                ->icon('heroicon-o-plus-circle')
+                ->color('primary')
+                ->slideOver()
+                ->modalWidth('3xl')
+                ->createAnother(false),
         ];
     }
 }

@@ -329,6 +329,8 @@ class CustomerResource extends Resource
             ->persistSearchInSession()
             ->persistFiltersInSession()
             ->persistSortInSession()
+            ->recordUrl(null)
+            ->recordAction('view')
             ->columns([
                 Tables\Columns\TextColumn::make('mobile_summary')
                     ->label('Cliente')
