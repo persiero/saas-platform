@@ -17,7 +17,10 @@ class ListCustomers extends ListRecords
         return [
             Actions\CreateAction::make()
                 ->label('Nuevo Cliente')
-                ->icon('heroicon-o-plus-circle'),
+                ->icon('heroicon-o-plus-circle')
+                ->slideOver()
+                ->modalWidth('3xl')
+                ->createAnother(false),
         ];
     }
 }

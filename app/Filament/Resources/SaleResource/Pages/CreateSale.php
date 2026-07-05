@@ -18,6 +18,18 @@ class CreateSale extends CreateRecord
 
     protected ?string $maxContentWidth = 'full';
 
+    protected function getHeaderActions(): array
+    {
+        return [
+            Actions\Action::make('back')
+                ->label('Volver a la lista')
+                ->icon('heroicon-o-arrow-left')
+                ->color('gray')
+                // Apuntamos la URL de regreso a la ruta 'index' (la tabla principal)
+                ->url(fn() => $this->getResource()::getUrl('index')),
+        ];
+    }
+
     public function mount(): void
     {
         parent::mount();

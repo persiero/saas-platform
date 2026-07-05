@@ -13,6 +13,9 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Filament\Tables\Filters\TrashedFilter;
+use Filament\Infolists\Infolist;
+use Filament\Infolists\Components\Section;
+use Filament\Infolists\Components\TextEntry;
 
 class CustomerResource extends Resource
 {
@@ -97,7 +100,7 @@ class CustomerResource extends Resource
         return $form
             ->schema([
                 Forms\Components\Section::make('Identidad del Cliente')
-                    ->description('Datos personales o comerciales')
+                    ->description('Datos principales para boletas, facturas y ventas.')
                     ->icon('heroicon-o-user')
                     ->schema([
                         Forms\Components\Select::make('document_type')
@@ -116,20 +119,20 @@ class CustomerResource extends Resource
                         Forms\Components\TextInput::make('document_number')
                             ->label('Número')
                             // 🌟 Validación Dinámica: Longitud máxima
-                            ->maxLength(fn (\Filament\Forms\Get $get) => match ($get('document_type')) {
+                            ->maxLength(fn(\Filament\Forms\Get $get) => match ($get('document_type')) {
                                 'DNI' => 8,
                                 'RUC' => 11,
                                 default => 15,
                             })
                             // 🌟 Validación Dinámica: Longitud mínima estricta
-                            ->minLength(fn (\Filament\Forms\Get $get) => match ($get('document_type')) {
+                            ->minLength(fn(\Filament\Forms\Get $get) => match ($get('document_type')) {
                                 'DNI' => 8,
                                 'RUC' => 11,
                                 default => null,
                             })
                             // 🌟 Forzar teclado numérico
-                            ->numeric(fn (\Filament\Forms\Get $get) => in_array($get('document_type'), ['DNI', 'RUC']))
-                            ->placeholder(fn (\Filament\Forms\Get $get) => $get('document_type') === 'RUC' ? 'Ej: 20... (11 dígitos)' : 'Ej: 12345678')
+                            ->numeric(fn(\Filament\Forms\Get $get) => in_array($get('document_type'), ['DNI', 'RUC']))
+                            ->placeholder(fn(\Filament\Forms\Get $get) => $get('document_type') === 'RUC' ? 'Ej: 20... (11 dígitos)' : 'Ej: 12345678')
                             ->required()
                             ->columnSpan(1)
                             // 🌟 MAGIA: Botón de Decolecta (Solo visible en RUC)
@@ -138,7 +141,7 @@ class CustomerResource extends Resource
                                     ->icon('heroicon-m-magnifying-glass')
                                     ->color('primary')
                                     ->tooltip('Buscar RUC (Decolecta)')
-                                    ->visible(fn (\Filament\Forms\Get $get) => $get('document_type') === 'RUC')
+                                    ->visible(fn(\Filament\Forms\Get $get) => $get('document_type') === 'RUC')
                                     ->action(function ($state, \Filament\Forms\Set $set) {
                                         if (blank($state) || strlen($state) !== 11) {
                                             \Filament\Notifications\Notification::make()
@@ -182,7 +185,6 @@ class CustomerResource extends Resource
                                                 $fullAddress = preg_replace('/\s+/', ' ', $fullAddress);
 
                                                 $set('address', $fullAddress);
-
                                             } else {
                                                 \Filament\Notifications\Notification::make()
                                                     ->danger()
@@ -205,8 +207,11 @@ class CustomerResource extends Resource
                             ->required()
                             ->maxLength(150)
                             ->placeholder('Ej: Juan Pérez o Empresa SAC')
-                            ->columnSpan(2),
-                    ])->columns(2),
+                            ->columnSpanFull(),
+                    ])->columns([
+                        'default' => 1,
+                        'md' => 2,
+                    ]),
 
                 Forms\Components\Section::make('Datos de Contacto')
                     ->description('Opcional: Medios para envío de comprobantes')
@@ -235,15 +240,121 @@ class CustomerResource extends Resource
                             ->placeholder('Ej: Av. Principal 123, Trujillo')
                             ->columnSpanFull(),
                     ])
-                    ->columns(2)
+                    ->columns([
+                        'default' => 1,
+                        'md' => 2,
+                    ])
                     ->collapsible(),
+            ]);
+    }
+
+    public static function infolist(Infolist $infolist): Infolist
+    {
+        return $infolist
+            ->schema([
+                Section::make('Detalle del Cliente')
+                    ->icon('heroicon-o-user')
+                    ->description('Información registrada para ventas, boletas y facturas.')
+                    ->schema([
+                        TextEntry::make('name')
+                            ->label('Cliente')
+                            ->weight('black')
+                            ->size(TextEntry\TextEntrySize::Large)
+                            ->icon(fn(Customer $record): string => match ($record->document_type) {
+                                'RUC', '6' => 'heroicon-o-building-office-2',
+                                default => 'heroicon-o-user',
+                            })
+                            ->columnSpanFull(),
+
+                        TextEntry::make('document_type')
+                            ->label('Tipo de documento')
+                            ->badge()
+                            ->formatStateUsing(fn(?string $state): string => match ($state) {
+                                '1' => 'DNI',
+                                '6' => 'RUC',
+                                '4' => 'CE',
+                                default => $state ?? 'No registrado',
+                            })
+                            ->color(fn(?string $state): string => match ($state) {
+                                'RUC', '6' => 'info',
+                                'DNI', '1' => 'gray',
+                                'CE', '4' => 'warning',
+                                default => 'gray',
+                            }),
+
+                        TextEntry::make('document_number')
+                            ->label('Número de documento')
+                            ->copyable()
+                            ->copyMessage('Documento copiado')
+                            ->placeholder('No registrado'),
+
+                        TextEntry::make('phone')
+                            ->label('Teléfono')
+                            ->icon('heroicon-o-phone')
+                            ->copyable()
+                            ->copyMessage('Teléfono copiado')
+                            ->placeholder('Sin teléfono'),
+
+                        TextEntry::make('email')
+                            ->label('Correo electrónico')
+                            ->icon('heroicon-o-envelope')
+                            ->copyable()
+                            ->copyMessage('Correo copiado')
+                            ->placeholder('Sin correo'),
+
+                        TextEntry::make('address')
+                            ->label('Dirección')
+                            ->icon('heroicon-o-map-pin')
+                            ->placeholder('Sin dirección')
+                            ->columnSpanFull(),
+
+                        TextEntry::make('created_at')
+                            ->label('Registrado')
+                            ->dateTime('d/m/Y h:i A')
+                            ->icon('heroicon-o-calendar'),
+                    ])
+                    ->columns([
+                        'default' => 1,
+                        'md' => 2,
+                    ]),
             ]);
     }
 
     public static function table(Table $table): Table
     {
         return $table
+            ->striped()
+            ->paginated([10, 25, 50, 100])
+            ->defaultPaginationPageOption(25)
+            ->persistSearchInSession()
+            ->persistFiltersInSession()
+            ->persistSortInSession()
             ->columns([
+                Tables\Columns\TextColumn::make('mobile_summary')
+                    ->label('Cliente')
+                    ->state(fn(Customer $record): string => $record->name)
+                    ->description(function (Customer $record): string {
+                        $tipo = match ($record->document_type) {
+                            '1' => 'DNI',
+                            '6' => 'RUC',
+                            '4' => 'CE',
+                            default => $record->document_type ?? 'Documento',
+                        };
+
+                        $documento = $record->document_number ?: 'Sin número';
+                        $telefono = $record->phone ?: 'Sin teléfono';
+
+                        return "{$tipo}: {$documento} · {$telefono}";
+                    })
+                    ->icon(fn(Customer $record): string => match ($record->document_type) {
+                        'RUC', '6' => 'heroicon-o-building-office-2',
+                        default => 'heroicon-o-user',
+                    })
+                    ->weight('black')
+                    ->wrap()
+                    ->searchable(['name', 'document_number', 'phone', 'email'])
+                    ->hiddenFrom('md'),
+
                 Tables\Columns\TextColumn::make('name')
                     ->label('Cliente')
                     ->searchable()
@@ -252,36 +363,39 @@ class CustomerResource extends Resource
                     // 🌟 MAGIA UI: Limita a 40 caracteres y pone "..."
                     ->limit(40)
                     // 🌟 MAGIA UX: Muestra el nombre completo al pasar el mouse
-                    ->tooltip(fn (Customer $record): string => $record->name)
-                    ->icon(fn (Customer $record): string => match ($record->document_type) {
+                    ->tooltip(fn(Customer $record): string => $record->name)
+                    ->icon(fn(Customer $record): string => match ($record->document_type) {
                         'RUC', '6' => 'heroicon-o-building-office-2', // Icono de edificio para empresas
                         default => 'heroicon-o-user', // Icono de persona para DNI, CE, etc.
                     })
-                    ->description(fn (Customer $record): ?string => $record->email),
+                    ->description(fn(Customer $record): ?string => $record->email)
+                    ->visibleFrom('md'),
 
                 Tables\Columns\TextColumn::make('document_type')
                     ->label('Documento')
                     ->badge()
-                    ->formatStateUsing(fn (string $state): string => match ($state) {
+                    ->formatStateUsing(fn(string $state): string => match ($state) {
                         '1' => 'DNI',
                         '6' => 'RUC',
                         '4' => 'CE',
                         default => $state,
                     })
-                    ->color(fn (string $state): string => match ($state) {
+                    ->color(fn(string $state): string => match ($state) {
                         'RUC', '6'  => 'info',
                         'DNI', '1'  => 'gray',
                         'CE', '4' => 'warning',
                         default => 'gray',
                     })
-                    ->description(fn (Customer $record): ?string => $record->document_number),
+                    ->description(fn(Customer $record): ?string => $record->document_number)
+                    ->visibleFrom('md'),
 
                 Tables\Columns\TextColumn::make('phone')
                     ->label('Teléfono')
                     ->icon('heroicon-o-phone')
                     ->searchable()
                     ->placeholder('Sin teléfono')
-                    ->toggleable(),
+                    ->toggleable()
+                    ->visibleFrom('lg'),
 
                 Tables\Columns\TextColumn::make('address')
                     ->label('Dirección')
@@ -289,8 +403,9 @@ class CustomerResource extends Resource
                     ->icon('heroicon-o-map-pin')
                     ->searchable()
                     ->placeholder('Sin dirección')
-                    ->tooltip(fn (Customer $record): ?string => $record->address)
-                    ->toggleable(),
+                    ->tooltip(fn(Customer $record): ?string => $record->address)
+                    ->toggleable()
+                    ->visibleFrom('xl'),
 
                 Tables\Columns\TextColumn::make('created_at')
                     ->label('Registrado')
@@ -313,6 +428,10 @@ class CustomerResource extends Resource
                     ->multiple(),
 
                 TrashedFilter::make(),
+            ])
+            ->filtersFormColumns([
+                'default' => 1,
+                'md' => 2,
             ])
             ->actions([
                 Tables\Actions\ActionGroup::make([
@@ -342,24 +461,25 @@ class CustomerResource extends Resource
                         ->modalDescription('¿Deseas rescatar este cliente de la papelera? Volverá a estar visible y activo en el sistema.'),
 
                 ])
-                ->label('Acciones')
-                ->icon('heroicon-o-ellipsis-vertical')
-                ->button()
-                ->color('gray'),
-        ])
-        ->bulkActions([
-            Tables\Actions\BulkActionGroup::make([
-                Tables\Actions\DeleteBulkAction::make()
-                    ->label('Eliminar seleccionados')
-                    ->requiresConfirmation()
-                    ->modalHeading('Eliminar Clientes')
-                    ->modalDescription('¿Estás seguro de que deseas eliminar los clientes seleccionados?'),
-                Tables\Actions\RestoreBulkAction::make(), // 🌟 Restaurar varios a la vez
-            ]),
-        ])
-        ->emptyStateHeading('Sin clientes registrados')
-        ->emptyStateDescription('Comienza agregando tu primer cliente')
-        ->emptyStateIcon('heroicon-o-users');
+                    ->label('Acciones')
+                    ->tooltip('Acciones')
+                    ->icon('heroicon-m-ellipsis-vertical')
+                    ->iconButton()
+                    ->color('gray'),
+            ])
+            ->bulkActions([
+                Tables\Actions\BulkActionGroup::make([
+                    Tables\Actions\DeleteBulkAction::make()
+                        ->label('Eliminar seleccionados')
+                        ->requiresConfirmation()
+                        ->modalHeading('Eliminar Clientes')
+                        ->modalDescription('¿Estás seguro de que deseas eliminar los clientes seleccionados?'),
+                    Tables\Actions\RestoreBulkAction::make(), // 🌟 Restaurar varios a la vez
+                ]),
+            ])
+            ->emptyStateHeading('Sin clientes registrados')
+            ->emptyStateDescription('Comienza agregando tu primer cliente')
+            ->emptyStateIcon('heroicon-o-users');
     }
 
     public static function getRelations(): array
