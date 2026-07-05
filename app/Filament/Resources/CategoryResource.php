@@ -15,6 +15,9 @@ use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Filament\Tables\Filters\TrashedFilter;
 use Illuminate\Support\Facades\Auth;
 use Percy\Core\Services\Tenants\TenantPlanService;
+use Filament\Infolists\Infolist;
+use Filament\Infolists\Components\Section;
+use Filament\Infolists\Components\TextEntry;
 
 class CategoryResource extends Resource
 {
@@ -103,45 +106,119 @@ class CategoryResource extends Resource
     {
         return $form
             ->schema([
-                Forms\Components\TextInput::make('name')
-                    ->label('Nombre de Categoría')
-                    ->required()
-                    ->maxLength(150)
-                    ->placeholder('Ej: Bebidas, Comidas, Postres')
-                    ->prefixIcon('heroicon-o-tag')
-                    ->columnSpan(2),
+                Forms\Components\Section::make('Información de la Categoría')
+                    ->description('Organiza tus productos o servicios por grupos.')
+                    ->icon('heroicon-o-tag')
+                    ->schema([
+                        Forms\Components\TextInput::make('name')
+                            ->label('Nombre de Categoría')
+                            ->required()
+                            ->maxLength(150)
+                            ->placeholder('Ej: Bebidas, Comidas, Postres')
+                            ->prefixIcon('heroicon-o-tag')
+                            ->columnSpanFull(),
 
-                Forms\Components\Textarea::make('description')
-                    ->label('Descripción')
-                    ->maxLength(255)
-                    ->rows(3)
-                    ->placeholder('Descripción opcional de la categoría')
-                    ->columnSpan(2),
+                        Forms\Components\Textarea::make('description')
+                            ->label('Descripción')
+                            ->maxLength(255)
+                            ->rows(2)
+                            ->placeholder('Descripción opcional de la categoría')
+                            ->columnSpanFull(),
 
-                Forms\Components\Toggle::make('active')
-                    ->label('¿Categoría Activa?')
-                    ->helperText('Las categorías inactivas no aparecerán en los formularios')
-                    ->default(true)
-                    ->inline(false)
-                    ->columnSpan(2),
-            ])->columns(2);
+                        Forms\Components\Toggle::make('active')
+                            ->label('Categoría activa')
+                            ->default(true)
+                            ->inline(false)
+                            ->hintIcon(
+                                'heroicon-m-question-mark-circle',
+                                tooltip: 'Las categorías inactivas no aparecerán como opción principal en productos.'
+                            )
+                            ->columnSpanFull(),
+                    ])
+                    ->columns([
+                        'default' => 1,
+                        'md' => 2,
+                    ]),
+            ]);
+    }
+
+    public static function infolist(Infolist $infolist): Infolist
+    {
+        return $infolist
+            ->schema([
+                Section::make('Detalle de la Categoría')
+                    ->icon('heroicon-o-tag')
+                    ->description('Información registrada para organizar productos y servicios.')
+                    ->schema([
+                        TextEntry::make('name')
+                            ->label('Categoría')
+                            ->weight('black')
+                            ->icon('heroicon-o-tag')
+                            ->columnSpanFull(),
+
+                        TextEntry::make('active')
+                            ->label('Estado')
+                            ->formatStateUsing(fn(bool $state): string => $state ? 'Activa' : 'Inactiva')
+                            ->badge()
+                            ->color(fn(bool $state): string => $state ? 'success' : 'danger'),
+
+                        TextEntry::make('created_at')
+                            ->label('Creada')
+                            ->dateTime('d/m/Y h:i A')
+                            ->icon('heroicon-o-calendar'),
+
+                        TextEntry::make('description')
+                            ->label('Descripción')
+                            ->placeholder('Sin descripción')
+                            ->columnSpanFull(),
+                    ])
+                    ->columns([
+                        'default' => 1,
+                        'md' => 2,
+                    ]),
+            ]);
     }
 
     public static function table(Table $table): Table
     {
         return $table
+            ->striped()
+            ->paginated([10, 25, 50, 100])
+            ->defaultPaginationPageOption(25)
+            ->persistSearchInSession()
+            ->persistFiltersInSession()
+            ->persistSortInSession()
+            ->recordUrl(null)
+            ->recordAction('view')
             ->columns([
+                Tables\Columns\TextColumn::make('mobile_summary')
+                    ->label('Categoría')
+                    ->state(fn(Category $record): string => $record->name)
+                    ->description(function (Category $record): string {
+                        $estado = $record->active ? 'Activa' : 'Inactiva';
+                        $descripcion = $record->description ?: 'Sin descripción';
+
+                        return "{$estado} · {$descripcion}";
+                    })
+                    ->icon('heroicon-o-tag')
+                    ->weight('black')
+                    ->wrap()
+                    ->searchable(['name', 'description'])
+                    ->hiddenFrom('md'),
+
                 Tables\Columns\TextColumn::make('name')
                     ->label('Categoría')
                     ->searchable()
                     ->sortable()
                     ->weight('bold')
                     ->icon('heroicon-o-tag')
-                    ->description(fn(Category $record): ?string => $record->description),
+                    ->description(fn(Category $record): ?string => $record->description)
+                    ->visibleFrom('md'),
 
                 Tables\Columns\ToggleColumn::make('active')
                     ->label('Activo')
-                    ->sortable(),
+                    ->sortable()
+                    ->visibleFrom('md'),
 
                 Tables\Columns\TextColumn::make('created_at')
                     ->label('Creada')
@@ -190,8 +267,9 @@ class CategoryResource extends Resource
                         ->modalDescription('¿Deseas rescatar esta categoría de la papelera? Volverá a estar visible y activo en el sistema.'),
                 ])
                     ->label('Acciones')
-                    ->icon('heroicon-o-ellipsis-vertical')
-                    ->button()
+                    ->tooltip('Acciones')
+                    ->icon('heroicon-m-ellipsis-vertical')
+                    ->iconButton()
                     ->color('gray'),
             ])
             ->bulkActions([

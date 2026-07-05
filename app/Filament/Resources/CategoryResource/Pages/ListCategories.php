@@ -18,8 +18,10 @@ class ListCategories extends ListRecords
             Actions\CreateAction::make()
                 ->label('Nueva Categoría')
                 ->icon('heroicon-o-plus-circle')
-                ->modalHeading('Crear Categoría') // Título del modal
-                ->slideOver(), // ¡OPCIONAL! Si usas slideOver(), se abrirá un panel lateral en lugar de un cuadro en el centro. ¡Se ve muy pro!
+                ->modalHeading('Crear Categoría')
+                ->slideOver()
+                ->modalWidth('2xl')
+                ->createAnother(false), // ¡OPCIONAL! Si usas slideOver(), se abrirá un panel lateral en lugar de un cuadro en el centro. ¡Se ve muy pro!
         ];
     }
 }
