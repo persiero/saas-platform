@@ -35,7 +35,10 @@ class CashRegisterResource extends Resource
         $user = Auth::user();
 
         $query = parent::getEloquentQuery()
-            ->with(['user']);
+            ->with([
+                'user',
+                'closedBy',
+            ]);
 
         if (!$user?->isSuperAdmin()) {
             $query->where('tenant_id', $user?->tenant_id);
@@ -63,7 +66,7 @@ class CashRegisterResource extends Resource
                     ->prefix('S/')
                     ->default(0)
                     ->helperText('Dinero físico en caja al iniciar el turno.')
-                    ->disabled(fn ($record) => $record && $record->status === 'closed')
+                    ->disabled(fn($record) => $record && $record->status === 'closed')
                     ->columnSpanFull(),
 
                 // Ocultamos los demás campos en el formulario, ya que se llenan solos o en el cierre
@@ -75,16 +78,44 @@ class CashRegisterResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
-            ->recordClasses(fn (CashRegister $record) => match ($record->status) {
+            ->striped()
+            ->paginated([10, 25, 50, 100])
+            ->defaultPaginationPageOption(25)
+            ->persistSearchInSession()
+            ->persistFiltersInSession()
+            ->persistSortInSession()
+            ->recordUrl(fn(CashRegister $record): string => self::getUrl('view', ['record' => $record]))
+            ->recordClasses(fn(CashRegister $record) => match ($record->status) {
                 'open' => 'bg-success-50 dark:bg-success-900/20 border-l-4 border-success-600', // Resalta la caja abierta en verde suave
                 default => null,
             })
             ->columns([
+                Tables\Columns\TextColumn::make('mobile_summary')
+                    ->label('Caja')
+                    ->state(fn(CashRegister $record): string => $record->user?->name ?? 'Usuario no registrado')
+                    ->description(function (CashRegister $record): string {
+                        $estado = $record->status === 'open' ? 'Abierta' : 'Cerrada';
+                        $apertura = $record->opened_at?->format('d/m/Y H:i') ?? 'Sin apertura';
+                        $monto = 'S/ ' . number_format((float) $record->opening_amount, 2);
+
+                        return "{$estado} · {$apertura} · Inicial: {$monto}";
+                    })
+                    ->icon(
+                        fn(CashRegister $record): string => $record->status === 'open'
+                            ? 'heroicon-o-lock-open'
+                            : 'heroicon-o-lock-closed'
+                    )
+                    ->color(fn(CashRegister $record): string => $record->status === 'open' ? 'success' : 'gray')
+                    ->weight('black')
+                    ->wrap()
+                    ->hiddenFrom('md'),
+
                 Tables\Columns\TextColumn::make('user.name')
                     ->label('Usuario')
                     ->searchable()
                     ->icon('heroicon-o-user')
-                    ->weight('bold'),
+                    ->weight('bold')
+                    ->visibleFrom('md'),
 
                 Tables\Columns\TextColumn::make('opened_at')
                     ->label('Apertura')
@@ -92,13 +123,15 @@ class CashRegisterResource extends Resource
                     ->sortable()
                     ->icon('heroicon-o-calendar')
                     ->since()
-                    ->description(fn (CashRegister $record): string => $record->opened_at->format('d/m/Y H:i')),
+                    ->description(fn(CashRegister $record): string => $record->opened_at->format('d/m/Y H:i'))
+                    ->visibleFrom('md'),
 
                 Tables\Columns\TextColumn::make('opening_amount')
                     ->label('Monto Inicial')
                     ->money('PEN')
                     ->icon('heroicon-o-banknotes')
-                    ->weight('semibold'),
+                    ->weight('semibold')
+                    ->visibleFrom('lg'),
 
                 Tables\Columns\TextColumn::make('closed_at')
                     ->label('Cierre')
@@ -106,7 +139,8 @@ class CashRegisterResource extends Resource
                     ->sortable()
                     ->icon('heroicon-o-lock-closed')
                     ->placeholder('Aún abierta')
-                    ->toggleable(),
+                    ->toggleable()
+                    ->visibleFrom('xl'),
 
                 Tables\Columns\TextColumn::make('closing_amount')
                     ->label('Monto Final')
@@ -114,18 +148,20 @@ class CashRegisterResource extends Resource
                     ->icon('heroicon-o-banknotes')
                     ->weight('semibold')
                     ->placeholder('-')
-                    ->toggleable(),
+                    ->toggleable()
+                    ->visibleFrom('xl'),
 
                 Tables\Columns\TextColumn::make('status')
                     ->label('Estado')
                     ->badge()
-                    ->formatStateUsing(fn (string $state): string => $state === 'open' ? 'Abierta' : 'Cerrada')
-                    ->icon(fn (string $state): string => $state === 'open' ? 'heroicon-o-lock-open' : 'heroicon-o-lock-closed')
-                    ->color(fn (string $state): string => match ($state) {
+                    ->formatStateUsing(fn(string $state): string => $state === 'open' ? 'Abierta' : 'Cerrada')
+                    ->icon(fn(string $state): string => $state === 'open' ? 'heroicon-o-lock-open' : 'heroicon-o-lock-closed')
+                    ->color(fn(string $state): string => match ($state) {
                         'open' => 'success',
                         'closed' => 'gray',
                         default => 'gray',
-                    }),
+                    })
+                    ->visibleFrom('md'),
             ])
             ->defaultSort('opened_at', 'desc')
             ->filters([
@@ -144,9 +180,10 @@ class CashRegisterResource extends Resource
                     ->color('danger')
                     ->button()
                     // 🌟 MAGIA DE SEGURIDAD: Solo el dueño de la caja ve el botón
-                    ->visible(fn (CashRegister $record) =>
+                    ->visible(
+                        fn(CashRegister $record) =>
                         $record->status === 'open' &&
-                        (Auth::user()?->canCloseCashRegisterRecord($record) ?? false)
+                            (Auth::user()?->canCloseCashRegisterRecord($record) ?? false)
                     )
                     ->modalHeading('Cerrar Turno de Caja')
                     ->modalWidth('md') // Le damos un ancho mediano al modal
@@ -324,8 +361,15 @@ class CashRegisterResource extends Resource
 
                 // Acciones secundarias agrupadas
                 Tables\Actions\ActionGroup::make([
-                    Tables\Actions\ViewAction::make()->label('Detalles'),
-                ])->icon('heroicon-o-ellipsis-vertical'),
+                    Tables\Actions\ViewAction::make()
+                        ->label('Detalles')
+                        ->icon('heroicon-o-eye'),
+                ])
+                    ->label('Opciones')
+                    ->tooltip('Opciones')
+                    ->icon('heroicon-m-ellipsis-vertical')
+                    ->iconButton()
+                    ->color('gray'),
             ])
             ->bulkActions([])
             ->emptyStateHeading('Sin cajas registradas')
@@ -382,7 +426,10 @@ class CashRegisterResource extends Resource
     {
         return $infolist
             ->schema([
-                Grid::make(3)->schema([
+                Grid::make([
+                    'default' => 1,
+                    'xl' => 3,
+                ])->schema([
                     // COLUMNA 1: Datos del Turno y Auditoría (Resumen de Efectivo)
                     Grid::make(1)->schema([
                         Section::make('Turno de Caja')
@@ -395,12 +442,12 @@ class CashRegisterResource extends Resource
                                 TextEntry::make('status')
                                     ->label('Estado')
                                     ->badge()
-                                    ->color(fn (string $state): string => match ($state) {
+                                    ->color(fn(string $state): string => match ($state) {
                                         'open' => 'success',
                                         'closed' => 'danger',
                                         default => 'gray',
                                     })
-                                    ->formatStateUsing(fn ($state) => $state === 'open' ? 'Abierta' : 'Cerrada'),
+                                    ->formatStateUsing(fn($state) => $state === 'open' ? 'Abierta' : 'Cerrada'),
 
                                 TextEntry::make('opened_at')
                                     ->label('Fecha Apertura')
@@ -410,7 +457,10 @@ class CashRegisterResource extends Resource
                                     ->label('Fecha Cierre')
                                     ->dateTime('d/m/Y H:i')
                                     ->placeholder('Aún abierta'),
-                            ])->columns(2),
+                            ])->columns([
+                                'default' => 1,
+                                'md' => 2,
+                            ]),
 
                         Section::make('Auditoría de Efectivo (Cajón)')
                             ->description('Dinero físico manejado durante el turno.')
@@ -425,20 +475,20 @@ class CashRegisterResource extends Resource
                                     ->label('(+) Ventas en Efectivo')
                                     ->money('PEN')
                                     ->color('success')
-                                    ->state(fn (CashRegister $record) => self::salesTotalByMethod($record, 'Efectivo')),
+                                    ->state(fn(CashRegister $record) => self::salesTotalByMethod($record, 'Efectivo')),
 
                                 TextEntry::make('calc_expenses')
                                     ->label('(-) Gastos Registrados')
                                     ->money('PEN')
                                     ->color('danger')
-                                    ->state(fn (CashRegister $record) => self::expensesTotal($record)),
+                                    ->state(fn(CashRegister $record) => self::expensesTotal($record)),
 
                                 TextEntry::make('calc_expected')
                                     ->label('Efectivo Esperado')
                                     ->money('PEN')
                                     ->weight('bold')
                                     ->size(TextEntry\TextEntrySize::Large)
-                                    ->state(fn (CashRegister $record) => self::expectedCashForDisplay($record)),
+                                    ->state(fn(CashRegister $record) => self::expectedCashForDisplay($record)),
 
                                 TextEntry::make('closing_amount') // ESTA SÍ ES TU COLUMNA REAL
                                     ->label('Efectivo Contado')
@@ -450,8 +500,8 @@ class CashRegisterResource extends Resource
                                     ->label('Diferencia')
                                     ->money('PEN')
                                     ->weight('bold')
-                                    ->color(fn ($state) => $state < 0 ? 'danger' : ($state > 0 ? 'warning' : 'success'))
-                                    ->state(fn (CashRegister $record) => self::cashDifferenceForDisplay($record)),
+                                    ->color(fn($state) => $state < 0 ? 'danger' : ($state > 0 ? 'warning' : 'success'))
+                                    ->state(fn(CashRegister $record) => self::cashDifferenceForDisplay($record)),
 
                                 TextEntry::make('closedBy.name')
                                     ->label('Cerrado por')
@@ -463,8 +513,14 @@ class CashRegisterResource extends Resource
                                     ->placeholder('Sin observaciones')
                                     ->columnSpanFull(),
 
-                            ])->columns(2),
-                    ])->columnSpan(2),
+                            ])->columns([
+                                'default' => 1,
+                                'md' => 2,
+                            ]),
+                    ])->columnSpan([
+                        'default' => 1,
+                        'xl' => 2,
+                    ]),
 
                     // COLUMNA 2: Desglose Digital y Estadísticas
                     Grid::make(1)->schema([
@@ -475,7 +531,7 @@ class CashRegisterResource extends Resource
                                     return TextEntry::make("calc_sales_{$method}")
                                         ->label($method)
                                         ->money('PEN')
-                                        ->state(fn (CashRegister $record) => self::salesTotalByMethod($record, $method));
+                                        ->state(fn(CashRegister $record) => self::salesTotalByMethod($record, $method));
                                 }),
 
                                 TextEntry::make('calc_total_sales')
@@ -484,22 +540,31 @@ class CashRegisterResource extends Resource
                                     ->weight('black')
                                     ->color('primary')
                                     ->size(TextEntry\TextEntrySize::Large)
-                                    ->state(fn (CashRegister $record) => self::salesTotal($record)),
-                            ])->columns(2),
+                                    ->state(fn(CashRegister $record) => self::salesTotal($record)),
+                            ])->columns([
+                                'default' => 1,
+                                'md' => 2,
+                            ]),
 
                         Section::make('Rendimiento del Turno')
                             ->schema([
                                 TextEntry::make('calc_sales_count')
                                     ->label('Ventas Realizadas')
                                     ->badge()
-                                    ->state(fn (CashRegister $record) => self::salesCount($record)),
+                                    ->state(fn(CashRegister $record) => self::salesCount($record)),
 
                                 TextEntry::make('calc_average_ticket')
                                     ->label('Ticket Promedio')
                                     ->money('PEN')
-                                    ->state(fn (CashRegister $record) => self::averageTicket($record)),
-                            ])->columns(2),
-                    ])->columnSpan(1),
+                                    ->state(fn(CashRegister $record) => self::averageTicket($record)),
+                            ])->columns([
+                                'default' => 1,
+                                'md' => 2,
+                            ]),
+                    ])->columnSpan([
+                        'default' => 1,
+                        'xl' => 1,
+                    ]),
                 ]),
             ]);
     }

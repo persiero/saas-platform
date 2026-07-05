@@ -15,8 +15,16 @@ class EditProduct extends EditRecord
     protected function getHeaderActions(): array
     {
         return [
+            Actions\Action::make('back')
+                ->label('Volver a la lista')
+                ->icon('heroicon-o-arrow-left')
+                ->color('gray')
+                // Apuntamos la URL de regreso a la ruta 'index' (la tabla principal)
+                ->url(fn() => $this->getResource()::getUrl('index')),
+
             Actions\DeleteAction::make()
-                ->label('Eliminar'),
+                ->label('Eliminar')
+                ->icon('heroicon-o-trash'),
         ];
     }
 

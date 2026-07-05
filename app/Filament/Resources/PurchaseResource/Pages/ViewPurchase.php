@@ -15,6 +15,13 @@ class ViewPurchase extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
+            Actions\Action::make('back')
+                ->label('Volver a la lista')
+                ->icon('heroicon-o-arrow-left')
+                ->color('gray')
+                // Apuntamos la URL de regreso a la ruta 'index' (la tabla principal)
+                ->url(fn() => $this->getResource()::getUrl('index')),
+
             Actions\EditAction::make()
                 ->label('Editar Compra')
                 ->icon('heroicon-o-pencil-square')
