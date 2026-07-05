@@ -13,6 +13,9 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
 use Percy\Core\Services\Tenants\TenantPlanService;
+use Filament\Infolists\Infolist;
+use Filament\Infolists\Components\Section;
+use Filament\Infolists\Components\TextEntry;
 
 class ExpenseResource extends Resource
 {
@@ -123,8 +126,8 @@ class ExpenseResource extends Resource
         return $form
             ->schema([
                 Forms\Components\Section::make('Información del Gasto')
-                    ->description('Registra los detalles del gasto operativo')
-                    ->icon('heroicon-o-document-text')
+                    ->description('Registra una salida de efectivo asociada a la caja abierta.')
+                    ->icon('heroicon-o-banknotes')
                     ->schema([
                         Forms\Components\Select::make('category')
                             ->label('Categoría')
@@ -141,8 +144,14 @@ class ExpenseResource extends Resource
                             ->required()
                             ->searchable()
                             ->native(false)
-                            ->helperText('Selecciona la categoría que mejor describe este gasto')
-                            ->columnSpan(2),
+                            ->hintIcon(
+                                'heroicon-m-question-mark-circle',
+                                tooltip: 'Selecciona la categoría que mejor describe este gasto.'
+                            )
+                            ->columnSpan([
+                                'default' => 1,
+                                'md' => 2,
+                            ]),
 
                         Forms\Components\DatePicker::make('expense_date')
                             ->label('Fecha del Gasto')
@@ -151,8 +160,14 @@ class ExpenseResource extends Resource
                             ->maxDate(now())
                             ->native(false)
                             ->displayFormat('d/m/Y')
-                            ->helperText('No puede ser una fecha futura')
-                            ->columnSpan(1),
+                            ->hintIcon(
+                                'heroicon-m-question-mark-circle',
+                                tooltip: 'No puede ser una fecha futura.'
+                            )
+                            ->columnSpan([
+                                'default' => 1,
+                                'md' => 1,
+                            ]),
 
                         Forms\Components\TextInput::make('amount')
                             ->label('Monto (S/)')
@@ -162,43 +177,152 @@ class ExpenseResource extends Resource
                             ->minValue(0.01)
                             ->step(0.01)
                             ->placeholder('0.00')
-                            ->helperText('Ingresa el monto en soles peruanos')
-                            ->columnSpan(3),
+                            ->hintIcon(
+                                'heroicon-m-question-mark-circle',
+                                tooltip: 'Ingresa el monto del gasto en soles peruanos.'
+                            )
+                            ->columnSpan([
+                                'default' => 1,
+                                'md' => 1,
+                            ]),
 
                         Forms\Components\Textarea::make('description')
                             ->label('Descripción')
-                            ->rows(4)
+                            ->rows(3)
                             ->placeholder('Describe el motivo o detalle del gasto...')
-                            ->helperText('Proporciona información adicional que ayude a identificar este gasto')
+                            ->hintIcon(
+                                'heroicon-m-question-mark-circle',
+                                tooltip: 'Agrega información adicional para identificar este gasto en el arqueo de caja.'
+                            )
                             ->columnSpanFull(),
-                    ])->columns(3),
+                    ])->columns([
+                        'default' => 1,
+                        'md' => 3,
+                    ]),
+            ]);
+    }
+
+    public static function infolist(Infolist $infolist): Infolist
+    {
+        return $infolist
+            ->schema([
+                Section::make('Detalle del Gasto')
+                    ->icon('heroicon-o-banknotes')
+                    ->description('Información registrada para el arqueo de caja.')
+                    ->schema([
+                        TextEntry::make('category')
+                            ->label('Categoría')
+                            ->badge()
+                            ->color(fn(string $state): string => match ($state) {
+                                'Servicios' => 'info',
+                                'Suministros' => 'warning',
+                                'Alquiler' => 'danger',
+                                'Salarios' => 'success',
+                                'Transporte' => 'primary',
+                                'Marketing' => 'purple',
+                                'Mantenimiento' => 'orange',
+                                'Otros' => 'gray',
+                                default => 'gray',
+                            }),
+
+                        TextEntry::make('amount')
+                            ->label('Monto')
+                            ->money('PEN')
+                            ->weight('black')
+                            ->color('danger'),
+
+                        TextEntry::make('expense_date')
+                            ->label('Fecha del gasto')
+                            ->date('d/m/Y')
+                            ->icon('heroicon-o-calendar'),
+
+                        TextEntry::make('user.name')
+                            ->label('Registrado por')
+                            ->icon('heroicon-o-user')
+                            ->placeholder('No registrado'),
+
+                        TextEntry::make('cashRegister.id')
+                            ->label('Caja asociada')
+                            ->formatStateUsing(fn($state): string => $state ? '#' . $state : 'Sin caja')
+                            ->badge()
+                            ->color(fn($state): string => $state ? 'success' : 'gray'),
+
+                        TextEntry::make('created_at')
+                            ->label('Fecha de registro')
+                            ->dateTime('d/m/Y h:i A')
+                            ->icon('heroicon-o-clock'),
+
+                        TextEntry::make('description')
+                            ->label('Descripción')
+                            ->placeholder('Sin descripción')
+                            ->columnSpanFull(),
+                    ])
+                    ->columns([
+                        'default' => 1,
+                        'md' => 2,
+                    ]),
             ]);
     }
 
     public static function table(Table $table): Table
     {
         return $table
+            ->striped()
+            ->paginated([10, 25, 50, 100])
+            ->defaultPaginationPageOption(25)
+            ->persistSearchInSession()
+            ->persistFiltersInSession()
+            ->persistSortInSession()
             ->columns([
+                Tables\Columns\TextColumn::make('mobile_summary')
+                    ->label('Gasto')
+                    ->state(fn(Expense $record): string => $record->category ?? 'Sin categoría')
+                    ->description(function (Expense $record): string {
+                        $fecha = $record->expense_date?->format('d/m/Y') ?? 'Sin fecha';
+                        $monto = 'S/ ' . number_format((float) $record->amount, 2);
+                        $usuario = $record->user?->name ?? 'Sin usuario';
+
+                        return "{$fecha} · {$monto} · {$usuario}";
+                    })
+                    ->icon(fn(Expense $record): string => match ($record->category) {
+                        'Servicios' => 'heroicon-o-briefcase',
+                        'Suministros' => 'heroicon-o-cube',
+                        'Alquiler' => 'heroicon-o-building-office',
+                        'Salarios' => 'heroicon-o-users',
+                        'Transporte' => 'heroicon-o-truck',
+                        'Marketing' => 'heroicon-o-megaphone',
+                        'Mantenimiento' => 'heroicon-o-wrench-screwdriver',
+                        'Otros' => 'heroicon-o-ellipsis-horizontal-circle',
+                        default => 'heroicon-o-banknotes',
+                    })
+                    ->weight('black')
+                    ->wrap()
+                    ->searchable(['category', 'description'])
+                    ->hiddenFrom('md'),
+
                 Tables\Columns\TextColumn::make('expense_date')
                     ->label('Rango de Fechas')
                     ->date('d/m/Y')
                     ->sortable()
                     ->icon('heroicon-o-calendar')
-                    ->description(fn(Expense $record): string => $record->expense_date->diffForHumans()),
+                    ->description(fn(Expense $record): string => $record->expense_date->diffForHumans())
+                    ->visibleFrom('md'),
 
                 Tables\Columns\TextColumn::make('user.name')
                     ->label('Registrado por')
                     ->icon('heroicon-o-identification')
                     ->sortable()
                     ->searchable()
-                    ->toggleable(),
+                    ->toggleable()
+                    ->visibleFrom('lg'),
 
                 Tables\Columns\TextColumn::make('cashRegister.id')
                     ->label('Caja')
                     ->formatStateUsing(fn($state) => $state ? '#' . $state : 'Sin caja')
                     ->badge()
                     ->color(fn($state) => $state ? 'success' : 'gray')
-                    ->toggleable(),
+                    ->toggleable()
+                    ->visibleFrom('xl'),
 
                 Tables\Columns\TextColumn::make('category')
                     ->label('Categoría')
@@ -225,7 +349,8 @@ class ExpenseResource extends Resource
                         'Mantenimiento' => 'heroicon-o-wrench-screwdriver',
                         'Otros' => 'heroicon-o-ellipsis-horizontal-circle',
                         default => 'heroicon-o-tag',
-                    }),
+                    })
+                    ->visibleFrom('md'),
 
                 Tables\Columns\TextColumn::make('amount')
                     ->label('Monto')
@@ -233,14 +358,16 @@ class ExpenseResource extends Resource
                     ->sortable()
                     ->weight('bold')
                     ->color('danger')
-                    ->icon('heroicon-o-banknotes'),
+                    ->icon('heroicon-o-banknotes')
+                    ->visibleFrom('md'),
 
                 Tables\Columns\TextColumn::make('description')
                     ->label('Descripción')
                     ->limit(40)
                     ->searchable()
                     ->tooltip(fn(Expense $record): string => $record->description ?? 'Sin descripción')
-                    ->wrap(),
+                    ->wrap()
+                    ->visibleFrom('lg'),
 
                 Tables\Columns\TextColumn::make('created_at')
                     ->label('Registrado')
@@ -277,7 +404,10 @@ class ExpenseResource extends Resource
                             ->native(false)
                             ->displayFormat('d/m/Y'),
                     ])
-                    ->columns(2)
+                    ->columns([
+                        'default' => 1,
+                        'md' => 2,
+                    ])
                     ->query(function (Builder $query, array $data): Builder {
                         return $query
                             ->when($data['from'], fn(Builder $query, $date) => $query->whereDate('expense_date', '>=', $date))
@@ -293,6 +423,10 @@ class ExpenseResource extends Resource
                         }
                         return $indicators;
                     }),
+            ])
+            ->filtersFormColumns([
+                'default' => 1,
+                'md' => 2,
             ])
             ->actions([
                 Tables\Actions\ActionGroup::make([
@@ -315,8 +449,9 @@ class ExpenseResource extends Resource
                         ->modalCancelActionLabel('Cancelar'),
                 ])
                     ->label('Acciones')
-                    ->icon('heroicon-o-ellipsis-vertical')
-                    ->button()
+                    ->tooltip('Acciones')
+                    ->icon('heroicon-m-ellipsis-vertical')
+                    ->iconButton()
                     ->color('gray'),
             ])
             ->bulkActions([

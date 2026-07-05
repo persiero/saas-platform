@@ -22,6 +22,7 @@ class ListExpenses extends ListRecords
                 ->icon('heroicon-o-plus-circle')
                 ->color('primary')
                 ->slideOver() // Se abre lateralmente
+                ->modalWidth('2xl')
                 ->modalSubmitActionLabel('Registrar')
                 ->createAnother(false)
                 ->disabled(function () {
