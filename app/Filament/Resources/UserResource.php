@@ -13,6 +13,8 @@ use Illuminate\Support\Facades\Auth;
 use App\Filament\Resources\UserResource\Tables\UserTable;
 use App\Filament\Resources\UserResource\Schemas\UserForm;
 use Percy\Core\Services\Tenants\TenantPlanService;
+use Filament\Infolists\Infolist;
+use App\Filament\Resources\UserResource\Schemas\UserInfolist;
 
 class UserResource extends Resource
 {
@@ -74,12 +76,12 @@ class UserResource extends Resource
 
     public static function canViewAny(): bool
     {
-        return Auth::user()?->isAdmin() ?? false;
+        return Auth::user()?->canManageUsers() ?? false;
     }
 
     public static function canCreate(): bool
     {
-        return (Auth::user()?->isAdmin() ?? false)
+        return (Auth::user()?->canManageUsers() ?? false)
             && self::tenantHasAvailableUserSlots();
     }
 
@@ -113,6 +115,11 @@ class UserResource extends Resource
         return UserForm::configure($form);
     }
 
+    public static function infolist(Infolist $infolist): Infolist
+    {
+        return UserInfolist::configure($infolist);
+    }
+
     public static function table(Table $table): Table
     {
         return UserTable::configure($table);
@@ -121,14 +128,23 @@ class UserResource extends Resource
     // EL NUEVO ESCUDO: Solo ves los usuarios de tu propio negocio
     public static function getEloquentQuery(): Builder
     {
-        $query = parent::getEloquentQuery();
+        $user = Auth::user();
 
-        // <-- Cambiado en esta línea:
-        if (Auth::check() && Auth::user()->tenant_id) {
-            $query->where('tenant_id', Auth::user()->tenant_id);
+        $query = parent::getEloquentQuery()
+            ->with([
+                'tenant',
+                'roles',
+            ]);
+
+        if (! $user) {
+            return $query->whereRaw('1 = 0');
         }
 
-        return $query;
+        if ($user->isSuperAdmin()) {
+            return $query;
+        }
+
+        return $query->where('tenant_id', $user->tenant_id);
     }
 
     public static function getRelations(): array
