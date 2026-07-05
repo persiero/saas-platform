@@ -13,30 +13,20 @@
             </x-slot>
 
             <form wire:submit="loadReports" class="space-y-4">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {{ $this->form }}
-                </div>
+                {{ $this->form }}
 
-                <div class="flex gap-3">
+                <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
                     <x-filament::button type="submit" icon="heroicon-o-arrow-path" color="primary">
                         Actualizar Reportes
                     </x-filament::button>
 
-                    <x-filament::button
-                        type="button"
-                        color="gray"
-                        icon="heroicon-o-calendar"
-                        wire:click="$set('startDate', '{{ now()->startOfMonth()->format('Y-m-d') }}'); $set('endDate', '{{ now()->format('Y-m-d') }}'); loadReports()"
-                    >
+                    <x-filament::button type="button" color="gray" icon="heroicon-o-calendar"
+                        wire:click="$set('startDate', '{{ now()->startOfMonth()->format('Y-m-d') }}'); $set('endDate', '{{ now()->format('Y-m-d') }}'); loadReports()">
                         Este Mes
                     </x-filament::button>
 
-                    <x-filament::button
-                        type="button"
-                        color="gray"
-                        icon="heroicon-o-calendar-days"
-                        wire:click="$set('startDate', '{{ now()->subDays(7)->format('Y-m-d') }}'); $set('endDate', '{{ now()->format('Y-m-d') }}'); loadReports()"
-                    >
+                    <x-filament::button type="button" color="gray" icon="heroicon-o-calendar-days"
+                        wire:click="$set('startDate', '{{ now()->subDays(7)->format('Y-m-d') }}'); $set('endDate', '{{ now()->format('Y-m-d') }}'); loadReports()">
                         Últimos 7 Días
                     </x-filament::button>
                 </div>
@@ -54,37 +44,44 @@
                 </div>
             </x-slot>
 
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div class="bg-gradient-to-br from-success-50 to-success-100 dark:from-success-900/20 dark:to-success-800/20 rounded-lg p-6 border border-success-200 dark:border-success-800">
+            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                <div
+                    class="bg-gradient-to-br from-success-50 to-success-100 dark:from-success-900/20 dark:to-success-800/20 rounded-xl p-4 sm:p-6 border border-success-200 dark:border-success-800">
                     <div class="flex items-center justify-between mb-2">
                         <div class="text-sm font-medium text-success-700 dark:text-success-300">Total Ventas</div>
                         <x-heroicon-o-banknotes class="w-6 h-6 text-success-600" />
                     </div>
-                    <div class="text-3xl font-bold text-success-900 dark:text-success-100">S/ {{ number_format($salesData['total_sales'] ?? 0, 2) }}</div>
+                    <div class="text-2xl sm:text-3xl font-bold text-success-900 dark:text-success-100">S/
+                        {{ number_format($salesData['total_sales'] ?? 0, 2) }}</div>
                     <div class="text-xs text-success-600 dark:text-success-400 mt-1">Ingresos del período</div>
                 </div>
 
-                <div class="bg-gradient-to-br from-primary-50 to-primary-100 dark:from-primary-900/20 dark:to-primary-800/20 rounded-lg p-6 border border-primary-200 dark:border-primary-800">
+                <div
+                    class="bg-gradient-to-br from-primary-50 to-primary-100 dark:from-primary-900/20 dark:to-primary-800/20 rounded-xl p-4 sm:p-6 border border-primary-200 dark:border-primary-800">
                     <div class="flex items-center justify-between mb-2">
                         <div class="text-sm font-medium text-primary-700 dark:text-primary-300">N° Comprobantes</div>
                         <x-heroicon-o-document-text class="w-6 h-6 text-primary-600" />
                     </div>
-                    <div class="text-3xl font-bold text-primary-900 dark:text-primary-100">{{ $salesData['total_count'] ?? 0 }}</div>
+                    <div class="text-2xl sm:text-3xl font-bold text-primary-900 dark:text-primary-100">
+                        {{ $salesData['total_count'] ?? 0 }}</div>
                     <div class="text-xs text-primary-600 dark:text-primary-400 mt-1">Documentos emitidos</div>
                 </div>
 
-                <div class="bg-gradient-to-br from-warning-50 to-warning-100 dark:from-warning-900/20 dark:to-warning-800/20 rounded-lg p-6 border border-warning-200 dark:border-warning-800">
+                <div
+                    class="bg-gradient-to-br from-warning-50 to-warning-100 dark:from-warning-900/20 dark:to-warning-800/20 rounded-xl p-4 sm:p-6 border border-warning-200 dark:border-warning-800">
                     <div class="flex items-center justify-between mb-2">
                         <div class="text-sm font-medium text-warning-700 dark:text-warning-300">Ticket Promedio</div>
                         <x-heroicon-o-calculator class="w-6 h-6 text-warning-600" />
                     </div>
-                    <div class="text-3xl font-bold text-warning-900 dark:text-warning-100">S/ {{ number_format(($salesData['total_count'] ?? 0) > 0 ? ($salesData['total_sales'] ?? 0) / $salesData['total_count'] : 0, 2) }}</div>
+                    <div class="text-2xl sm:text-3xl font-bold text-warning-900 dark:text-warning-100">S/
+                        {{ number_format(($salesData['total_count'] ?? 0) > 0 ? ($salesData['total_sales'] ?? 0) / $salesData['total_count'] : 0, 2) }}
+                    </div>
                     <div class="text-xs text-warning-600 dark:text-warning-400 mt-1">Promedio por venta</div>
                 </div>
             </div>
         </x-filament::section>
 
-        @if($canViewOnlineStoreReports)
+        @if ($canViewOnlineStoreReports)
             <x-filament::section>
                 <x-slot name="heading">
                     <div class="flex items-center gap-2">
@@ -97,7 +94,8 @@
                 </x-slot>
 
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div class="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                    <div
+                        class="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
                         <div class="flex items-center justify-between mb-2">
                             <div class="text-sm font-medium text-gray-600 dark:text-gray-300">Ventas Presenciales</div>
                             <x-heroicon-o-building-storefront class="w-6 h-6 text-gray-500" />
@@ -111,9 +109,11 @@
                         </div>
                     </div>
 
-                    <div class="bg-white dark:bg-gray-800 p-6 rounded-xl border border-primary-200 dark:border-primary-800 shadow-sm">
+                    <div
+                        class="bg-white dark:bg-gray-800 p-6 rounded-xl border border-primary-200 dark:border-primary-800 shadow-sm">
                         <div class="flex items-center justify-between mb-2">
-                            <div class="text-sm font-medium text-primary-700 dark:text-primary-300">Ventas Online Procesadas</div>
+                            <div class="text-sm font-medium text-primary-700 dark:text-primary-300">Ventas Online
+                                Procesadas</div>
                             <x-heroicon-o-globe-alt class="w-6 h-6 text-primary-600" />
                         </div>
                         <div class="text-2xl font-bold text-primary-700 dark:text-primary-300">
@@ -125,9 +125,11 @@
                         </div>
                     </div>
 
-                    <div class="bg-warning-50 dark:bg-warning-500/10 p-6 rounded-xl border border-warning-200 dark:border-warning-500/20 shadow-sm">
+                    <div
+                        class="bg-warning-50 dark:bg-warning-500/10 p-6 rounded-xl border border-warning-200 dark:border-warning-500/20 shadow-sm">
                         <div class="flex items-center justify-between mb-2">
-                            <div class="text-sm font-medium text-warning-700 dark:text-warning-300">Pedidos Web Pendientes</div>
+                            <div class="text-sm font-medium text-warning-700 dark:text-warning-300">Pedidos Web
+                                Pendientes</div>
                             <x-heroicon-o-clock class="w-6 h-6 text-warning-600" />
                         </div>
                         <div class="text-2xl font-bold text-warning-900 dark:text-warning-100">
@@ -141,7 +143,7 @@
             </x-filament::section>
         @endif
 
-        @if($canViewProfitability)
+        @if ($canViewProfitability)
             {{-- Rentabilidad --}}
             <x-filament::section>
                 <x-slot name="heading">
@@ -157,58 +159,70 @@
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                     {{-- FILA 1: La operación de mercadería --}}
                     {{-- Ingresos --}}
-                    <div class="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                    <div
+                        class="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
                         <div class="flex items-center justify-center gap-2 text-gray-500 dark:text-gray-400 mb-2">
                             <x-heroicon-m-arrow-trending-up class="w-5 h-5" />
                             <span class="text-sm font-medium">Ingresos Totales</span>
                         </div>
-                        <div class="text-2xl font-bold text-center">S/ {{ number_format($profitability['sales'] ?? 0, 2) }}</div>
+                        <div class="text-2xl font-bold text-center">S/
+                            {{ number_format($profitability['sales'] ?? 0, 2) }}</div>
                     </div>
 
                     {{-- Costo de Ventas --}}
-                    <div class="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                    <div
+                        class="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
                         <div class="flex items-center justify-center gap-2 text-orange-500 mb-2">
                             <x-heroicon-m-shopping-cart class="w-5 h-5" />
                             <span class="text-sm font-medium">Costo de Mercadería</span>
                         </div>
-                        <div class="text-2xl font-bold text-center">S/ {{ number_format($profitability['cogs'] ?? 0, 2) }}</div>
+                        <div class="text-2xl font-bold text-center">S/
+                            {{ number_format($profitability['cogs'] ?? 0, 2) }}</div>
                     </div>
 
                     {{-- Utilidad Bruta (NUEVA) --}}
-                    <div class="dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm bg-blue-50/30">
+                    <div
+                        class="dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm bg-blue-50/30">
                         <div class="flex items-center justify-center gap-2 text-blue-600 mb-2">
                             <x-heroicon-m-calculator class="w-5 h-5" />
                             <span class="text-sm font-medium">Utilidad Bruta</span>
                         </div>
-                        <div class="text-2xl font-bold text-center text-blue-700">S/ {{ number_format($profitability['gross_profit'] ?? 0, 2) }}</div>
+                        <div class="text-2xl font-bold text-center text-blue-700">S/
+                            {{ number_format($profitability['gross_profit'] ?? 0, 2) }}</div>
                     </div>
 
                     {{-- FILA 2: La utilidad final --}}
                     {{-- Gastos --}}
-                    <div class="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                    <div
+                        class="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
                         <div class="flex items-center justify-center gap-2 text-danger-500 mb-2">
                             <x-heroicon-m-arrow-trending-down class="w-5 h-5" />
                             <span class="text-sm font-medium">Gastos Operativos</span>
                         </div>
-                        <div class="text-2xl font-bold text-center text-danger-600">S/ {{ number_format($profitability['expenses'] ?? 0, 2) }}</div>
+                        <div class="text-2xl font-bold text-center text-danger-600">S/
+                            {{ number_format($profitability['expenses'] ?? 0, 2) }}</div>
                     </div>
 
                     {{-- Utilidad Neta --}}
-                    <div class="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm bg-success-50/30">
+                    <div
+                        class="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm bg-success-50/30">
                         <div class="flex items-center justify-center gap-2 text-success-600 mb-2">
                             <x-heroicon-m-banknotes class="w-5 h-5" />
                             <span class="text-sm font-medium">Utilidad Neta (Bolsillo)</span>
                         </div>
-                        <div class="text-2xl font-bold text-center text-success-700">S/ {{ number_format($profitability['profit'] ?? 0, 2) }}</div>
+                        <div class="text-2xl font-bold text-center text-success-700">S/
+                            {{ number_format($profitability['profit'] ?? 0, 2) }}</div>
                     </div>
 
                     {{-- Margen --}}
-                    <div class="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                    <div
+                        class="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
                         <div class="flex items-center justify-center gap-2 text-gray-500 mb-2">
                             <x-heroicon-m-presentation-chart-line class="w-5 h-5" />
                             <span class="text-sm font-medium">Margen de Ganancia</span>
                         </div>
-                        <div class="text-2xl font-bold text-center">{{ $profitability['margin_percentage'] ?? 0 }}%</div>
+                        <div class="text-2xl font-bold text-center">{{ $profitability['margin_percentage'] ?? 0 }}%
+                        </div>
                     </div>
                 </div>
             </x-filament::section>
@@ -226,57 +240,115 @@
                 Productos con mayor volumen de ventas en el período
             </x-slot>
 
-            <div class="overflow-x-auto">
+            {{-- Vista móvil --}}
+            <div class="space-y-3 md:hidden">
+                @forelse($topProducts as $index => $product)
+                    <div
+                        class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-gray-900">
+                        <div class="flex items-start gap-3">
+                            <div
+                                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full {{ $index < 3 ? 'bg-warning-100 text-warning-700 dark:bg-warning-500/20 dark:text-warning-300' : 'bg-gray-100 text-gray-600 dark:bg-white/10 dark:text-gray-300' }} text-sm font-bold">
+                                {{ $index + 1 }}
+                            </div>
+
+                            <div class="min-w-0 flex-1">
+                                <p class="break-words text-sm font-bold text-gray-950 dark:text-white">
+                                    {{ $product['name'] }}
+                                </p>
+
+                                <div class="mt-3 grid grid-cols-2 gap-2 text-xs">
+                                    <div class="rounded-lg bg-primary-50 p-2 dark:bg-primary-500/10">
+                                        <p class="text-primary-600 dark:text-primary-300">Cantidad</p>
+                                        <p class="mt-1 font-bold text-primary-700 dark:text-primary-200">
+                                            {{ $product['total_quantity'] }}
+                                        </p>
+                                    </div>
+
+                                    <div class="rounded-lg bg-success-50 p-2 dark:bg-success-500/10">
+                                        <p class="text-success-600 dark:text-success-300">Total vendido</p>
+                                        <p class="mt-1 font-bold text-success-700 dark:text-success-200">
+                                            S/ {{ number_format($product['total_amount'], 2) }}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                @empty
+                    <div
+                        class="flex flex-col items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-10 text-center dark:border-white/10 dark:bg-gray-900">
+                        <x-heroicon-o-inbox class="h-14 w-14 text-gray-400 dark:text-gray-500" />
+                        <p class="mt-2 text-base font-medium text-gray-600 dark:text-gray-300">No hay datos disponibles
+                        </p>
+                        <p class="text-sm text-gray-500 dark:text-gray-400">No se encontraron productos vendidos en
+                            este período</p>
+                    </div>
+                @endforelse
+            </div>
+
+            {{-- Vista tablet / escritorio --}}
+            <div class="hidden overflow-x-auto md:block">
                 <table class="w-full">
                     <thead class="bg-gray-50 dark:bg-white/5">
                         <tr class="border-b border-gray-200 dark:border-white/10">
-                            <th class="text-left py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-200">
+                            <th class="px-4 py-3 text-left text-sm font-semibold text-gray-700 dark:text-gray-200">
                                 <div class="flex items-center gap-2">
-                                    <x-heroicon-o-cube class="w-4 h-4" />
+                                    <x-heroicon-o-cube class="h-4 w-4" />
                                     Producto
                                 </div>
                             </th>
-                            <th class="text-right py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-200">
+                            <th class="px-4 py-3 text-right text-sm font-semibold text-gray-700 dark:text-gray-200">
                                 <div class="flex items-center justify-end gap-2">
-                                    <x-heroicon-o-hashtag class="w-4 h-4" />
+                                    <x-heroicon-o-hashtag class="h-4 w-4" />
                                     Cantidad
                                 </div>
                             </th>
-                            <th class="text-right py-3 px-4 text-sm font-semibold text-gray-700 dark:text-gray-200">
+                            <th class="px-4 py-3 text-right text-sm font-semibold text-gray-700 dark:text-gray-200">
                                 <div class="flex items-center justify-end gap-2">
-                                    <x-heroicon-o-currency-dollar class="w-4 h-4" />
+                                    <x-heroicon-o-currency-dollar class="h-4 w-4" />
                                     Total Vendido
                                 </div>
                             </th>
                         </tr>
                     </thead>
+
                     <tbody class="divide-y divide-gray-200 dark:divide-white/10">
                         @forelse($topProducts as $index => $product)
-                            <tr class="hover:bg-gray-50 dark:hover:bg-white/5 transition">
-                                <td class="py-3 px-4">
+                            <tr class="transition hover:bg-gray-50 dark:hover:bg-white/5">
+                                <td class="px-4 py-3">
                                     <div class="flex items-center gap-3">
-                                        <div class="flex items-center justify-center w-8 h-8 rounded-full {{ $index < 3 ? 'bg-warning-100 dark:bg-warning-500/20 text-warning-700 dark:text-warning-300' : 'bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-gray-300' }} font-bold text-sm">
+                                        <div
+                                            class="flex h-8 w-8 items-center justify-center rounded-full {{ $index < 3 ? 'bg-warning-100 text-warning-700 dark:bg-warning-500/20 dark:text-warning-300' : 'bg-gray-100 text-gray-600 dark:bg-white/10 dark:text-gray-300' }} text-sm font-bold">
                                             {{ $index + 1 }}
                                         </div>
-                                        <span class="font-medium text-gray-900 dark:text-white">{{ $product['name'] }}</span>
+                                        <span class="font-medium text-gray-900 dark:text-white">
+                                            {{ $product['name'] }}
+                                        </span>
                                     </div>
                                 </td>
-                                <td class="text-right py-3 px-4">
-                                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-primary-100 dark:bg-primary-500/20 text-primary-700 dark:text-primary-300">
+
+                                <td class="px-4 py-3 text-right">
+                                    <span
+                                        class="inline-flex items-center rounded-full bg-primary-100 px-3 py-1 text-sm font-semibold text-primary-700 dark:bg-primary-500/20 dark:text-primary-300">
                                         {{ $product['total_quantity'] }}
                                     </span>
                                 </td>
-                                <td class="text-right py-3 px-4">
-                                    <span class="font-bold text-success-600 dark:text-success-400">S/ {{ number_format($product['total_amount'], 2) }}</span>
+
+                                <td class="px-4 py-3 text-right">
+                                    <span class="font-bold text-success-600 dark:text-success-400">
+                                        S/ {{ number_format($product['total_amount'], 2) }}
+                                    </span>
                                 </td>
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="3" class="text-center py-12">
+                                <td colspan="3" class="py-12 text-center">
                                     <div class="flex flex-col items-center justify-center gap-2 text-gray-500">
-                                        <x-heroicon-o-inbox style="width: 4rem; height: 4rem; margin: 0 auto;" class="text-gray-400 dark:text-gray-500" />
-                                        <p class="text-base font-medium mt-2 text-gray-600 dark:text-gray-300">No hay datos disponibles</p>
-                                        <p class="text-sm text-gray-500 dark:text-gray-400">No se encontraron productos vendidos en este período</p>
+                                        <x-heroicon-o-inbox class="h-16 w-16 text-gray-400 dark:text-gray-500" />
+                                        <p class="mt-2 text-base font-medium text-gray-600 dark:text-gray-300">No hay
+                                            datos disponibles</p>
+                                        <p class="text-sm text-gray-500 dark:text-gray-400">No se encontraron productos
+                                            vendidos en este período</p>
                                     </div>
                                 </td>
                             </tr>
@@ -310,7 +382,7 @@
                         $nombreMetodo = $metodo['payment_method'] ?: 'No especificado';
 
                         // 🌟 COLORES DINÁMICOS: Morado para Yape/Plin, Azul para tarjeta, Verde para efectivo
-                        $colorClass = match($nombreMetodo) {
+                        $colorClass = match ($nombreMetodo) {
                             'Yape', 'Plin' => 'bg-purple-500 dark:bg-purple-400',
                             'Tarjeta' => 'bg-blue-500 dark:bg-blue-400',
                             'Transferencia' => 'bg-orange-500 dark:bg-orange-400',
@@ -318,27 +390,34 @@
                         };
                     @endphp
                     <div>
-                        <div class="flex justify-between text-sm font-medium mb-1.5 text-gray-700 dark:text-gray-300">
-                            <span class="flex items-center gap-2">
-                                {{ $nombreMetodo }}
-                                <span class="text-xs text-gray-400 font-normal bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded-full">
+                        <div
+                            class="mb-1.5 flex flex-col gap-1 text-sm font-medium text-gray-700 dark:text-gray-300 sm:flex-row sm:items-center sm:justify-between">
+                            <span class="flex flex-wrap items-center gap-2">
+                                <span>{{ $nombreMetodo }}</span>
+                                <span
+                                    class="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-normal text-gray-400 dark:bg-gray-800">
                                     {{ $metodo['transaction_count'] }} operaciones
                                 </span>
                             </span>
+
                             <span class="font-black text-gray-900 dark:text-white">
                                 S/ {{ number_format($metodo['total_amount'], 2) }}
-                                <span class="text-gray-400 font-normal ml-1">({{ number_format($porcentaje, 1) }}%)</span>
+                                <span
+                                    class="ml-1 font-normal text-gray-400">({{ number_format($porcentaje, 1) }}%)</span>
                             </span>
                         </div>
                         <div class="w-full bg-gray-100 dark:bg-gray-800 rounded-full h-2.5 shadow-inner">
-                            <div class="{{ $colorClass }} h-2.5 rounded-full transition-all duration-500" style="width: {{ $porcentaje }}%"></div>
+                            <div class="{{ $colorClass }} h-2.5 rounded-full transition-all duration-500"
+                                style="width: {{ $porcentaje }}%"></div>
                         </div>
                     </div>
                 @empty
                     <div class="flex flex-col items-center justify-center py-10 text-center">
                         {{-- Le ponemos un style fijo para obligarlo a quedarse pequeño --}}
-                        <x-heroicon-o-credit-card style="width: 4rem; height: 4rem;" class="text-gray-300 dark:text-gray-600 mb-4" />
-                        <p class="text-gray-500 dark:text-gray-400 font-medium">No hay registros de pago en este período.</p>
+                        <x-heroicon-o-credit-card style="width: 4rem; height: 4rem;"
+                            class="text-gray-300 dark:text-gray-600 mb-4" />
+                        <p class="text-gray-500 dark:text-gray-400 font-medium">No hay registros de pago en este
+                            período.</p>
                     </div>
                 @endforelse
             </div>
@@ -357,38 +436,45 @@
             </x-slot>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div class="bg-success-50 dark:bg-success-500/10 rounded-lg p-6 border border-success-200 dark:border-success-500/20">
+                <div
+                    class="bg-success-50 dark:bg-success-500/10 rounded-lg p-6 border border-success-200 dark:border-success-500/20">
                     <div class="flex items-center gap-3 mb-4">
                         <div class="p-3 bg-success-200 dark:bg-success-500/20 rounded-lg">
                             <x-heroicon-o-lock-open class="w-6 h-6 text-success-700 dark:text-success-400" />
                         </div>
                         <div>
-                            <div class="text-sm font-medium text-success-700 dark:text-success-400">Cajas Abiertas</div>
-                            <div class="text-2xl font-bold text-success-900 dark:text-success-100">{{ $cashStatus['open_registers'] ?? 0 }}</div>
+                            <div class="text-sm font-medium text-success-700 dark:text-success-400">Cajas Abiertas
+                            </div>
+                            <div class="text-2xl font-bold text-success-900 dark:text-success-100">
+                                {{ $cashStatus['open_registers'] ?? 0 }}</div>
                         </div>
                     </div>
                     <div class="pt-3 border-t border-success-200 dark:border-success-500/20">
                         <div class="flex items-center justify-between">
                             <span class="text-sm text-success-700 dark:text-success-400">Total en cajas:</span>
-                            <span class="text-lg font-bold text-success-900 dark:text-success-100">S/ {{ number_format($cashStatus['total_open_amount'] ?? 0, 2) }}</span>
+                            <span class="text-lg font-bold text-success-900 dark:text-success-100">S/
+                                {{ number_format($cashStatus['total_open_amount'] ?? 0, 2) }}</span>
                         </div>
                     </div>
                 </div>
 
-                <div class="bg-danger-50 dark:bg-danger-500/10 rounded-lg p-6 border border-danger-200 dark:border-danger-500/20">
+                <div
+                    class="bg-danger-50 dark:bg-danger-500/10 rounded-lg p-6 border border-danger-200 dark:border-danger-500/20">
                     <div class="flex items-center gap-3 mb-4">
                         <div class="p-3 bg-danger-200 dark:bg-danger-500/20 rounded-lg">
                             <x-heroicon-o-lock-closed class="w-6 h-6 text-danger-700 dark:text-danger-400" />
                         </div>
                         <div>
                             <div class="text-sm font-medium text-danger-700 dark:text-danger-400">Cerradas Hoy</div>
-                            <div class="text-2xl font-bold text-danger-900 dark:text-danger-100">{{ $cashStatus['today_closed'] ?? 0 }}</div>
+                            <div class="text-2xl font-bold text-danger-900 dark:text-danger-100">
+                                {{ $cashStatus['today_closed'] ?? 0 }}</div>
                         </div>
                     </div>
                     <div class="pt-3 border-t border-danger-200 dark:border-danger-500/20">
                         <div class="flex items-center justify-between">
                             <span class="text-sm text-danger-700 dark:text-danger-400">Total cerrado:</span>
-                            <span class="text-lg font-bold text-danger-900 dark:text-danger-100">S/ {{ number_format($cashStatus['today_closed_amount'] ?? 0, 2) }}</span>
+                            <span class="text-lg font-bold text-danger-900 dark:text-danger-100">S/
+                                {{ number_format($cashStatus['today_closed_amount'] ?? 0, 2) }}</span>
                         </div>
                     </div>
                 </div>

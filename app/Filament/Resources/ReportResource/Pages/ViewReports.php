@@ -38,7 +38,7 @@ class ViewReports extends Page
         $this->endDate = now()->format('Y-m-d');
 
         $this->syncReportPermissions();
-        $this->loadReports();
+        $this->loadReports(false);
     }
 
     private function tenantPlanHas(string $feature): bool
@@ -86,7 +86,10 @@ class ViewReports extends Page
                         ->default(now())
                         ->prefixIcon('heroicon-o-calendar-days'),
                 ])
-                ->columns(2) // Coloca los calendarios uno al lado del otro
+                ->columns([
+                    'default' => 1,
+                    'md' => 2,
+                ])
                 ->collapsible() // Permite ocultarlos para ver los gráficos a pantalla completa
                 ->compact(), // Reduce los márgenes internos
         ];
@@ -110,7 +113,7 @@ class ViewReports extends Page
         ];
     }
 
-    public function loadReports(): void
+    public function loadReports(bool $notify = true): void
     {
         try {
             $service = app(ReportService::class);
@@ -135,11 +138,13 @@ class ViewReports extends Page
                 ? $service->profitability($tenantId, $this->startDate, $this->endDate)
                 : [];
 
-            Notification::make()
-                ->success()
-                ->title('Reportes actualizados')
-                ->body('Los datos han sido cargados correctamente.')
-                ->send();
+            if ($notify) {
+                Notification::make()
+                    ->success()
+                    ->title('Reportes actualizados')
+                    ->body('Los datos han sido cargados correctamente.')
+                    ->send();
+            }
         } catch (\Exception $e) {
             Notification::make()
                 ->danger()
@@ -236,10 +241,10 @@ class ViewReports extends Page
                             $sale->payment_method ?? 'No especificado',
                             strtoupper($sale->sunat_status ?? 'NO ENVIADO'),
                             $canal,
-                            $nombreProducto,
-                            $item->quantity,
-                            number_format($precioUnitario, 2, '.', ''),
-                            number_format($totalFila, 2, '.', ''),
+                            'SIN DETALLE DE PRODUCTOS',
+                            '0',
+                            '0.00',
+                            '0.00',
                             number_format($sale->total, 2, '.', '')
                         ], ';');
                     }
