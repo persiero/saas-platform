@@ -13,7 +13,13 @@ class ListTenants extends ListRecords
     protected function getHeaderActions(): array
     {
         return [
-            Actions\CreateAction::make(),
+            Actions\CreateAction::make()
+                ->label('Nuevo Cliente SaaS')
+                ->icon('heroicon-o-plus-circle')
+                ->modalHeading('Crear Cliente SaaS')
+                ->slideOver()
+                ->modalWidth('4xl')
+                ->createAnother(false),
         ];
     }
 }

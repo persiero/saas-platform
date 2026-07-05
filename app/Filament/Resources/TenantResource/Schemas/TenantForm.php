@@ -13,7 +13,8 @@ class TenantForm
     {
         return $form
             ->schema([
-                Forms\Components\Tabs::make('Configuración del Inquilino')
+                Forms\Components\Tabs::make('Configuración del Cliente SaaS')
+                    ->persistTabInQueryString()
                     ->tabs([
                         Forms\Components\Tabs\Tab::make('Sistema SaaS')
                             ->icon('heroicon-o-server')
@@ -21,10 +22,13 @@ class TenantForm
                                 Forms\Components\FileUpload::make('logo')
                                     ->label('Logo del Negocio')
                                     ->image()
+                                    ->imageEditor()
+                                    ->imagePreviewHeight('120')
                                     ->disk('r2_public')
                                     ->directory('logos')
                                     ->visibility('public')
                                     ->maxSize(2048)
+                                    ->helperText('Recomendado: PNG/JPG, máximo 2 MB.')
                                     ->columnSpanFull(),
 
                                 Forms\Components\TextInput::make('name')
@@ -43,6 +47,7 @@ class TenantForm
                                     ->searchable()
                                     ->preload()
                                     ->required()
+                                    ->native(false)
                                     ->columnSpan(['default' => 1, 'sm' => 1]),
 
                                 Forms\Components\Select::make('plan_id')
@@ -63,13 +68,14 @@ class TenantForm
                                     ->searchable()
                                     ->preload()
                                     ->helperText('Define qué módulos comerciales tendrá disponible este cliente.')
+                                    ->native(false)
                                     ->columnSpan(['default' => 1, 'sm' => 1]),
 
                                 Forms\Components\TextInput::make('domain')
                                     ->label('Subdominio')
                                     ->unique(ignoreRecord: true)
                                     ->prefix('https://')
-                                    ->suffix('.virtualperu.online')
+                                    ->suffix('.virtualperu.tech')
                                     ->maxLength(80)
                                     ->regex('/^[a-z0-9]+(?:-[a-z0-9]+)*$/')
                                     ->helperText('Usa solo minúsculas, números y guiones. Ejemplo: farmacia-san-jose.')
@@ -113,8 +119,9 @@ class TenantForm
                                     ->maxLength(255)
                                     ->columnSpan(['default' => 1, 'sm' => 2, 'md' => 2]),
 
-                                Forms\Components\TextInput::make('address')
+                                Forms\Components\Textarea::make('address')
                                     ->label('Dirección Fiscal')
+                                    ->rows(2)
                                     ->maxLength(255)
                                     ->columnSpanFull(),
 
@@ -152,6 +159,7 @@ class TenantForm
                                     ])
                                     ->default('beta')
                                     ->required()
+                                    ->native(false)
                                     ->columnSpanFull(),
 
                                 Forms\Components\TextInput::make('sunat_sol_user')
@@ -171,8 +179,15 @@ class TenantForm
                                     ->directory('certificates')
                                     ->visibility('private')
                                     ->nullable()
-                                    ->helperText('Puedes subir el certificado más adelante.')
-                                    ->columnSpan(['default' => 1, 'sm' => 1]),
+                                    ->acceptedFileTypes([
+                                        'application/x-pem-file',
+                                        'application/x-pkcs12',
+                                        'application/octet-stream',
+                                        '.pem',
+                                        '.pfx',
+                                    ])
+                                    ->helperText('Archivo privado usado para firmar XML. Puedes subirlo después.')
+                                    ->columnSpanFull(),
 
                                 Forms\Components\TextInput::make('sunat_certificate_password')
                                     ->label('Contraseña del Certificado')
@@ -195,6 +210,7 @@ class TenantForm
                                     ->default('18.00')
                                     ->required()
                                     ->helperText('Asegúrate de cumplir los requisitos de SUNAT si eliges el 10.5%.')
+                                    ->native(false)
                                     ->columnSpanFull(),
 
                                 Forms\Components\Toggle::make('prices_include_igv')
