@@ -18,9 +18,19 @@ use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
 use App\Filament\Pages\Auth\Login;
+use Filament\Support\Facades\FilamentView;
+use Filament\View\PanelsRenderHook;
 
 class AdminPanelProvider extends PanelProvider
 {
+    public function boot(): void
+    {
+        FilamentView::registerRenderHook(
+            PanelsRenderHook::HEAD_END,
+            fn() => view('filament.custom-panel-styles'),
+        );
+    }
+
     public function panel(Panel $panel): Panel
     {
         return $panel
@@ -56,15 +66,12 @@ class AdminPanelProvider extends PanelProvider
             ->darkModeBrandLogo(asset('images/logo-dark.png')) // Logo para modo oscuro
             ->brandLogoHeight('4rem')
 
-            // brandName aparece si el logo no carga, o en el login por defecto
-            ->brandName('Virtual TI SaaS')
-
             // El Favicon (icono pequeño de la pestaña del navegador)
             ->favicon(asset('images/favicon.svg')) // Asegúrate de tener un favicon.ico en public
 
             // 🌈 COLOR FIJO (El color del "SaaS" antes de entrar)
             ->colors([
-                'primary' => Color::Indigo, // Usamos un azul profesional por defecto
+                'primary' => Color::Blue,
             ])
             ->brandName(function () {
                 // Usamos el Facade completo para que Intelephense lo reconozca
