@@ -23,8 +23,15 @@ class ReceptionBoard extends Page
 
     public static function canAccess(): bool
     {
-        $features = Auth::user()->tenant->businessSector->features ?? [];
-        return $features['has_rooms'] ?? false;
+        $user = Auth::user();
+
+        if (! $user || ! $user->tenant || ! $user->tenant->businessSector) {
+            return false;
+        }
+
+        $features = $user->tenant->businessSector->features ?? [];
+
+        return (bool) ($features['has_rooms'] ?? false);
     }
 
     protected function getViewData(): array
@@ -46,9 +53,20 @@ class ReceptionBoard extends Page
             ->orderBy('name')
             ->get();
 
+        $allRooms = $zones
+            ->flatMap(fn($zone) => $zone->rooms)
+            ->merge($unassignedRooms);
+
         return [
             'zones' => $zones,
             'unassignedRooms' => $unassignedRooms,
+            'summary' => [
+                'total' => $allRooms->count(),
+                'available' => $allRooms->where('status', Room::STATUS_AVAILABLE)->count(),
+                'occupied' => $allRooms->where('status', Room::STATUS_OCCUPIED)->count(),
+                'dirty' => $allRooms->where('status', Room::STATUS_DIRTY)->count(),
+                'maintenance' => $allRooms->where('status', Room::STATUS_MAINTENANCE)->count(),
+            ],
         ];
     }
 
@@ -57,7 +75,8 @@ class ReceptionBoard extends Page
     {
         return Action::make('checkIn')
             ->label('Realizar Check-In')
-            ->modalHeading(fn(array $arguments) => 'Check-In: ' . (Room::find($arguments['room_id'])?->name ?? 'Habitación'))
+            ->modalHeading(fn(array $arguments) => 'Check-In: ' . (Room::where('tenant_id', Auth::user()->tenant_id)
+                ->find($arguments['room_id'])?->name ?? 'Habitación'))
             ->modalDescription('Ingresa los datos del huésped para aperturar la cuenta.')
             ->modalWidth('lg')
             ->modalSubmitActionLabel('Registrar Ingreso')
@@ -177,29 +196,33 @@ class ReceptionBoard extends Page
                     ->helperText('Opcional. Dinero que deja el huésped al ingresar.'),
             ])
             ->action(function (array $data, array $arguments) {
-                $room = Room::find($arguments['room_id']);
+                $room = Room::where('tenant_id', Auth::user()->tenant_id)
+                    ->find($arguments['room_id']);
 
                 if (!$room || $room->status !== Room::STATUS_AVAILABLE) {
                     \Filament\Notifications\Notification::make()->danger()->title('La habitación no está disponible.')->send();
                     return;
                 }
 
-                \Percy\Core\Models\Reception::create([
-                    'tenant_id' => Auth::user()->tenant_id,
-                    'room_id' => $room->id,
-                    'customer_id' => $data['customer_id'],
-                    'user_id' => Auth::id(),
-                    'check_in_at' => now(),
-                    'expected_check_out_at' => $data['expected_check_out_at'],
-                    'price_per_night' => $room->price_per_night,
-                    'advance_payment' => $data['advance_payment'],
-                    'status' => 'active',
-                ]);
+                \Illuminate\Support\Facades\DB::transaction(function () use ($room, $data): void {
+                    \Percy\Core\Models\Reception::create([
+                        'tenant_id' => Auth::user()->tenant_id,
+                        'room_id' => $room->id,
+                        'customer_id' => $data['customer_id'],
+                        'user_id' => Auth::id(),
+                        'check_in_at' => now(),
+                        'expected_check_out_at' => $data['expected_check_out_at'],
+                        'price_per_night' => $room->price_per_night,
+                        'advance_payment' => $data['advance_payment'],
+                        'status' => 'active',
+                    ]);
 
-                $room->update(['status' => \Percy\Core\Models\Room::STATUS_OCCUPIED]);
+                    $room->update(['status' => \Percy\Core\Models\Room::STATUS_OCCUPIED]);
+                });
 
                 \Filament\Notifications\Notification::make()
                     ->title('¡Check-In exitoso!')
+                    ->body("La habitación {$room->name} ahora está ocupada.")
                     ->success()
                     ->send();
             });
@@ -289,7 +312,8 @@ class ReceptionBoard extends Page
                     $action->halt();
                 }
 
-                $room = Room::find($arguments['room_id']);
+                $room = Room::where('tenant_id', Auth::user()->tenant_id)
+                    ->find($arguments['room_id']);
                 $reception = \Percy\Core\Models\Reception::where('room_id', $room->id)->where('status', 'active')->first();
                 $remainingQuantity = $quantityToDeduct;
 
@@ -367,11 +391,13 @@ class ReceptionBoard extends Page
             ->label('Ver Cuenta')
             ->icon('heroicon-o-clipboard-document-list')
             ->color('gray')
-            ->modalHeading(fn(array $arguments) => 'Estado de Cuenta: ' . (Room::find($arguments['room_id'])?->name ?? 'Habitación'))
+            ->modalHeading(fn(array $arguments) => 'Estado de Cuenta: ' . (Room::where('tenant_id', Auth::user()->tenant_id)
+                ->find($arguments['room_id'])?->name ?? 'Habitación'))
             ->modalWidth('lg')
             ->modalSubmitActionLabel('Guardar')
             ->fillForm(function (array $arguments) {
-                $room = Room::find($arguments['room_id']);
+                $room = Room::where('tenant_id', Auth::user()->tenant_id)
+                    ->find($arguments['room_id']);
                 $reception = \Percy\Core\Models\Reception::where('room_id', $room->id)->where('status', 'active')->first();
                 return [
                     'advance_payment' => $reception?->advance_payment ?? 0,
@@ -442,7 +468,7 @@ class ReceptionBoard extends Page
 
             // 🌟 1. EL BLINDAJE: Se ejecuta en el milisegundo en que haces clic, ANTES de abrir el modal
             ->before(function (Action $action) {
-                $cajaAbierta = \Percy\Core\Models\CashRegister::where('user_id', Auth::id())
+                $cajaAbierta = \Percy\Core\Models\CashRegister::where('tenant_id', Auth::user()->tenant_id)
                     ->where('status', 'open')
                     ->first();
 
@@ -458,16 +484,19 @@ class ReceptionBoard extends Page
                 }
             })
 
-            ->modalHeading(fn(array $arguments) => 'Check-Out: ' . (Room::find($arguments['room_id'])?->name ?? 'Habitación'))
+            ->modalHeading(fn(array $arguments) => 'Check-Out: ' . (Room::where('tenant_id', Auth::user()->tenant_id)
+                ->find($arguments['room_id'])?->name ?? 'Habitación'))
             ->modalDescription('Verifica los consumos, genera el comprobante y libera la habitación.')
-            ->modalWidth('5xl')
+            ->modalWidth('6xl')
 
             ->modalSubmitAction(
                 fn(\Filament\Actions\StaticAction $action) => $action
                     ->label('Confirmar Pago y Liberar Habitación')
                     ->color('success')
                     ->icon('heroicon-o-banknotes')
-                    ->extraAttributes(['class' => 'w-full [&>button]:w-full [&>button]:justify-center text-lg'])
+                    ->extraAttributes([
+                        'class' => 'w-full [&>button]:w-full [&>button]:justify-center [&>button]:text-sm sm:[&>button]:text-base',
+                    ])
             )
             ->modalCancelAction(
                 fn(\Filament\Actions\StaticAction $action) => $action
@@ -477,7 +506,8 @@ class ReceptionBoard extends Page
             )
 
             ->mountUsing(function (Forms\ComponentContainer $form, array $arguments) {
-                $room = Room::find($arguments['room_id']);
+                $room = Room::where('tenant_id', Auth::user()->tenant_id)
+                    ->find($arguments['room_id']);
                 $reception = \Percy\Core\Models\Reception::where('room_id', $room->id)->where('status', 'active')->first();
 
                 if (!$reception) return;
@@ -507,20 +537,53 @@ class ReceptionBoard extends Page
 
                 // SECCIÓN 1: RESUMEN
                 Forms\Components\Section::make('Resumen Financiero de la Cuenta')
+                    ->icon('heroicon-o-calculator')
+                    ->description('Verifica noches, hospedaje, consumos, adelantos y monto final a cobrar.')
                     ->schema([
-                        Forms\Components\TextInput::make('nights')->label('Noches')->readonly()->numeric(),
-                        Forms\Components\TextInput::make('accommodation_total')->label('Hospedaje')->readonly()->prefix('S/'),
-                        Forms\Components\TextInput::make('consumptions_total')->label('Snacks / Extras')->readonly()->prefix('S/'),
-                        Forms\Components\TextInput::make('advance_payment')->label('Garantía / Adelanto')->readonly()->prefix('S/'),
+                        Forms\Components\TextInput::make('nights')
+                            ->label('Noches')
+                            ->readonly()
+                            ->numeric(),
+
+                        Forms\Components\TextInput::make('accommodation_total')
+                            ->label('Hospedaje')
+                            ->readonly()
+                            ->prefix('S/'),
+
+                        Forms\Components\TextInput::make('consumptions_total')
+                            ->label('Snacks / Extras')
+                            ->readonly()
+                            ->prefix('S/'),
+
+                        Forms\Components\TextInput::make('advance_payment')
+                            ->label('Garantía / Adelanto')
+                            ->readonly()
+                            ->prefix('S/'),
+
                         Forms\Components\TextInput::make('total_to_pay')
                             ->label('A COBRAR HOY')
                             ->readonly()
                             ->prefix('S/')
-                            ->extraInputAttributes(['class' => 'text-xl font-black text-success-600 dark:text-success-400 bg-success-50 dark:bg-success-900/20']),
-                    ])->columns(5),
+                            ->extraInputAttributes([
+                                'class' => 'text-xl font-black text-success-600 dark:text-success-400 bg-success-50 dark:bg-success-900/20',
+                            ])
+                            ->columnSpan([
+                                'default' => 1,
+                                'sm' => 2,
+                                'lg' => 1,
+                            ]),
+                    ])
+                    ->columns([
+                        'default' => 1,
+                        'sm' => 2,
+                        'lg' => 5,
+                    ]),
 
                 // SECCIÓN 2: GRID DIVIDIDO
-                Forms\Components\Grid::make(3)->schema([
+                Forms\Components\Grid::make([
+                    'default' => 1,
+                    'lg' => 3,
+                ])->schema([
                     Forms\Components\Section::make('Facturación y Pago')->schema([
                         Forms\Components\Select::make('document_type')
                             ->label('Tipo Comprobante')
@@ -653,7 +716,10 @@ class ReceptionBoard extends Page
                                 $customer = \Percy\Core\Models\Customer::create($data);
                                 return $customer->id;
                             })
-                            ->columnSpan(2),
+                            ->columnSpan([
+                                'default' => 1,
+                                'sm' => 2,
+                            ]),
 
                         Forms\Components\Select::make('payment_method')
                             ->label('Método de Pago')
@@ -668,7 +734,15 @@ class ReceptionBoard extends Page
                             ->visible(fn(\Filament\Forms\Get $get) => \Percy\Core\Models\Sale::requiresReference($get('payment_method') ?? ''))
                             ->required(fn(\Filament\Forms\Get $get) => \Percy\Core\Models\Sale::requiresReference($get('payment_method') ?? ''))
                             ->columnSpan(1),
-                    ])->columns(2)->columnSpan(2),
+                    ])
+                        ->columns([
+                            'default' => 1,
+                            'sm' => 2,
+                        ])
+                        ->columnSpan([
+                            'default' => 1,
+                            'lg' => 2,
+                        ]),
 
                     Forms\Components\Section::make('Detalle de Extras')->schema([
                         Forms\Components\Placeholder::make('detalle_snacks')
@@ -683,8 +757,8 @@ class ReceptionBoard extends Page
                                     return new \Illuminate\Support\HtmlString('<p class="text-sm text-gray-500 italic mt-4 text-center">No se solicitaron extras.</p>');
                                 }
 
-                                $html = '<div class="overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700 w-full mt-2">';
-                                $html .= '<table class="w-full text-xs text-left">';
+                                $html = '<div class="w-full overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700 mt-2">';
+                                $html .= '<table class="min-w-full text-xs text-left">';
                                 $html .= '<thead class="bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white font-semibold"><tr><th class="px-3 py-2">Extra</th><th class="px-3 py-2 text-right">Monto</th></tr></thead>';
                                 $html .= '<tbody class="divide-y divide-gray-200 dark:divide-gray-700">';
 
@@ -698,12 +772,17 @@ class ReceptionBoard extends Page
 
                                 return new \Illuminate\Support\HtmlString($html);
                             })
-                    ])->columnSpan(1),
+                    ])
+                        ->columnSpan([
+                            'default' => 1,
+                            'lg' => 1,
+                        ]),
                 ]),
             ])
             ->action(function (array $data, array $arguments) {
 
-                $room = Room::find($arguments['room_id']);
+                $room = Room::where('tenant_id', Auth::user()->tenant_id)
+                    ->find($arguments['room_id']);
                 $reception = \Percy\Core\Models\Reception::where('room_id', $room->id)->where('status', 'active')->first();
 
                 $tenantId = Auth::user()->tenant_id;
@@ -831,7 +910,7 @@ class ReceptionBoard extends Page
                     ]);
 
                     // 4. Ingreso a Caja
-                    $cajaAbierta = \Percy\Core\Models\CashRegister::where('user_id', Auth::id())
+                    $cajaAbierta = \Percy\Core\Models\CashRegister::where('tenant_id', Auth::user()->tenant_id)
                         ->where('status', 'open')
                         ->first();
 
@@ -887,7 +966,8 @@ class ReceptionBoard extends Page
             ->modalDescription('Esto cambiará el estado a "Disponible" y estará lista para un nuevo huésped.')
             ->modalSubmitActionLabel('Sí, marcar como Disponible')
             ->action(function (array $arguments) {
-                $room = Room::find($arguments['room_id']);
+                $room = Room::where('tenant_id', Auth::user()->tenant_id)
+                    ->find($arguments['room_id']);
                 if ($room) {
                     $room->update(['status' => \Percy\Core\Models\Room::STATUS_AVAILABLE]);
                     \Filament\Notifications\Notification::make()
@@ -911,7 +991,8 @@ class ReceptionBoard extends Page
             ->modalDescription('La habitación no podrá ser alquilada hasta que se marque como disponible nuevamente.')
             ->modalSubmitActionLabel('Sí, enviar a mantenimiento')
             ->action(function (array $arguments) {
-                $room = Room::find($arguments['room_id']);
+                $room = Room::where('tenant_id', Auth::user()->tenant_id)
+                    ->find($arguments['room_id']);
                 if ($room) {
                     $room->update(['status' => \Percy\Core\Models\Room::STATUS_MAINTENANCE]);
                     \Filament\Notifications\Notification::make()
