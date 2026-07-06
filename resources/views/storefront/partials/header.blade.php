@@ -135,18 +135,7 @@
         <div id="search-panel" class="hidden border-t border-slate-100 bg-white">
             <div class="max-w-6xl mx-auto px-4 py-3">
                 <div class="flex items-center gap-3">
-
-                    {{-- En el index mostramos acceso directo al catálogo --}}
-                    @if($isHomePage)
-                        <a
-                            href="/productos"
-                            class="shrink-0 inline-flex items-center gap-2 bg-brand text-white font-black rounded-2xl py-3 px-4 text-sm hover:opacity-90 active:scale-95 transition shadow-brand"
-                        >
-                            Ver productos
-                            <x-heroicon-o-arrow-right class="w-4 h-4" />
-                        </a>
-                    @endif
-                    
+                                        
                     {{-- Buscador --}}
                     <div class="relative flex-1">
                         <input
