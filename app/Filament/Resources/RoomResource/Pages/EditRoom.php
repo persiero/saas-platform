@@ -10,10 +10,22 @@ class EditRoom extends EditRecord
 {
     protected static string $resource = RoomResource::class;
 
+    protected static ?string $title = 'Editar Habitación';
+
     protected function getHeaderActions(): array
     {
+        return [];
+    }
+
+    protected function getFormActions(): array
+    {
         return [
-            Actions\DeleteAction::make(),
+            $this->getSaveFormAction()
+                ->label('Guardar Cambios')
+                ->icon('heroicon-o-check-circle'),
+
+            $this->getCancelFormAction()
+                ->label('Cancelar'),
         ];
     }
 
