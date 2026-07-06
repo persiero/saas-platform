@@ -5,22 +5,86 @@
 
         {{-- ENCABEZADO COMPACTO --}}
         <section class="mb-4">
-            <div class="flex items-center gap-3 flex-wrap">
-                <span class="text-xs md:text-sm font-black text-brand uppercase tracking-wider">
-                    Catálogo completo
-                </span>
+            <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
 
-                <span class="text-slate-300 font-bold">|</span>
+                <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:flex-wrap">
 
-                <h2 class="text-xl md:text-2xl font-black text-slate-950 leading-none">
-                    Todos los productos
-                </h2>
+                    {{-- Categorías dentro del contenido --}}
+                    @isset($categories)
+                        <div class="relative w-full sm:w-[240px]">
+                            <input type="hidden" id="categorySelect" value="all">
+
+                            <button
+                                type="button"
+                                onclick="toggleCategoryDropdown()"
+                                class="w-full inline-flex items-center justify-between gap-3 bg-white border border-slate-200 text-slate-800 font-black rounded-2xl py-3 px-4 text-sm outline-none hover:border-brand transition shadow-sm"
+                            >
+                                <span id="categorySelectLabel">Todas las categorías</span>
+                                <x-heroicon-o-chevron-down class="w-4 h-4 text-slate-400" />
+                            </button>
+
+                            <div
+                                id="categoryDropdown"
+                                class="hidden absolute left-0 top-full mt-2 w-full bg-white border border-slate-100 rounded-2xl shadow-xl overflow-hidden z-[80]"
+                            >
+                                <button
+                                    type="button"
+                                    onclick="selectHeaderCategory('all', 'Todas las categorías')"
+                                    class="category-dropdown-item w-full text-left px-4 py-3 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
+                                >
+                                    Todas las categorías
+                                </button>
+
+                                @foreach($categories as $category)
+                                    <button
+                                        type="button"
+                                        onclick="selectHeaderCategory(@js($category->name), @js($category->name))"
+                                        class="category-dropdown-item w-full text-left px-4 py-3 text-sm font-bold text-slate-700 transition border-t border-slate-50 hover:bg-slate-50"
+                                    >
+                                        {{ $category->name }}
+                                    </button>
+                                @endforeach
+                            </div>
+                        </div>
+                    @endisset
+
+                    <div class="flex items-center gap-3 flex-wrap">
+                        <span class="text-xs md:text-sm font-black text-brand uppercase tracking-wider">
+                            Catálogo completo
+                        </span>
+
+                        <span class="text-slate-300 font-bold">|</span>
+
+                        <h2 class="text-xl md:text-2xl font-black text-slate-950 leading-none">
+                            Todos los productos
+                        </h2>
+                    </div>
+                </div>
             </div>
         </section>
 
         {{-- FILTROS COMPLEMENTARIOS --}}
         <section class="mb-6">
-            <div class="bg-white rounded-3xl border border-slate-100 shadow-sm p-3 md:p-4">
+
+            {{-- Botón visible solo en celular/tablet --}}
+            <div class="mb-3 lg:hidden">
+                <button
+                    type="button"
+                    onclick="toggleCatalogFilters()"
+                    class="w-full inline-flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-800 shadow-sm hover:bg-slate-50 transition"
+                >
+                    <span class="inline-flex items-center gap-2">
+                        <x-heroicon-o-funnel class="w-5 h-5 text-brand" />
+                        Filtros avanzados
+                    </span>
+
+                    <x-heroicon-o-chevron-down id="catalogFiltersIcon" class="w-4 h-4 text-slate-400 transition-transform" />
+                </button>
+            </div>
+
+            {{-- En móvil/tablet inicia oculto. En escritorio siempre visible --}}
+            <div id="catalogFiltersPanel" class="hidden lg:block">
+                <div class="bg-white rounded-3xl border border-slate-100 shadow-sm p-3 md:p-4">
                 <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-3">
                     <div>
                         <h3 class="text-sm font-black text-slate-900">
@@ -173,5 +237,22 @@
         </div>
     </main>
 
+    <script>
+        window.toggleCatalogFilters = function () {
+            const panel = document.getElementById('catalogFiltersPanel');
+            const icon = document.getElementById('catalogFiltersIcon');
+
+            if (! panel) {
+                return;
+            }
+
+            panel.classList.toggle('hidden');
+
+            if (icon) {
+                icon.classList.toggle('rotate-180');
+            }
+        };
+    </script>
+    
     @include('storefront.partials.product-filter-script')
 @endsection
