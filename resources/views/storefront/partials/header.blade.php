@@ -20,16 +20,16 @@
                     <img
                         src="{{ Storage::disk('r2_public')->url($tenant->logo) }}"
                         alt="Logo {{ $tenant->name }}"
-                        class="w-11 h-11 md:w-14 md:h-14 object-contain rounded-2xl bg-white border border-slate-100 shadow-sm shrink-0"
+                        class="w-14 h-14 md:w-16 md:h-16 object-contain rounded-2xl bg-white border border-slate-100 shadow-sm shrink-0"
                     >
                 @else
-                    <div class="w-11 h-11 md:w-14 md:h-14 bg-brand-soft rounded-2xl flex items-center justify-center text-brand font-black text-xl md:text-2xl shrink-0 border border-slate-100">
+                    <div class="w-14 h-14 md:w-16 md:h-16 bg-brand-soft rounded-2xl flex items-center justify-center text-brand font-black text-xl md:text-2xl shrink-0 border border-slate-100">
                         {{ substr($tenant->name, 0, 1) }}
                     </div>
                 @endif
 
                 <div class="min-w-0">
-                    <h1 class="text-sm md:text-xl font-black text-slate-900 leading-tight truncate">
+                    <h1 class="text-sm md:text-lg xl:text-xl font-black text-slate-900 leading-tight truncate">
                         {{ $tenant->name }}
                     </h1>
 
@@ -55,6 +55,38 @@
 
             {{-- ACCIONES --}}
             <div class="flex items-center gap-2 shrink-0">
+                @isset($categories)
+                    @if($isProductsPage || $isHomePage)
+                        <div class="relative hidden lg:block w-[340px] xl:w-[430px]">
+                            <input
+                                type="text"
+                                id="{{ $isProductsPage ? 'mobileSearchInput' : 'searchInput' }}"
+                                onkeyup="{{ $isProductsPage ? 'syncMobileProductSearch(this.value)' : 'filterProducts()' }}"
+                                placeholder="{{ $isProductsPage ? 'Buscar productos...' : 'Busca un producto o entra al catálogo...' }}"
+                                class="w-full bg-slate-50 border border-slate-200 focus:bg-white focus-brand rounded-2xl py-2.5 pl-10 pr-10 text-sm transition-all outline-none"
+                            >
+
+                            <button
+                                type="button"
+                                onclick="filterProducts()"
+                                class="absolute left-3 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center text-slate-400 hover:text-brand transition"
+                                aria-label="Buscar"
+                            >
+                                <x-heroicon-o-magnifying-glass class="w-4 h-4" />
+                            </button>
+
+                            <button
+                                type="button"
+                                onclick="resetFilters()"
+                                class="absolute right-3 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center text-slate-400 hover:text-red-500 transition"
+                                aria-label="Limpiar búsqueda"
+                            >
+                                <x-heroicon-o-x-mark class="w-4 h-4" />
+                            </button>
+                        </div>
+                    @endif
+                @endisset
+
                 @if($tenant->phone && $numeroLimpioHeader)
                     <a
                         href="https://wa.me/{{ $numeroLimpioHeader }}?text=Hola,%20vengo%20de%20la%20tienda%20online.%20Necesito%20información."
@@ -70,7 +102,7 @@
                     <button
                         type="button"
                         onclick="toggleSearchPanel()"
-                        class="inline-flex items-center justify-center w-11 h-11 md:hidden bg-slate-100 text-slate-700 rounded-2xl hover:bg-slate-200 transition"
+                        class="inline-flex items-center justify-center w-11 h-11 lg:hidden bg-slate-100 text-slate-700 rounded-2xl hover:bg-slate-200 transition"
                         aria-label="Buscar productos"
                     >
                         <x-heroicon-o-magnifying-glass class="w-5 h-5" />
@@ -100,7 +132,7 @@
 
     {{-- FILA DE BÚSQUEDA COMPACTA --}}
     @isset($categories)
-        <div id="search-panel" class="hidden md:block border-t border-slate-100 bg-white">
+        <div id="search-panel" class="hidden border-t border-slate-100 bg-white">
             <div class="max-w-6xl mx-auto px-4 py-3">
                 <div class="flex items-center gap-3">
 
@@ -114,46 +146,7 @@
                             <x-heroicon-o-arrow-right class="w-4 h-4" />
                         </a>
                     @endif
-
-                    {{-- En /productos mostramos el filtro de categorías --}}
-                    @if($isProductsPage)
-                        <div class="relative shrink-0">
-                            <input type="hidden" id="categorySelect" value="all">
-
-                            <button
-                                type="button"
-                                onclick="toggleCategoryDropdown()"
-                                class="min-w-[210px] inline-flex items-center justify-between gap-3 bg-white border border-slate-200 text-slate-800 font-black rounded-2xl py-3 px-4 text-sm outline-none hover:border-brand transition"
-                            >
-                                <span id="categorySelectLabel">Todas las categorías</span>
-                                <x-heroicon-o-chevron-down class="w-4 h-4 text-slate-400" />
-                            </button>
-
-                            <div
-                                id="categoryDropdown"
-                                class="hidden absolute left-0 top-full mt-2 w-full bg-white border border-slate-100 rounded-2xl shadow-xl overflow-hidden z-[80]"
-                            >
-                                <button
-                                    type="button"
-                                    onclick="selectHeaderCategory('all', 'Todas las categorías')"
-                                    class="category-dropdown-item w-full text-left px-4 py-3 text-sm font-bold text-slate-700 transition"
-                                >
-                                    Todas las categorías
-                                </button>
-
-                                @foreach($categories as $category)
-                                    <button
-                                        type="button"
-                                        onclick="selectHeaderCategory(@js($category->name), @js($category->name))"
-                                        class="category-dropdown-item w-full text-left px-4 py-3 text-sm font-bold text-slate-700 transition border-t border-slate-50"
-                                    >
-                                        {{ $category->name }}
-                                    </button>
-                                @endforeach
-                            </div>
-                        </div>
-                    @endif
-
+                    
                     {{-- Buscador --}}
                     <div class="relative flex-1">
                         <input
@@ -189,6 +182,18 @@
         </div>
 
         <script>
+            window.syncMobileProductSearch = function (value) {
+                const desktopInput = document.getElementById('searchInput');
+
+                if (desktopInput) {
+                    desktopInput.value = value;
+                }
+
+                if (typeof filterProducts === 'function') {
+                    filterProducts();
+                }
+            };
+
             window.toggleSearchPanel = function () {
                 const panel = document.getElementById('search-panel');
 
