@@ -15,12 +15,14 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Illuminate\Support\Facades\Auth;
 use Filament\Tables\Filters\TrashedFilter;
+use Filament\Infolists\Infolist;
+use App\Filament\Resources\ZoneResource\Schemas\ZoneInfolist;
 
 class ZoneResource extends Resource
 {
     protected static ?string $model = Zone::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
+    protected static ?string $navigationIcon = 'heroicon-o-map';
     protected static ?string $navigationGroup = 'Catálogos';
 
     // 🌟 Nombres genéricos para que aplique a ambos módulos
@@ -31,44 +33,84 @@ class ZoneResource extends Resource
     // 🌟 TRAEMOS EL CONTEO Y PERMITIMOS VER LA PAPELERA
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()
-            ->where('tenant_id', Auth::user()->tenant_id)
+        $user = Auth::user();
+
+        $query = parent::getEloquentQuery()
             ->withCount(['tables', 'rooms'])
             ->withoutGlobalScopes([
-                SoftDeletingScope::class, // Permite que el filtro de papelera funcione
+                SoftDeletingScope::class,
             ]);
+
+        if (! $user || ! $user->tenant_id) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        return $query->where('tenant_id', $user->tenant_id);
     }
 
     // 🌟 MAGIA SAAS: Visible si tiene Mesas O Habitaciones
     public static function canViewAny(): bool
     {
-        /** @var \Percy\Core\Models\User $user */
+        /** @var \Percy\Core\Models\User|null $user */
         $user = Auth::user();
+
+        if (! $user || ! $user->tenant || ! $user->tenant->businessSector) {
+            return false;
+        }
+
         $features = $user->tenant->businessSector->features ?? [];
 
-        $hasTables = $features['has_tables'] ?? false;
-        $hasRooms = $features['has_rooms'] ?? false;
+        $hasTables = (bool) ($features['has_tables'] ?? false);
+        $hasRooms = (bool) ($features['has_rooms'] ?? false);
 
-        // Si tiene cualquiera de los dos módulos y no es vendedor puro
-        return ($hasTables || $hasRooms) && !$user->hasRole('Vendedor');
+        return ($hasTables || $hasRooms)
+            && ! $user->hasRole('Vendedor');
     }
 
     // =========================================================
     // 🔐 SEGURIDAD: Solo Administradores pueden gestionar Zonas
     // =========================================================
-    public static function canCreate(): bool { return Auth::user()->isAdmin(); }
-    public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool { return Auth::user()->isAdmin(); }
-    public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool { return Auth::user()->isAdmin(); }
-    public static function canRestore(\Illuminate\Database\Eloquent\Model $record): bool { return Auth::user()->isAdmin(); }
-    public static function canForceDelete(\Illuminate\Database\Eloquent\Model $record): bool { return false; } // Nadie borra definitivamente
-    public static function canDeleteAny(): bool { return Auth::user()->isAdmin(); }
-    public static function canRestoreAny(): bool { return Auth::user()->isAdmin(); }
+    public static function canCreate(): bool
+    {
+        return Auth::user()?->isAdmin() ?? false;
+    }
+
+    public static function canEdit(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return Auth::user()?->isAdmin() ?? false;
+    }
+
+    public static function canDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return Auth::user()?->isAdmin() ?? false;
+    }
+
+    public static function canRestore(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return Auth::user()?->isAdmin() ?? false;
+    }
+
+    public static function canForceDelete(\Illuminate\Database\Eloquent\Model $record): bool
+    {
+        return false;
+    }
+
+    public static function canDeleteAny(): bool
+    {
+        return Auth::user()?->isAdmin() ?? false;
+    }
+
+    public static function canRestoreAny(): bool
+    {
+        return Auth::user()?->isAdmin() ?? false;
+    }
 
     public static function form(Form $form): Form
     {
         return $form
             ->schema([
                 Forms\Components\Section::make('Información del Espacio')
+                    ->icon('heroicon-o-map')
                     ->description('Crea un ambiente (Ej: Salón, Terraza, Piso 1, Bungalows).')
                     ->schema([
                         Forms\Components\TextInput::make('name')
@@ -80,21 +122,30 @@ class ZoneResource extends Resource
 
                         Forms\Components\Toggle::make('is_active')
                             ->label('Activo')
+                            ->helperText('Desactívalo si esta zona o piso no estará disponible temporalmente.')
+                            ->inline(false)
                             ->default(true)
                             ->columnSpan(['default' => 1, 'md' => 1]),
                     ])->columns(['default' => 1, 'md' => 3]),
 
                 // 🌟 MAGIA UX: Esta sección SOLO aparece si el cliente tiene módulo de restaurante
                 Forms\Components\Section::make('Distribución de Mesas')
-                    ->visible(fn () => Auth::user()->tenant->businessSector->features['has_tables'] ?? false)
+                    ->icon('heroicon-o-squares-2x2')
+                    ->description('Configura las mesas disponibles dentro de esta zona o salón.')
+                    ->visible(fn(): bool => (bool) (Auth::user()?->tenant?->businessSector?->features['has_tables'] ?? false))
                     ->schema([
                         Forms\Components\Repeater::make('tables')
                             ->relationship()
                             ->label('')
-                            ->addActionLabel('Agregar nueva mesa')
-                            ->mutateRelationshipDataBeforeCreateUsing(function (array $data): array {
+                            ->addActionLabel('Agregar mesa')
+                            ->itemLabel(fn(array $state): ?string => $state['name'] ?? 'Nueva mesa')
+                            ->mutateRelationshipDataBeforeSaveUsing(function (array $data): array {
                                 $data['tenant_id'] = Auth::user()->tenant_id;
-                                $data['status'] = Table::STATUS_AVAILABLE;
+
+                                if (blank($data['status'] ?? null)) {
+                                    $data['status'] = Table::STATUS_AVAILABLE;
+                                }
+
                                 return $data;
                             })
                             ->schema([
@@ -125,32 +176,75 @@ class ZoneResource extends Resource
             ]);
     }
 
+    public static function infolist(Infolist $infolist): Infolist
+    {
+        return ZoneInfolist::configure($infolist);
+    }
+
     public static function table(FilamentTable $table): FilamentTable
     {
         return $table
+            ->striped()
+            ->paginated([10, 25, 50, 100])
+            ->defaultPaginationPageOption(25)
+            ->persistSearchInSession()
+            ->persistFiltersInSession()
+            ->persistSortInSession()
+            ->recordUrl(null)
+            ->recordAction('view')
             ->columns([
+                Tables\Columns\TextColumn::make('mobile_summary')
+                    ->label('Zona / Piso')
+                    ->state(fn(Zone $record): string => $record->name)
+                    ->description(function (Zone $record): string {
+                        $features = Auth::user()?->tenant?->businessSector?->features ?? [];
+
+                        $parts = [];
+
+                        if ($features['has_tables'] ?? false) {
+                            $parts[] = "{$record->tables_count} mesas";
+                        }
+
+                        if ($features['has_rooms'] ?? false) {
+                            $parts[] = "{$record->rooms_count} habitaciones";
+                        }
+
+                        $parts[] = $record->is_active ? 'Activo' : 'Inactivo';
+
+                        return implode(' · ', $parts);
+                    })
+                    ->icon('heroicon-o-map')
+                    ->weight('black')
+                    ->wrap()
+                    ->searchable(['name'])
+                    ->hiddenFrom('md'),
+
                 Tables\Columns\TextColumn::make('name')
                     ->label('Zona / Piso')
                     ->searchable()
                     ->sortable()
-                    ->weight('bold'),
+                    ->weight('bold')
+                    ->visibleFrom('md'),
 
                 // 🌟 COLUMNA DINÁMICA: Solo se muestra si tiene restaurante
                 Tables\Columns\TextColumn::make('tables_count')
                     ->label('Total Mesas')
                     ->badge()
                     ->color('info')
-                    ->visible(fn () => Auth::user()->tenant->businessSector->features['has_tables'] ?? false),
+                    ->visible(fn() => Auth::user()->tenant->businessSector->features['has_tables'] ?? false)
+                    ->visibleFrom('md'),
 
                 // 🌟 COLUMNA DINÁMICA: Solo se muestra si tiene hotel
                 Tables\Columns\TextColumn::make('rooms_count')
                     ->label('Habitaciones')
                     ->badge()
                     ->color('success')
-                    ->visible(fn () => Auth::user()->tenant->businessSector->features['has_rooms'] ?? false),
+                    ->visible(fn() => Auth::user()->tenant->businessSector->features['has_rooms'] ?? false)
+                    ->visibleFrom('md'),
 
                 Tables\Columns\ToggleColumn::make('is_active')
-                    ->label('Activo'),
+                    ->label('Activo')
+                    ->visibleFrom('md'),
 
                 Tables\Columns\TextColumn::make('created_at')
                     ->label('Creado el')
@@ -189,10 +283,11 @@ class ZoneResource extends Resource
                         ->modalHeading('Restaurar Zona')
                         ->modalDescription('¿Deseas rescatar esta zona de la papelera? Sus mesas/habitaciones volverán a estar activas.'),
                 ])
-                ->label('Acciones')
-                ->icon('heroicon-o-ellipsis-vertical')
-                ->button()
-                ->color('gray'),
+                    ->label('Acciones')
+                    ->tooltip('Acciones')
+                    ->icon('heroicon-m-ellipsis-vertical')
+                    ->iconButton()
+                    ->color('gray'),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([

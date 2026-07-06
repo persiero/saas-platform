@@ -86,7 +86,7 @@ class AdminPanelProvider extends PanelProvider
                 return 'Mi Ecosistema SaaS';
             })
             ->font('Inter')
-            ->sidebarWidth('15rem')
+            ->sidebarWidth('16rem')
             ->sidebarFullyCollapsibleOnDesktop()
 
             // 🌟 MAGIA: Forzamos el orden global de los grupos del menú

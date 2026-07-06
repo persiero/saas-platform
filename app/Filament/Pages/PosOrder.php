@@ -29,6 +29,9 @@ class PosOrder extends Page
     // Categoría seleccionada actualmente (null = Todas)
     public $selectedCategoryId = null;
 
+    // Texto de búsqueda del producto o plato
+    public string $productSearch = '';
+
     // 🌟 Agrega esto a tus propiedades
     public $activeCashRegister;
 
@@ -41,6 +44,19 @@ class PosOrder extends Page
         $nombreMozo = $this->sale->user ? explode(' ', $this->sale->user->name)[0] : 'Cajero';
 
         return "Atendiendo: {$nombreMesa} (Mozo: {$nombreMozo})";
+    }
+
+    public static function canAccess(): bool
+    {
+        $user = Auth::user();
+
+        if (! $user || ! $user->tenant || ! $user->tenant->businessSector) {
+            return false;
+        }
+
+        $features = $user->tenant->businessSector->features ?? [];
+
+        return (bool) ($features['has_tables'] ?? false);
     }
 
     public function mount(Sale $sale)
@@ -67,20 +83,34 @@ class PosOrder extends Page
     #[Computed]
     public function products()
     {
-        $query = Product::where('tenant_id', Auth::user()->tenant_id)
+        $query = Product::query()
+            ->where('tenant_id', Auth::user()->tenant_id)
             ->where('active', true);
 
         if ($this->selectedCategoryId) {
             $query->where('category_id', $this->selectedCategoryId);
         }
 
-        return $query->get();
+        $search = trim($this->productSearch);
+
+        if ($search !== '') {
+            $query->where('name', 'like', "%{$search}%");
+        }
+
+        return $query
+            ->orderBy('name')
+            ->get();
     }
 
     // 🌟 ACCIÓN: Cambiar de categoría al tocar un botón
     public function setCategory($id)
     {
         $this->selectedCategoryId = $id;
+    }
+
+    public function clearProductSearch(): void
+    {
+        $this->productSearch = '';
     }
 
     // 🌟 ACCIÓN PRINCIPAL: Agregar plato a la comanda
@@ -188,14 +218,16 @@ class PosOrder extends Page
         // Refrescamos la relación para tener los datos nuevecitos
         $this->sale->load('items');
 
-        $total = $this->sale->items->sum('total');
+        $total = (float) $this->sale->items->sum('total');
+        $opGravadas = (float) $this->sale->items->sum(
+            fn($item): float => (float) $item->unit_value * (float) $item->quantity
+        );
+        $igv = (float) $this->sale->items->sum('igv_amount');
 
-        // Forma simplificada de totales para restaurante rápido (todo gravado)
-        // Luego lo puliremos con op_gravadas si lo requieres
         $this->sale->update([
-            'total' => $total,
-            'op_gravadas' => $total / 1.18,
-            'igv' => $total - ($total / 1.18),
+            'total' => round($total, 2),
+            'op_gravadas' => round($opGravadas, 2),
+            'igv' => round($igv, 2),
         ]);
 
         // 🌟 MAGIA UX/UI: Controlamos el color de la mesa según los platos
@@ -217,14 +249,38 @@ class PosOrder extends Page
     // 🌟 ACCIÓN: Aumentar cantidad
     public function incrementItem($itemId)
     {
-        $item = $this->sale->items()->find($itemId);
-        if ($item) {
-            $item->update([
-                'quantity' => $item->quantity + 1,
-                'total' => ($item->quantity + 1) * $item->unit_price,
-            ]);
-            $this->recalculateTotals();
+        $item = $this->sale->items()->with('product')->find($itemId);
+
+        if (! $item) {
+            return;
         }
+
+        $product = $item->product;
+
+        if ($product && $product->type === 'product') {
+            $newQuantity = $item->quantity + 1;
+            $stockDisponible = (float) ($product->current_stock ?? 0);
+
+            if ($stockDisponible < $newQuantity) {
+                \Filament\Notifications\Notification::make()
+                    ->warning()
+                    ->title('Stock insuficiente')
+                    ->body("No puedes agregar más {$product->name}. Stock disponible: {$stockDisponible}.")
+                    ->send();
+
+                return;
+            }
+        }
+
+        $newQuantity = $item->quantity + 1;
+
+        $item->update([
+            'quantity' => $newQuantity,
+            'total' => $newQuantity * $item->unit_price,
+            'igv_amount' => round($newQuantity * ($item->unit_price - $item->unit_value), 2),
+        ]);
+
+        $this->recalculateTotals();
     }
 
     // 🌟 ACCIÓN: Disminuir cantidad
@@ -252,8 +308,9 @@ class PosOrder extends Page
 
             $item->update([
                 'quantity' => $newQuantity,
-                'sent_quantity' => $item->sent_quantity, // Guardamos el ajuste
+                'sent_quantity' => $item->sent_quantity,
                 'total' => $newQuantity * $item->unit_price,
+                'igv_amount' => round($newQuantity * ($item->unit_price - $item->unit_value), 2),
             ]);
         } else {
             $this->removeItem($itemId); // Reutilizamos la lógica completa de borrar
