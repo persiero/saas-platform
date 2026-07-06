@@ -8,3 +8,235 @@ body {
     font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
     font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
 }
+
+/*
+|--------------------------------------------------------------------------
+| Base general del panel
+|--------------------------------------------------------------------------
+*/
+
+.fi-body {
+    background-color: #f8fafc;
+    color: #020617;
+}
+
+.dark .fi-body {
+    background-color: #020617;
+    color: #f8fafc;
+}
+
+.fi-main {
+    background-color: #f8fafc;
+}
+
+.dark .fi-main {
+    background-color: #020617;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Sidebar diferenciado
+|--------------------------------------------------------------------------
+*/
+
+.fi-sidebar {
+    background-color: #f1f5f9;
+    border-right: 1px solid #e2e8f0;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.dark .fi-sidebar {
+    background-color: #0f172a;
+    border-right-color: #1e293b;
+}
+
+.fi-sidebar-header {
+    background-color: rgba(255, 255, 255, 0.85);
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.dark .fi-sidebar-header {
+    background-color: #0f172a;
+    border-bottom-color: #1e293b;
+}
+
+.fi-sidebar-nav {
+    padding: 0.75rem 0.5rem;
+}
+
+.fi-sidebar-group-label {
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #64748b;
+}
+
+.dark .fi-sidebar-group-label {
+    color: #94a3b8;
+}
+
+.fi-sidebar-item-button {
+    border-radius: 0.75rem;
+    transition: all 150ms ease;
+}
+
+.fi-sidebar-item-button:hover {
+    background-color: #ffffff;
+    color: #1d4ed8;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+}
+
+.dark .fi-sidebar-item-button:hover {
+    background-color: #1e293b;
+    color: #93c5fd;
+}
+
+.fi-sidebar-item.fi-active .fi-sidebar-item-button {
+    background-color: #eff6ff;
+    color: #1d4ed8;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+    outline: 1px solid #dbeafe;
+}
+
+.dark .fi-sidebar-item.fi-active .fi-sidebar-item-button {
+    background-color: rgba(30, 64, 175, 0.25);
+    color: #93c5fd;
+    outline-color: rgba(30, 64, 175, 0.5);
+}
+
+.fi-sidebar-item-icon {
+    color: #94a3b8;
+}
+
+.dark .fi-sidebar-item-icon {
+    color: #64748b;
+}
+
+.fi-sidebar-item.fi-active .fi-sidebar-item-icon {
+    color: #2563eb;
+}
+
+.dark .fi-sidebar-item.fi-active .fi-sidebar-item-icon {
+    color: #93c5fd;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Topbar
+|--------------------------------------------------------------------------
+*/
+
+.fi-topbar nav {
+    background-color: rgba(255, 255, 255, 0.92);
+    border-bottom: 1px solid #e2e8f0;
+    backdrop-filter: blur(12px);
+}
+
+.dark .fi-topbar nav {
+    background-color: rgba(2, 6, 23, 0.92);
+    border-bottom-color: #1e293b;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Tarjetas, secciones y tablas
+|--------------------------------------------------------------------------
+*/
+
+.fi-section,
+.fi-ta-ctn {
+    border-radius: 1rem;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.dark .fi-section,
+.dark .fi-ta-ctn {
+    border-color: #1e293b;
+}
+
+.fi-section,
+.fi-ta-header {
+    background-color: #ffffff;
+}
+
+.dark .fi-section,
+.dark .fi-ta-header {
+    background-color: #0f172a;
+}
+
+.fi-ta-row {
+    transition: background-color 150ms ease;
+}
+
+.fi-ta-row:hover {
+    background-color: #f8fafc;
+}
+
+.dark .fi-ta-row:hover {
+    background-color: rgba(30, 41, 59, 0.6);
+}
+
+/*
+|--------------------------------------------------------------------------
+| Formularios y botones
+|--------------------------------------------------------------------------
+*/
+
+.fi-input-wrp {
+    border-radius: 0.75rem;
+}
+
+.fi-fo-field-wrp-label label {
+    font-weight: 600;
+    color: #334155;
+}
+
+.dark .fi-fo-field-wrp-label label {
+    color: #e2e8f0;
+}
+
+.fi-fo-field-wrp-helper-text {
+    color: #64748b;
+}
+
+.dark .fi-fo-field-wrp-helper-text {
+    color: #94a3b8;
+}
+
+.fi-btn {
+    border-radius: 0.75rem;
+    font-weight: 600;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Títulos y breadcrumbs
+|--------------------------------------------------------------------------
+*/
+
+.fi-breadcrumbs-item-label {
+    color: #64748b;
+}
+
+.dark .fi-breadcrumbs-item-label {
+    color: #94a3b8;
+}
+
+.fi-header-heading {
+    letter-spacing: -0.025em;
+    color: #020617;
+}
+
+.dark .fi-header-heading {
+    color: #ffffff;
+}
+
+.fi-header-subheading {
+    color: #64748b;
+}
+
+.dark .fi-header-subheading {
+    color: #94a3b8;
+}
