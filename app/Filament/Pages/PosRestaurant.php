@@ -22,8 +22,15 @@ class PosRestaurant extends Page
     // 🌟 MAGIA SAAS: Solo visible para restaurantes
     public static function canAccess(): bool
     {
-        $features = Auth::user()->tenant->businessSector->features ?? [];
-        return $features['has_tables'] ?? false;
+        $user = Auth::user();
+
+        if (! $user || ! $user->tenant || ! $user->tenant->businessSector) {
+            return false;
+        }
+
+        $features = $user->tenant->businessSector->features ?? [];
+
+        return (bool) ($features['has_tables'] ?? false);
     }
 
     // 🌟 Enviamos los datos a la vista
@@ -40,8 +47,16 @@ class PosRestaurant extends Page
             }])
             ->get();
 
+        $allTables = $zones->flatMap(fn($zone) => $zone->tables);
+
         return [
             'zones' => $zones,
+            'summary' => [
+                'total' => $allTables->count(),
+                'available' => $allTables->where('status', 'available')->count(),
+                'occupied' => $allTables->where('status', 'occupied')->count(),
+                'cleaning' => $allTables->where('status', 'cleaning')->count(),
+            ],
         ];
     }
 
@@ -51,7 +66,8 @@ class PosRestaurant extends Page
         $table = \Percy\Core\Models\Table::where('tenant_id', Auth::user()->tenant_id)->findOrFail($tableId);
 
         // 1. Buscamos si la mesa YA TIENE una cuenta abierta (pending)
-        $sale = \Percy\Core\Models\Sale::where('table_id', $table->id)
+        $sale = \Percy\Core\Models\Sale::where('tenant_id', Auth::user()->tenant_id)
+            ->where('table_id', $table->id)
             ->where('status', 'pending')
             ->first();
 

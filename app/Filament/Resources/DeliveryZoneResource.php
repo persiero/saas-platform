@@ -15,6 +15,11 @@ use Filament\Tables\Table;
 use Illuminate\Support\Facades\Auth;
 use Percy\Core\Services\Tenants\TenantPlanService;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
+use Filament\Infolists\Infolist;
+use Filament\Infolists\Components\IconEntry;
+use Filament\Infolists\Components\Section as InfolistSection;
+use Filament\Infolists\Components\TextEntry;
 
 class DeliveryZoneResource extends Resource
 {
@@ -23,7 +28,7 @@ class DeliveryZoneResource extends Resource
     protected static ?string $navigationIcon = 'heroicon-o-truck';
     protected static ?string $navigationGroup = 'Configuración';
     protected static ?string $modelLabel = 'Zona de Reparto';
-    protected static ?string $pluralModelLabel = 'Zonas de Repartos';
+    protected static ?string $pluralModelLabel = 'Zonas de Reparto';
     protected static ?int $navigationSort = 4;
 
     private static function canAccessDeliveryZones(): bool
@@ -31,11 +36,7 @@ class DeliveryZoneResource extends Resource
         /** @var \Percy\Core\Models\User|null $user */
         $user = Auth::user();
 
-        if (! $user) {
-            return false;
-        }
-
-        if ($user->tenant_id === null) {
+        if (! $user || ! $user->tenant_id || ! $user->tenant) {
             return false;
         }
 
@@ -78,49 +79,99 @@ class DeliveryZoneResource extends Resource
         return $form
             ->schema([
                 Forms\Components\Section::make('Ubicación Geográfica')
-                    ->description('Selecciona el distrito donde ofrecerás servicio de delivery.')
+                    ->icon('heroicon-o-map-pin')
+                    ->description('Selecciona el departamento, provincia y distrito donde ofrecerás servicio de delivery.')
                     ->schema([
-                        // 🌟 SELECT DE DEPARTAMENTO (No se guarda, solo filtra)
                         Forms\Components\Select::make('department_id')
                             ->label('Departamento')
-                            ->options(Department::pluck('name', 'id'))
-                            ->reactive()
+                            ->options(fn(): array => Department::query()
+                                ->orderBy('name')
+                                ->pluck('name', 'id')
+                                ->toArray())
+                            ->searchable()
+                            ->preload()
+                            ->native(false)
+                            ->live()
                             ->required()
-                            ->afterStateUpdated(fn(callable $set) => $set('province_id', null)),
+                            ->dehydrated(false)
+                            ->afterStateHydrated(function (Forms\Set $set, ?DeliveryZone $record): void {
+                                if (! $record?->district?->province?->department_id) {
+                                    return;
+                                }
 
-                        // 🌟 SELECT DE PROVINCIA (No se guarda, solo filtra)
+                                $set('department_id', $record->district->province->department_id);
+                                $set('province_id', $record->district->province_id);
+                            })
+                            ->afterStateUpdated(function (Forms\Set $set): void {
+                                $set('province_id', null);
+                                $set('district_id', null);
+                            }),
+
                         Forms\Components\Select::make('province_id')
                             ->label('Provincia')
-                            ->options(function (callable $get) {
-                                $deptId = $get('department_id');
-                                if (!$deptId) return [];
-                                return Province::where('department_id', $deptId)->pluck('name', 'id');
-                            })
-                            ->reactive()
-                            ->required()
-                            ->afterStateUpdated(fn(callable $set) => $set('district_id', null)),
+                            ->options(function (Forms\Get $get): array {
+                                $departmentId = $get('department_id');
 
-                        // 🌟 SELECT DE DISTRITO (Este SÍ se guarda en district_id)
+                                if (! $departmentId) {
+                                    return [];
+                                }
+
+                                return Province::query()
+                                    ->where('department_id', $departmentId)
+                                    ->orderBy('name')
+                                    ->pluck('name', 'id')
+                                    ->toArray();
+                            })
+                            ->searchable()
+                            ->preload()
+                            ->native(false)
+                            ->live()
+                            ->required()
+                            ->dehydrated(false)
+                            ->disabled(fn(Forms\Get $get): bool => blank($get('department_id')))
+                            ->afterStateUpdated(fn(Forms\Set $set): mixed => $set('district_id', null)),
+
                         Forms\Components\Select::make('district_id')
                             ->label('Distrito de Cobertura')
-                            ->options(function (callable $get) {
-                                $provId = $get('province_id');
-                                if (!$provId) return [];
-                                return District::where('province_id', $provId)->pluck('name', 'id');
+                            ->options(function (Forms\Get $get): array {
+                                $provinceId = $get('province_id');
+
+                                if (! $provinceId) {
+                                    return [];
+                                }
+
+                                return District::query()
+                                    ->where('province_id', $provinceId)
+                                    ->orderBy('name')
+                                    ->pluck('name', 'id')
+                                    ->toArray();
                             })
+                            ->searchable()
+                            ->preload()
+                            ->native(false)
                             ->required()
-                            ->unique(ignorable: fn($record) => $record, modifyRuleUsing: function ($rule) {
-                                return $rule->where('tenant_id', Auth::user()->tenant_id);
-                            })
-                            ->helperText('Solo puedes agregar un distrito una vez.'),
-                    ])->columns(3),
+                            ->disabled(fn(Forms\Get $get): bool => blank($get('province_id')))
+                            ->unique(
+                                ignorable: fn(?DeliveryZone $record) => $record,
+                                modifyRuleUsing: fn($rule) => $rule->where('tenant_id', Auth::user()->tenant_id)
+                            )
+                            ->helperText('Solo puedes agregar un distrito una vez por negocio.'),
+                    ])
+                    ->columns([
+                        'default' => 1,
+                        'md' => 3,
+                    ]),
 
                 Forms\Components\Section::make('Configuración de Tarifa')
+                    ->icon('heroicon-o-truck')
+                    ->description('Define el costo de envío y el tiempo estimado mostrado al cliente.')
                     ->schema([
                         Forms\Components\TextInput::make('price')
                             ->label('Costo de Envío')
                             ->prefix('S/')
                             ->numeric()
+                            ->minValue(0)
+                            ->step(0.10)
                             ->default(0)
                             ->required(),
 
@@ -130,41 +181,183 @@ class DeliveryZoneResource extends Resource
                             ->maxLength(50),
 
                         Forms\Components\Toggle::make('is_active')
-                            ->label('¿Zona Activa?')
+                            ->label('Zona activa')
+                            ->inline(false)
                             ->default(true)
                             ->helperText('Si se desactiva, los clientes no podrán elegir este distrito.'),
-                    ])->columns(3),
+                    ])
+                    ->columns([
+                        'default' => 1,
+                        'md' => 3,
+                    ]),
+            ]);
+    }
+
+    public static function infolist(Infolist $infolist): Infolist
+    {
+        return $infolist
+            ->schema([
+                InfolistSection::make('Detalle de la Zona de Reparto')
+                    ->icon('heroicon-o-truck')
+                    ->description('Información del distrito cubierto, costo de envío y disponibilidad.')
+                    ->schema([
+                        TextEntry::make('district.name')
+                            ->label('Distrito')
+                            ->weight('black')
+                            ->icon('heroicon-o-map-pin')
+                            ->placeholder('Distrito no disponible'),
+
+                        TextEntry::make('district.province.name')
+                            ->label('Provincia')
+                            ->placeholder('Sin provincia'),
+
+                        TextEntry::make('district.province.department.name')
+                            ->label('Departamento')
+                            ->placeholder('Sin departamento'),
+
+                        TextEntry::make('price')
+                            ->label('Costo de envío')
+                            ->money('PEN')
+                            ->icon('heroicon-o-banknotes'),
+
+                        TextEntry::make('estimated_time')
+                            ->label('Tiempo estimado')
+                            ->placeholder('Sin tiempo definido')
+                            ->icon('heroicon-o-clock'),
+
+                        IconEntry::make('is_active')
+                            ->label('Estado')
+                            ->boolean()
+                            ->trueIcon('heroicon-o-check-circle')
+                            ->falseIcon('heroicon-o-x-circle')
+                            ->trueColor('success')
+                            ->falseColor('danger'),
+                    ])
+                    ->columns([
+                        'default' => 1,
+                        'md' => 2,
+                    ]),
             ]);
     }
 
     public static function table(Table $table): Table
     {
         return $table
+            ->modifyQueryUsing(fn(Builder $query): Builder => $query->with(['district.province.department']))
+            ->striped()
+            ->paginated([10, 25, 50, 100])
+            ->defaultPaginationPageOption(25)
+            ->persistSearchInSession()
+            ->persistFiltersInSession()
+            ->persistSortInSession()
+            ->recordUrl(null)
+            ->recordAction('view')
             ->columns([
+                Tables\Columns\TextColumn::make('mobile_summary')
+                    ->label('Zona')
+                    ->state(fn(DeliveryZone $record): string => $record->district?->name ?? 'Distrito no disponible')
+                    ->description(function (DeliveryZone $record): string {
+                        $province = $record->district?->province?->name ?? 'Sin provincia';
+                        $price = 'S/ ' . number_format((float) $record->price, 2);
+                        $time = $record->estimated_time ?: 'Sin tiempo';
+                        $status = $record->is_active ? 'Activa' : 'Inactiva';
+
+                        return "{$province} · {$price} · {$time} · {$status}";
+                    })
+                    ->icon('heroicon-o-truck')
+                    ->weight('black')
+                    ->wrap()
+                    ->hiddenFrom('md'),
+
                 Tables\Columns\TextColumn::make('district.name')
                     ->label('Distrito')
                     ->sortable()
-                    ->searchable(),
+                    ->searchable()
+                    ->weight('bold')
+                    ->visibleFrom('md'),
+
                 Tables\Columns\TextColumn::make('district.province.name')
                     ->label('Provincia')
-                    ->color('gray'),
+                    ->color('gray')
+                    ->visibleFrom('lg'),
+
+                Tables\Columns\TextColumn::make('district.province.department.name')
+                    ->label('Departamento')
+                    ->color('gray')
+                    ->toggleable(isToggledHiddenByDefault: true),
+
                 Tables\Columns\TextColumn::make('price')
                     ->label('Costo')
                     ->money('PEN')
-                    ->sortable(),
+                    ->sortable()
+                    ->color('success')
+                    ->weight('semibold')
+                    ->visibleFrom('md'),
+
                 Tables\Columns\TextColumn::make('estimated_time')
-                    ->label('Entrega'),
+                    ->label('Entrega')
+                    ->placeholder('Sin tiempo')
+                    ->visibleFrom('lg'),
+
                 Tables\Columns\IconColumn::make('is_active')
                     ->label('Estado')
-                    ->boolean(),
+                    ->boolean()
+                    ->trueIcon('heroicon-o-check-circle')
+                    ->falseIcon('heroicon-o-x-circle')
+                    ->trueColor('success')
+                    ->falseColor('danger')
+                    ->visibleFrom('md'),
             ])
             ->filters([
-                // Filtro por local (Tenant) automático
+                Tables\Filters\TernaryFilter::make('is_active')
+                    ->label('Estado')
+                    ->placeholder('Todas')
+                    ->trueLabel('Activas')
+                    ->falseLabel('Inactivas')
+                    ->native(false),
+
+                Tables\Filters\SelectFilter::make('district_id')
+                    ->label('Distrito')
+                    ->relationship('district', 'name')
+                    ->searchable()
+                    ->preload(),
+            ])
+            ->filtersFormColumns([
+                'default' => 1,
+                'md' => 2,
             ])
             ->actions([
-                Tables\Actions\EditAction::make(),
-                Tables\Actions\DeleteAction::make(),
-            ]);
+                Tables\Actions\ActionGroup::make([
+                    Tables\Actions\ViewAction::make()
+                        ->label('Ver detalles')
+                        ->icon('heroicon-o-eye')
+                        ->color('info'),
+
+                    Tables\Actions\EditAction::make()
+                        ->label('Editar')
+                        ->icon('heroicon-o-pencil')
+                        ->color('warning')
+                        ->slideOver()
+                        ->modalWidth('3xl'),
+
+                    Tables\Actions\DeleteAction::make()
+                        ->label('Eliminar')
+                        ->icon('heroicon-o-trash')
+                        ->color('danger')
+                        ->requiresConfirmation()
+                        ->modalHeading('Eliminar zona de reparto')
+                        ->modalDescription('La zona dejará de estar disponible para pedidos online.'),
+                ])
+                    ->label('Acciones')
+                    ->tooltip('Acciones')
+                    ->icon('heroicon-m-ellipsis-vertical')
+                    ->iconButton()
+                    ->color('gray'),
+            ])
+            ->bulkActions([])
+            ->emptyStateHeading('No hay zonas de reparto')
+            ->emptyStateDescription('Agrega distritos donde tu negocio realizará entregas a domicilio.')
+            ->emptyStateIcon('heroicon-o-truck');
     }
 
     // 🌟 MULTI-TENANT: Solo muestra las zonas del negocio logueado
@@ -172,12 +365,16 @@ class DeliveryZoneResource extends Resource
     {
         $user = Auth::user();
 
-        if (! $user || $user->tenant_id === null) {
-            return parent::getEloquentQuery()->whereRaw('1 = 0');
+        $query = parent::getEloquentQuery()
+            ->with([
+                'district.province.department',
+            ]);
+
+        if (! $user || ! $user->tenant_id) {
+            return $query->whereRaw('1 = 0');
         }
 
-        return parent::getEloquentQuery()
-            ->where('tenant_id', $user->tenant_id);
+        return $query->where('tenant_id', $user->tenant_id);
     }
 
     public static function getPages(): array

@@ -20,6 +20,9 @@ class ListUsers extends ListRecords
                 ->label('Nuevo Usuario')
                 ->icon('heroicon-o-user-plus')
                 ->slideOver()
+                ->modalWidth('2xl')
+                ->modalHeading('Registrar Usuario')
+                ->createAnother(false)
                 ->visible(fn(): bool => UserResource::tenantHasAvailableUserSlots()),
 
             Actions\Action::make('user_limit_reached')

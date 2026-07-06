@@ -19,20 +19,34 @@ use Filament\Forms\Components\Placeholder;
 use Illuminate\Support\Facades\Auth;
 use Percy\Core\Models\Tenant;
 use Percy\Core\Services\Tenants\TenantPlanService;
+use Filament\Forms\Components\Textarea;
 
 class EditBusinessProfile extends Page implements HasForms
 {
     use InteractsWithForms;
 
     protected static ?string $navigationIcon = 'heroicon-o-building-storefront';
+
     protected static ?string $navigationGroup = 'Configuración';
+
     protected static ?string $navigationLabel = 'Mi Empresa';
+
     protected static ?string $title = 'Mi Empresa';
+
+    public function getSubheading(): ?string
+    {
+        return 'Configura los datos fiscales, tienda virtual e impuestos de tu negocio.';
+    }
+
     protected static ?int $navigationSort = 6;
 
     protected static string $view = 'percy-core::filament.pages.edit-business-profile';
 
     public ?array $data = [];
+
+    public bool $canViewSunatSettings = false;
+
+    public bool $canViewOnlineStoreSettings = false;
 
     private static function tenantPlanHas(string $feature): bool
     {
@@ -59,25 +73,39 @@ class EditBusinessProfile extends Page implements HasForms
 
     public static function canAccess(): bool
     {
-        /** @var \Percy\Core\Models\User $user */
+        /** @var \Percy\Core\Models\User|null $user */
         $user = Auth::user();
-        return Auth::check() && $user->tenant_id != null && $user->isAdmin();
+
+        return $user !== null
+            && $user->tenant_id !== null
+            && $user->isAdmin();
     }
 
     public function mount(): void
     {
-        $tenant = Tenant::find(Auth::user()->tenant_id);
+        /** @var \Percy\Core\Models\User|null $user */
+        $user = Auth::user();
+
+        if (! $user || ! $user->tenant_id) {
+            return;
+        }
+
+        $this->canViewSunatSettings = self::hasSunatAccess();
+        $this->canViewOnlineStoreSettings = self::hasOnlineStoreAccess();
+
+        $tenant = Tenant::find($user->tenant_id);
+
         if ($tenant) {
             $this->form->fill($tenant->toArray());
         }
     }
-
 
     public function form(Form $form): Form
     {
         return $form
             ->schema([
                 Tabs::make('Configuración')
+                    ->persistTabInQueryString()
                     ->tabs([
                         // 🌟 NUEVA PESTAÑA 1: MARCA Y CATÁLOGO (Exclusiva para el diseño de su web)
                         Tabs\Tab::make('Marca y Catálogo')
@@ -90,49 +118,70 @@ class EditBusinessProfile extends Page implements HasForms
                                         FileUpload::make('logo')
                                             ->label('Logo del Negocio')
                                             ->image()
-                                            ->disk('r2_public') // Guardamos en Cloudflare
+                                            ->imageEditor()
+                                            ->imagePreviewHeight('120')
+                                            ->disk('r2_public')
                                             ->directory('logos')
                                             ->visibility('public')
                                             ->maxSize(2048)
+                                            ->helperText('Recomendado: imagen cuadrada o rectangular en PNG/JPG, máximo 2 MB.')
                                             ->columnSpanFull(),
 
                                         // 🌟 ENVOLVEMOS EL RESTO EN UN GRID ESTRICTO
-                                        Grid::make(2)->schema([
+                                        Grid::make([
+                                            'default' => 1,
+                                            'md' => 2,
+                                        ])->schema([
                                             ColorPicker::make('primary_color')
                                                 ->label('Color Principal de la Marca')
                                                 ->default('#4f46e5')
-                                                ->required(),
+                                                ->required()
+                                                ->hintIcon(
+                                                    'heroicon-m-question-mark-circle',
+                                                    tooltip: 'Este color se usará como color principal en la tienda virtual.'
+                                                ),
 
                                             // Le permitimos cambiar su nombre comercial visual (opcional, pero útil)
                                             TextInput::make('name')
-                                                ->label('Nombre Comercial (Se muestra en el catálogo)')
-                                                ->required(),
+                                                ->label('Nombre Comercial')
+                                                ->placeholder('Ej: Bodega San Pedro')
+                                                ->required()
+                                                ->maxLength(150)
+                                                ->hintIcon(
+                                                    'heroicon-m-question-mark-circle',
+                                                    tooltip: 'Este nombre se mostrará en el catálogo web y en el panel.'
+                                                ),
 
                                             // 🌟 NUEVO: Campo de texto libre para el horario
                                             TextInput::make('business_hours')
-                                                ->label('Horario de Atención (Visible para clientes)')
-                                                ->placeholder('Ej: Lun a Sáb de 8:00 AM a 10:00 PM'),
+                                                ->label('Horario de Atención')
+                                                ->placeholder('Ej: Lun a Sáb de 8:00 AM a 10:00 PM')
+                                                ->maxLength(120)
+                                                ->columnSpanFull(),
 
                                             // 🌟 NUEVO: El interruptor maestro
                                             Toggle::make('is_open_for_orders')
-                                                ->label('Estado de la Tienda (Abierto para recibir pedidos)')
-                                                ->helperText('Apágalo si cierras temprano o no puedes atender temporalmente.')
+                                                ->label('Tienda abierta para pedidos')
+                                                ->helperText('Desactívalo temporalmente si no puedes atender pedidos online.')
                                                 ->default(true)
-                                                ->inline(false), // 🌟 ESTA ES LA CLAVE MAGICA
+                                                ->inline(false),
 
                                             // 🌟 NUEVO: COSTO DE DELIVERY Y YAPE
                                             TextInput::make('delivery_fee')
                                                 ->label('Costo Base de Delivery')
                                                 ->numeric()
                                                 ->prefix('S/')
+                                                ->minValue(0)
+                                                ->step(0.10)
                                                 ->default(0)
-                                                ->helperText('Se sumará automáticamente si piden Delivery.'),
+                                                ->helperText('Se sumará automáticamente cuando el cliente elija delivery.'),
 
                                             TextInput::make('yape_number')
                                                 ->label('Número de Yape / Plin')
                                                 ->tel()
+                                                ->maxLength(20)
                                                 ->placeholder('Ej: 999888777')
-                                                ->helperText('Aparecerá en el carrito de compras.'),
+                                                ->helperText('Aparecerá como referencia de pago en el carrito.'),
 
                                         ]),
                                     ]),
@@ -145,24 +194,45 @@ class EditBusinessProfile extends Page implements HasForms
                                 Section::make('Información fiscal')
                                     ->description('Datos registrados en SUNAT')
                                     ->schema([
-                                        Grid::make(2)->schema([
+                                        Grid::make([
+                                            'default' => 1,
+                                            'md' => 2,
+                                        ])->schema([
                                             TextInput::make('ruc')
                                                 ->label('RUC')
                                                 ->numeric()
-                                                ->maxLength(11)
-                                                ->required(),
+                                                ->length(11)
+                                                ->required()
+                                                ->placeholder('Ej: 20123456789'),
+
                                             TextInput::make('business_name')
                                                 ->label('Razón Social')
-                                                ->required(),
-                                            TextInput::make('address')
-                                                ->label('Dirección fiscal'),
+                                                ->required()
+                                                ->maxLength(200)
+                                                ->placeholder('Ej: Mi Empresa S.A.C.'),
+
+                                            Textarea::make('address')
+                                                ->label('Dirección fiscal')
+                                                ->rows(2)
+                                                ->maxLength(255)
+                                                ->columnSpanFull(),
+
                                             TextInput::make('ubigeo')
-                                                ->label('Ubigeo'),
+                                                ->label('Ubigeo')
+                                                ->maxLength(6)
+                                                ->placeholder('Ej: 130101'),
+
                                             TextInput::make('phone')
-                                                ->label('Teléfono'),
+                                                ->label('Teléfono')
+                                                ->tel()
+                                                ->maxLength(20)
+                                                ->placeholder('Ej: 987654321'),
+
                                             TextInput::make('email')
                                                 ->email()
-                                                ->label('Correo electrónico'),
+                                                ->label('Correo electrónico')
+                                                ->maxLength(150)
+                                                ->placeholder('Ej: ventas@miempresa.com'),
                                         ])
                                     ])
                             ]),
@@ -176,57 +246,95 @@ class EditBusinessProfile extends Page implements HasForms
                                     ->description('Credenciales necesarias para emitir comprobantes electrónicos.')
                                     ->schema([
                                         Select::make('sunat_environment')
-                                            ->label('Entorno')
+                                            ->label('Entorno de emisión')
+                                            ->native(false)
                                             ->options([
                                                 'beta' => 'Pruebas (BETA)',
                                                 'production' => 'Producción',
                                             ])
                                             ->default('beta')
                                             ->required(),
-                                        Placeholder::make(''),
+
+                                        Placeholder::make('sunat_help')
+                                            ->label('Importante')
+                                            ->content('Verifica tus credenciales SOL y certificado antes de cambiar a producción.'),
+
                                         TextInput::make('sunat_sol_user')
                                             ->label('Usuario SOL')
                                             ->helperText('Ingresa solo tu usuario (Ej: MODDATOS).'),
+
                                         TextInput::make('sunat_sol_pass')
                                             ->label('Clave SOL')
                                             ->password()
                                             ->revealable(),
+
                                         FileUpload::make('sunat_certificate')
                                             ->label('Certificado Digital (.pem / .pfx)')
                                             ->directory('certificates')
                                             ->disk('sunat')
                                             ->visibility('private')
-                                            ->helperText('Sube el archivo proporcionado por tu entidad certificadora.'),
+                                            ->acceptedFileTypes([
+                                                'application/x-pem-file',
+                                                'application/x-pkcs12',
+                                                'application/octet-stream',
+                                                '.pem',
+                                                '.pfx',
+                                            ])
+                                            ->helperText('Archivo privado usado para firmar XML. No será visible públicamente.')
+                                            ->columnSpanFull(),
+
                                         TextInput::make('sunat_certificate_password')
                                             ->label('Contraseña del Certificado')
                                             ->password()
                                             ->revealable()
                                             ->helperText('Necesaria para firmar los XML.'),
-                                    ])->columns(2)
+
+                                    ])->columns([
+                                        'default' => 1,
+                                        'md' => 2,
+                                    ])
                             ]),
 
                         // PESTAÑA 4: Preferencias (Tu código original intacto)
                         Tabs\Tab::make('Impuestos')
                             ->icon('heroicon-o-cog-8-tooth')
                             ->schema([
-                                Select::make('igv_percentage')
-                                    ->label('Régimen Tributario - IGV (%)')
-                                    ->options([
-                                        '18.00' => '18% - Régimen General / MYPE Estándar',
-                                        '10.50' => '10.5% - Ley MYPE Restaurantes y Hoteles',
-                                        '0.00'  => '0% - Exonerado / Inafecto (Amazonía, etc.)',
+                                Section::make('Preferencias tributarias')
+                                    ->description('Configura cómo se calcularán los impuestos en ventas, productos y comprobantes.')
+                                    ->schema([
+                                        Select::make('igv_percentage')
+                                            ->label('Régimen Tributario - IGV (%)')
+                                            ->options([
+                                                '18.00' => '18% - Régimen General / MYPE Estándar',
+                                                '10.50' => '10.5% - Ley MYPE Restaurantes y Hoteles',
+                                                '0.00'  => '0% - Exonerado / Inafecto',
+                                            ])
+                                            ->native(false)
+                                            ->default('18.00')
+                                            ->required()
+                                            ->hintIcon(
+                                                'heroicon-m-question-mark-circle',
+                                                tooltip: 'Asegúrate de cumplir los requisitos tributarios antes de usar una tasa reducida.'
+                                            ),
+
+                                        Toggle::make('prices_include_igv')
+                                            ->label('Los precios del catálogo ya incluyen IGV')
+                                            ->helperText('Si está activo, el sistema separará el IGV desde el precio final.')
+                                            ->default(true)
+                                            ->inline(false),
+
+                                        Toggle::make('auto_send_sunat')
+                                            ->label('Enviar a SUNAT automáticamente')
+                                            ->helperText('Al emitir boletas o facturas, el sistema intentará enviarlas automáticamente.')
+                                            ->default(true)
+                                            ->inline(false)
+                                            ->visible(fn(): bool => self::hasSunatAccess()),
                                     ])
-                                    ->default('18.00')
-                                    ->required()
-                                    ->helperText('Asegúrate de cumplir los requisitos de SUNAT si eliges el 10.5%.'),
-                                Toggle::make('prices_include_igv')
-                                    ->label('Los precios del catálogo ya incluyen IGV')
-                                    ->default(true),
-                                Toggle::make('auto_send_sunat')
-                                    ->label('Enviar a SUNAT automáticamente')
-                                    ->default(true)
-                                    ->visible(fn(): bool => $this->hasSunatAccess()),
-                            ])->columns(2),
+                                    ->columns([
+                                        'default' => 1,
+                                        'md' => 2,
+                                    ]),
+                            ]),
                     ])
                     ->columnSpanFull(),
             ])
@@ -238,6 +346,12 @@ class EditBusinessProfile extends Page implements HasForms
         $tenant = Tenant::find(Auth::user()->tenant_id);
 
         if (! $tenant) {
+            Notification::make()
+                ->danger()
+                ->title('No se encontró la empresa')
+                ->body('No fue posible cargar la configuración del negocio.')
+                ->send();
+
             return;
         }
 

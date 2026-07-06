@@ -40,8 +40,22 @@
         /* 🌟 GRILLA Y TARJETAS SIMÉTRICAS */
         .mesas-grid {
             display: grid;
-            gap: 1.25rem;
-            grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+            gap: 0.9rem;
+            grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+        }
+
+        @media (min-width: 640px) {
+            .mesas-grid {
+                gap: 1rem;
+                grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));
+            }
+        }
+
+        @media (min-width: 1280px) {
+            .mesas-grid {
+                gap: 1.25rem;
+                grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+            }
         }
 
         .mesa-btn {
@@ -53,32 +67,126 @@
             flex-direction: column;
             justify-content: space-between;
             align-items: center;
-            padding: 1rem;
+            padding: 0.85rem;
             transition: all 0.2s ease-in-out;
             border-width: 2px;
-            border-radius: 1.25rem;
+            border-radius: 1rem;
+        }
+
+        @media (min-width: 768px) {
+            .mesa-btn {
+                padding: 1rem;
+                border-radius: 1.25rem;
+            }
         }
 
         .mesa-btn:hover {
             transform: scale(1.03);
             box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
         }
+
+        .restaurant-summary-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 0.75rem;
+        }
+
+        @media (min-width: 640px) {
+            .restaurant-summary-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+
+        @media (min-width: 1024px) {
+            .restaurant-summary-grid {
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+            }
+        }
+
+        .restaurant-summary-card {
+            border-radius: 1rem;
+            border: 1px solid rgb(229 231 235);
+            background: white;
+            padding: 1rem;
+            box-shadow: 0 1px 2px rgb(0 0 0 / 0.04);
+        }
+
+        .dark .restaurant-summary-card {
+            border-color: rgb(55 65 81);
+            background: rgb(17 24 39);
+        }
     </style>
 
     <div class="space-y-8">
+        <div class="restaurant-summary-grid">
+            <div class="restaurant-summary-card">
+                <div class="flex items-center gap-3">
+                    <div class="rounded-xl bg-primary-100 p-2 text-primary-600 dark:bg-primary-900/30">
+                        <x-heroicon-o-squares-2x2 class="h-5 w-5" />
+                    </div>
+                    <div>
+                        <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Total</p>
+                        <p class="text-xl font-black text-gray-900 dark:text-white">{{ $summary['total'] ?? 0 }}</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="restaurant-summary-card">
+                <div class="flex items-center gap-3">
+                    <div class="rounded-xl bg-green-100 p-2 text-green-700 dark:bg-green-900/40 dark:text-green-300">
+                        <x-heroicon-o-check-circle class="h-5 w-5" />
+                    </div>
+                    <div>
+                        <p class="text-xs font-semibold uppercase tracking-wide text-green-700 dark:text-green-300">
+                            Libres</p>
+                        <p class="text-xl font-black text-green-900 dark:text-green-100">
+                            {{ $summary['available'] ?? 0 }}</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="restaurant-summary-card">
+                <div class="flex items-center gap-3">
+                    <div class="rounded-xl bg-rose-100 p-2 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300">
+                        <x-heroicon-o-user-group class="h-5 w-5" />
+                    </div>
+                    <div>
+                        <p class="text-xs font-semibold uppercase tracking-wide text-rose-700 dark:text-rose-300">
+                            Ocupadas</p>
+                        <p class="text-xl font-black text-rose-900 dark:text-rose-100">{{ $summary['occupied'] ?? 0 }}
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="restaurant-summary-card">
+                <div class="flex items-center gap-3">
+                    <div class="rounded-xl bg-amber-100 p-2 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                        <x-heroicon-o-sparkles class="h-5 w-5" />
+                    </div>
+                    <div>
+                        <p class="text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">
+                            Limpieza</p>
+                        <p class="text-xl font-black text-amber-900 dark:text-amber-100">{{ $summary['cleaning'] ?? 0 }}
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
         @forelse($zones as $zone)
             {{-- 🌟 Contenedor del Salón (Estilo igual al del Hotel) --}}
             <div
                 class="bg-white/50 dark:bg-gray-800/50 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
 
                 {{-- Cabecera del Salón --}}
-                <div class="flex items-center gap-3 mb-6 border-b border-gray-200 dark:border-gray-700 pb-3">
+                <div
+                    class="mb-5 flex flex-col gap-3 border-b border-gray-200 pb-4 dark:border-gray-700 sm:flex-row sm:items-center">
                     <x-heroicon-o-squares-2x2 class="w-6 h-6 text-primary-600 dark:text-primary-400" />
                     <h2 class="text-xl font-black text-gray-800 dark:text-gray-200 uppercase tracking-wider">
                         {{ $zone->name }}
                     </h2>
                     <span
-                        class="ml-auto text-xs font-bold text-gray-500 bg-gray-100 dark:bg-gray-700 px-3 py-1 rounded-full">
+                        class="w-fit rounded-full bg-gray-100 px-3 py-1 text-xs font-bold text-gray-500 dark:bg-gray-700 sm:ml-auto">
                         {{ $zone->tables->count() }} Mesas
                     </span>
                 </div>
@@ -107,9 +215,11 @@
                             <div class="flex flex-col items-center w-full">
                                 <x-dynamic-component :component="$icon"
                                     class="w-8 h-8 mb-2 opacity-70 group-hover:opacity-100 transition-opacity" />
-                                <span class="font-bold text-xl text-center leading-tight">{{ $table->name }}</span>
-                                <span class="text-[11px] mt-1 opacity-75 font-bold tracking-wide">{{ $table->capacity }}
-                                    Sillas</span>
+                                <span
+                                    class="text-center text-base font-black leading-tight sm:text-xl">{{ $table->name }}</span>
+                                <span class="mt-1 text-[10px] font-bold tracking-wide opacity-75 sm:text-[11px]">
+                                    {{ $table->capacity }} Sillas
+                                </span>
                             </div>
 
                             {{-- 🌟 PARTE INFERIOR (Ocupa el espacio vacío, mantiene la simetría) --}}

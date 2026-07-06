@@ -12,6 +12,13 @@ class UserTableActions
     public static function actions(): array
     {
         return [
+            Tables\Actions\ViewAction::make()
+                ->label('Ver detalles')
+                ->icon('heroicon-o-eye')
+                ->color('info')
+                ->modalHeading('Detalle del Usuario')
+                ->modalCancelActionLabel('Cerrar'),
+
             Tables\Actions\EditAction::make()
                 ->label('Editar')
                 ->icon('heroicon-o-pencil')
@@ -21,14 +28,16 @@ class UserTableActions
                 ->label('Desactivar usuario')
                 ->icon('heroicon-o-lock-closed')
                 ->color('danger')
-                ->visible(fn (Model $record): bool =>
+                ->visible(
+                    fn(Model $record): bool =>
                     (bool) $record->is_active &&
-                    (Auth::user()?->isAdmin() ?? false) &&
-                    Auth::id() !== $record->id
+                        (Auth::user()?->isAdmin() ?? false) &&
+                        Auth::id() !== $record->id
                 )
                 ->requiresConfirmation()
                 ->modalHeading('Desactivar usuario')
-                ->modalDescription(fn (Model $record): string =>
+                ->modalDescription(
+                    fn(Model $record): string =>
                     "El usuario {$record->name} ya no podrá ingresar al sistema, pero su historial se conservará."
                 )
                 ->modalSubmitActionLabel('Sí, desactivar')
@@ -49,13 +58,15 @@ class UserTableActions
                 ->label('Reactivar usuario')
                 ->icon('heroicon-o-lock-open')
                 ->color('success')
-                ->visible(fn (Model $record): bool =>
+                ->visible(
+                    fn(Model $record): bool =>
                     ! (bool) $record->is_active &&
-                    (Auth::user()?->isAdmin() ?? false)
+                        (Auth::user()?->isAdmin() ?? false)
                 )
                 ->requiresConfirmation()
                 ->modalHeading('Reactivar usuario')
-                ->modalDescription(fn (Model $record): string =>
+                ->modalDescription(
+                    fn(Model $record): string =>
                     "El usuario {$record->name} podrá ingresar nuevamente al sistema."
                 )
                 ->modalSubmitActionLabel('Sí, reactivar')

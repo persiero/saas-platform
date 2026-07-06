@@ -12,6 +12,8 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
 use App\Filament\Resources\TenantResource\Schemas\TenantForm;
 use App\Filament\Resources\TenantResource\Tables\TenantTable;
+use Filament\Infolists\Infolist;
+use App\Filament\Resources\TenantResource\Schemas\TenantInfolist;
 
 class TenantResource extends Resource
 {
@@ -19,6 +21,11 @@ class TenantResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
 
+    protected static ?string $navigationGroup = 'Súper Admin';
+    protected static ?string $navigationLabel = 'Clientes SaaS';
+    protected static ?string $modelLabel = 'Cliente SaaS';
+    protected static ?string $pluralModelLabel = 'Clientes SaaS';
+    protected static ?int $navigationSort = 1;
     /**
      * ¿Quién puede ver este menú en la barra lateral?
      * Solo el "Dueño del SaaS" (Aquel que NO pertenece a ningún negocio: tenant_id = null)
@@ -53,9 +60,23 @@ class TenantResource extends Resource
         return TenantForm::configure($form);
     }
 
+    public static function infolist(Infolist $infolist): Infolist
+    {
+        return TenantInfolist::configure($infolist);
+    }
+
     public static function table(Table $table): Table
     {
         return TenantTable::configure($table);
+    }
+
+    public static function getEloquentQuery(): Builder
+    {
+        return parent::getEloquentQuery()
+            ->with([
+                'businessSector',
+                'plan',
+            ]);
     }
 
     public static function getRelations(): array

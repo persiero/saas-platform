@@ -19,7 +19,10 @@ class ListSeries extends ListRecords
             Actions\CreateAction::make()
                 ->label('Nueva Serie')
                 ->icon('heroicon-o-plus-circle')
-                ->slideOver() // Se abre lateralmente
+                ->slideOver()
+                ->modalWidth('2xl')
+                ->modalHeading('Crear Serie de Comprobante')
+                ->createAnother(false)
                 // Auto-inyecta el ID del negocio actual:
                 ->mutateFormDataUsing(function (array $data): array {
                     $data['tenant_id'] = Auth::user()->tenant_id;

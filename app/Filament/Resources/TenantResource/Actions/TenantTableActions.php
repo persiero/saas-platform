@@ -12,23 +12,32 @@ class TenantTableActions
     public static function actions(): array
     {
         return [
+            Tables\Actions\ViewAction::make()
+                ->label('Ver detalles')
+                ->icon('heroicon-o-eye')
+                ->color('info')
+                ->modalHeading('Detalle del Cliente SaaS')
+                ->modalCancelActionLabel('Cerrar'),
+
             Tables\Actions\EditAction::make()
                 ->label('Configurar')
                 ->icon('heroicon-o-cog-6-tooth')
                 ->color('info')
-                ->visible(fn (): bool => Auth::user()?->isSuperAdmin() ?? false),
+                ->visible(fn(): bool => Auth::user()?->isSuperAdmin() ?? false),
 
             Tables\Actions\Action::make('suspendTenant')
                 ->label('Suspender acceso')
                 ->icon('heroicon-o-lock-closed')
                 ->color('danger')
-                ->visible(fn (Tenant $record): bool =>
+                ->visible(
+                    fn(Tenant $record): bool =>
                     $record->is_active &&
-                    (Auth::user()?->isSuperAdmin() ?? false)
+                        (Auth::user()?->isSuperAdmin() ?? false)
                 )
                 ->requiresConfirmation()
                 ->modalHeading('Suspender acceso del negocio')
-                ->modalDescription(fn (Tenant $record): string =>
+                ->modalDescription(
+                    fn(Tenant $record): string =>
                     "El negocio {$record->name} no podrá acceder al panel hasta que sea reactivado. Esta opción puede usarse por falta de pago, revisión administrativa o suspensión temporal."
                 )
                 ->modalSubmitActionLabel('Sí, suspender')
@@ -49,13 +58,15 @@ class TenantTableActions
                 ->label('Reactivar acceso')
                 ->icon('heroicon-o-lock-open')
                 ->color('success')
-                ->visible(fn (Tenant $record): bool =>
+                ->visible(
+                    fn(Tenant $record): bool =>
                     ! $record->is_active &&
-                    (Auth::user()?->isSuperAdmin() ?? false)
+                        (Auth::user()?->isSuperAdmin() ?? false)
                 )
                 ->requiresConfirmation()
                 ->modalHeading('Reactivar acceso del negocio')
-                ->modalDescription(fn (Tenant $record): string =>
+                ->modalDescription(
+                    fn(Tenant $record): string =>
                     "El negocio {$record->name} volverá a tener acceso al panel. Sus usuarios activos podrán iniciar sesión nuevamente."
                 )
                 ->modalSubmitActionLabel('Sí, reactivar')
